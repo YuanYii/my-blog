@@ -1,0 +1,104 @@
+# ============================================================
+# my-blog 顶层 .gitignore
+# 覆盖范围：Java 后端（backend/）+ Nuxt 3 前端（frontend/）
+# + docs/ + 顶层项目级产物
+# ============================================================
+
+# ----------------------------------------------------------------
+# Java / Maven / Spring Boot（backend/）
+# ----------------------------------------------------------------
+**/target/
+**/*.class
+**/*.jar
+**/*.war
+**/*.ear
+**/logs/
+**/*.log
+
+# Maven 本地仓库元数据
+.mvn/
+mvnw
+mvnw.cmd
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE Java 配置
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.factorypath
+.apt_generated/
+.springBeans
+
+# Spring Boot devtools
+.springBeans
+.spring-boot-devtools.properties
+
+# 上传文件目录（运行时写到 ./tmp/blog-uploads）
+**/tmp/
+/backend/**/tmp/
+
+# ----------------------------------------------------------------
+# Nuxt 3 / Vue 3（frontend/）
+# ----------------------------------------------------------------
+# Build / Runtime 产物
+**/.nuxt/
+**/.nuxt-tmp/
+**/.output/
+**/.nitro/
+**/.cache/
+**/.tmp/
+**/dist/
+
+# Node
+**/node_modules/
+package-lock.json.bak
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+.env.prod.example
+
+# TypeScript 增量编译
+**/*.tsbuildinfo
+
+# Lint 缓存
+**/.eslintcache
+**/.stylelintcache
+
+# 覆盖率（无单测时不会生成，未来接入 vitest 后用）
+**/coverage/
+**/.nyc_output/
+**/*.lcov
+
+# ----------------------------------------------------------------
+# 项目级 / 跨语言共用
+# ----------------------------------------------------------------
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# 日志
+*.log
+logs/
+
+# 注：.env.prod.example / .env.example 等带后缀的 example 文件**不**匹配
+# 上面的 .env 系列规则，会正常提交（作为模板给团队）。
+
+# 临时脚本 / 报告（不要 commit 过程文件）
+/tmp/
+scripts/.tmp/
+
+# Agent / Claude 工具配置（不要进仓库）
+.audit/
+.claude/
+.cursor/
+.aider*
+
+# 本地运维脚本草稿（按需）

@@ -1,0 +1,188 @@
+package com.blog.auth.controller;
+
+import cn.hutool.crypto.digest.BCrypt;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.blog.auth.entity.AdminDevice;
+import com.blog.auth.entity.User;
+import com.blog.auth.mapper.UserMapper;
+import com.blog.auth.service.DeviceService;
+import com.blog.auth.util.JwtUtil;
+import com.blog.common.Result;
+import com.blog.common.ResultCode;
+import com.blog.common.TrustedProxyUtil;
+import io.jsonwebtoken.Claims;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+import javax.servlet.http.HttpServletRequest;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * 认证：登录 + 当前用户
+ *
+ * 安全修复（2026-06-07）：
+ * - 密码用 BCrypt 校验（user.passwordHash 字段是 BCrypt hash，不再明文比对）
+ * - SQL 默认值 password_hash=$2a$10$0YSdd8Tf7xcsmAk.05Kn4uEDSUAIT7ukAZqLnUMLrE5Gnd4wj5jEa
+ *   对应密码 "123456"——部署后必须立即在 admin 后台改密码（改 passwordHash 字段）
+ * - 登录限流：同一 IP 5 次/分钟失败后锁定 1 分钟（in-memory 计数器，**多实例部署需换 Redis**）
+ * - 设备白名单集成：login 时校验 X-Device-Id，未授权设备返回 DEVICE_PENDING
+ */
+@RestController
+@RequestMapping("/auth")
+@RequiredArgsConstructor
+public class AuthController {
+
+    private final UserMapper userMapper;
+    private final JwtUtil jwtUtil;
+    private final DeviceService deviceService;
+
+    /** 登录失败上限（per IP per minute） */
+    private static final int LOGIN_FAIL_LIMIT = 5;
+    private static final int LOGIN_FAIL_WINDOW_SECONDS = 60;
+
+    /**
+     * 登录失败计数器：key = IP，value = (count, windowStartEpoch)
+     * in-memory 实现：单实例部署够用；多实例 / 集群部署需替换为 Redis
+     * （为避免内存泄漏，清理掉过期的 entry）
+     */
+    private static final ConcurrentHashMap<String, long[]> LOGIN_FAIL_MAP = new ConcurrentHashMap<>();
+
+    /** 登录 */
+    @PostMapping("/login")
+    public Result<Map<String, Object>> login(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        String username = body.get("username");
+        String password = body.get("password");
+        if (username == null || password == null) {
+            return Result.error(ResultCode.BAD_REQUEST);
+        }
+
+        String ip = clientIp(request);
+
+        // 1) 登录限流检查：同 IP 失败次数超限则直接拒
+        if (isLoginLocked(ip)) {
+            return Result.error(429, "尝试次数过多，请 1 分钟后再试");
+        }
+
+        // 2) 校验账号密码
+        QueryWrapper<User> qw = new QueryWrapper<>();
+        qw.eq("username", username);
+        User user = userMapper.selectOne(qw);
+        // 2026-06-12 修复：原逻辑区分"用户不存在(1005)"和"密码错(1006)"——攻击者可据此探测账号是否存在
+        // 修复：合并为同一错误码 + 同一文案，且密码比对前对不存在的用户也跑一次 BCrypt（恒定时间，防时序探测）
+        if (user == null || user.getPasswordHash() == null || user.getPasswordHash().isEmpty()) {
+            // 即使没用户也跑一次 BCrypt 占用 CPU，避免时序攻击判断"用户是否存在"
+            BCrypt.checkpw(password, "$2a$10$0YSdd8Tf7xcsmAk.05Kn4uEjjX8dQvqJYhqLrE5Gnd4wj5jEa0000");
+            recordLoginFail(ip);
+            return Result.error(ResultCode.INVALID_CREDENTIALS);
+        }
+        if (!BCrypt.checkpw(password, user.getPasswordHash())) {
+            recordLoginFail(ip);
+            return Result.error(ResultCode.INVALID_CREDENTIALS);
+        }
+
+        // 3) 设备白名单校验（deviceId 缺失走 trust-migrate 通道——内网限定，详见 DeviceService）
+        String deviceId = body.get("deviceId");
+        String deviceName = body.get("deviceName");
+        String userAgent = request.getHeader("User-Agent");
+        AdminDevice device;
+        try {
+            device = deviceService.verifyOnLogin(deviceId, deviceName, ip, userAgent);
+        } catch (com.blog.common.BusinessException e) {
+            // 设备白名单失败也算登录失败（防止攻击者用设备白名单做密码侧信道）
+            recordLoginFail(ip);
+            return Result.error(e.getCode(), e.getMessage());
+        }
+
+        // 4) 登录成功，清零失败计数
+        LOGIN_FAIL_MAP.remove(ip);
+
+        String token = jwtUtil.generate(user.getId(), user.getUsername(), user.getRole(), device.getDeviceId());
+
+        // 响应平铺：前端 useAuth 需要 res.data.uid/username/role
+        Map<String, Object> data = new HashMap<>();
+        data.put("token", token);
+        data.put("uid", user.getId());
+        data.put("username", user.getUsername());
+        data.put("nickname", user.getNickname());
+        data.put("avatar", user.getAvatar() != null ? user.getAvatar() : "");
+        data.put("role", user.getRole());
+        // 设备信息回传：方便前端确认当前登录是哪个设备
+        data.put("deviceId", device.getDeviceId());
+        data.put("deviceName", device.getDeviceName());
+        return Result.success(data);
+    }
+
+    /** 当前用户（需要 Authorization: Bearer xxx） */
+    @GetMapping("/me")
+    public Result<Map<String, Object>> me(@RequestHeader(value = "Authorization", required = false) String auth) {
+        if (auth == null || !auth.startsWith("Bearer ")) {
+            return Result.error(ResultCode.UNAUTHORIZED);
+        }
+        try {
+            Claims claims = jwtUtil.parse(auth.substring(7));
+            Map<String, Object> data = new HashMap<>();
+            data.put("uid", claims.get("uid"));
+            data.put("role", claims.get("role"));
+            data.put("username", claims.getSubject());
+            // 顺便回传 deviceId，前端如有需要可读
+            Object did = claims.get("deviceId");
+            if (did != null) data.put("deviceId", did);
+            return Result.success(data);
+        } catch (Exception e) {
+            return Result.error(ResultCode.TOKEN_INVALID);
+        }
+    }
+
+    /**
+     * 是否处于登录锁定状态：1 分钟内同 IP 失败 >= LOGIN_FAIL_LIMIT 次
+     * 同时清理掉过期的 entry（避免内存泄漏）
+     */
+    private boolean isLoginLocked(String ip) {
+        long now = Instant.now().getEpochSecond();
+        cleanupExpired(now);
+        long[] entry = LOGIN_FAIL_MAP.get(ip);
+        if (entry == null) return false;
+        // entry[0]=count, entry[1]=windowStartEpoch
+        if (now - entry[1] > LOGIN_FAIL_WINDOW_SECONDS) {
+            LOGIN_FAIL_MAP.remove(ip);
+            return false;
+        }
+        return entry[0] >= LOGIN_FAIL_LIMIT;
+    }
+
+    /** 记录登录失败：累加计数，首次失败设窗口起点 */
+    private void recordLoginFail(String ip) {
+        long now = Instant.now().getEpochSecond();
+        LOGIN_FAIL_MAP.compute(ip, (k, old) -> {
+            if (old == null || now - old[1] > LOGIN_FAIL_WINDOW_SECONDS) {
+                return new long[]{1L, now};
+            }
+            old[0]++;
+            return old;
+        });
+    }
+
+    /** 清理过期 entry（每分钟一次） */
+    private void cleanupExpired(long now) {
+        if (LOGIN_FAIL_MAP.isEmpty()) return;
+        // 简易做法：遍历删除过期；map 通常不会太大（每 IP 一项）
+        LOGIN_FAIL_MAP.entrySet().removeIf(e -> now - e.getValue()[1] > LOGIN_FAIL_WINDOW_SECONDS);
+    }
+
+    private String clientIp(HttpServletRequest req) {
+        // 2026-06-12 修复：原逻辑只信任 IPv4 loopback（127.x）+ IPv6 loopback (::1)。
+        // 在 docker compose 生产部署下，nginx 与 backend 在同一 bridge 网络，
+        // backend.req.getRemoteAddr() 永远是 nginx 容器的私网 IP（如 172.20.0.5），
+        // 命中不了 loopback 判定 → X-Real-IP / X-Forwarded-For 全被丢 →
+        // 限流计数把所有用户合到 nginx 同一 IP，**任何人失败 5 次就把整站登录卡死**。
+        //
+        // 修复：把 RFC 1918 私网 + IPv6 ULA / link-local 也纳入 trusted proxy 范围。
+        // 假设：backend 不直接暴露公网（docker-compose.prod.yml 里没有 ports: -8080:8080，
+        // 只 expose 给容器网络），所以"从私网来的请求"必然是反代过来的——可信。
+        // 与 DeviceService.isInternalIp 共用判定语义（loopback + 私网 + ULA）。
+        return TrustedProxyUtil.resolveClientIp(req);
+    }
+}

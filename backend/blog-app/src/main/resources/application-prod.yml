@@ -1,0 +1,110 @@
+# =============================================================
+# 生产环境配置（部署到阿里云 ECS 香港轻量）
+# 所有敏感信息用环境变量注入，不在仓库中明文保存
+# =============================================================
+
+spring:
+  profiles:
+    active: prod
+
+  # ---------- 数据库（自装 MySQL，跑在 ECS 同机的 Docker 容器里） ----------
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:mysql}:${DB_PORT:3306}/${DB_NAME:blog}?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # ---------- Redis（自装 Redis 7-alpine，docker 网络） ----------
+  # 2026-06-12 修复：Spring Boot 2.7 使用 `spring.redis.*`（Spring Boot 3.x 才是 `spring.data.redis.*`）。
+  # 原 `spring.data.redis` 在 2.7 下完全失效——Spring 走默认 localhost:6379 无密码连接，
+  # 在 docker compose 网络里访问不到 `redis` 服务名 → SiteSettingsService 所有 Redis 操作抛连接异常。
+  redis:
+    host: ${REDIS_HOST:redis}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    database: ${REDIS_DB:0}
+    timeout: 5s
+    lettuce:
+      pool:
+        max-active: 16
+        max-idle: 8
+        min-idle: 2
+
+  # ---------- 文件上传（本地存储，容器内 /data/uploads） ----------
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 50MB
+
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+# ---------- HTTP Server ----------
+server:
+  port: 8080
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/plain,text/css
+  tomcat:
+    # 2C2G 机器调到 100（每个 Tomcat 线程 ~512KB 栈，200 线程=100MB 栈+512MB heap 接近 1.5GB）
+    max-threads: 100
+    max-connections: 4096
+    accept-count: 100
+    connection-timeout: 5000
+
+# ---------- 业务配置 ----------
+blog:
+  # JWT
+  jwt:
+    secret: ${JWT_SECRET}              # 32+ 位强随机（部署时必须设）
+    expiration-ms: 86400000            # 24h
+
+  # 文件上传配置（**本地存储方案**，容器内路径 /data/uploads）
+  upload:
+    provider: local                    # local / oss（首期 local）
+    local:
+      dir: ${UPLOAD_DIR:/data/uploads} # 容器内路径，对应 host volume
+      url-prefix: /uploads/            # nginx 反代路径前缀
+    # oss 配置（**首期不启用**，未来切换时再加）
+    # oss:
+    #   endpoint: ${OSS_ENDPOINT}
+    #   bucket: ${OSS_BUCKET}
+    #   access-key: ${OSS_ACCESS_KEY}
+    #   secret-key: ${OSS_SECRET_KEY}
+    #   cdn-domain: ${OSS_CDN_DOMAIN:}
+
+  # CORS（**生产环境收紧**，只允许你自己的域名）
+  cors:
+    allowed-origins: ${CORS_ORIGINS:https://yourname.com,https://www.yourname.com}
+
+  # Swagger（**生产关闭**）
+  swagger:
+    enabled: false
+
+# 生产环境关闭 springdoc 自动配置（防止 /v3/api-docs 泄露 API 结构）
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+# ---------- 日志 ----------
+logging:
+  level:
+    root: INFO
+    com.blog: INFO
+    com.baomidou.mybatisplus: WARN
+  file:
+    name: /var/log/blog/app.log
+    max-size: 100MB
+    max-history: 30
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"

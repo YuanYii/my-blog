@@ -1,0 +1,37 @@
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/blog?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+
+  # 2026-06-12 修复：Spring Boot 2.7 使用 `spring.redis.*` 前缀绑定 RedisProperties，
+  # `spring.data.redis.*` 是 Spring Boot 3.x 才生效——之前写在 spring.data.redis 下的
+  # host/port/password/database/pool 配置全部被静默忽略，Spring 走默认 localhost:6379 无密码。
+  # dev 本机正好是 localhost:6379 → 假装能用，但 prod 容器内 host=redis 也被忽略 → 连不上。
+  redis:
+    host: localhost
+    port: 6379
+    password:
+    database: 0
+    timeout: 5s
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+
+blog:
+  upload:
+    local:
+      # 2026-06-12 修复：dev 环境覆盖默认值（默认是容器 /root/blog-uploads，本机写不动 → 500）
+      # 注意：tomcat 的 working dir 不是项目根，相对路径会找不到。dev 用绝对路径写到项目内 tmp/
+      dir: ${UPLOAD_DIR:${user.dir}/tmp/blog-uploads}
+
+logging:
+  level:
+    root: INFO
+    com.blog: DEBUG
+    com.baomidou.mybatisplus: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"
