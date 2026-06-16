@@ -50,9 +50,9 @@ public class DeviceController {
      * 跟 revoke（软删除改 status）的区别：直接 DELETE 数据库行，不留审计
      * 适用场景：pending 误授权 / 长期 revoked 不再需要 / 想换新设备 等
      *
-     * 不阻止自删：用户明确要求"支持删除当前设备"——admin 可以删除自己当前正在用的设备
-     * 后果：下一次 admin API 请求 X-Device-Id 校验发现设备记录不存在 → 401 → 自动跳登录页
-     * 这是"删了就要重新登录"的预期行为（参见 DeviceService.delete 注释）
+     * 2026-06-16 修正（BUG-077）：禁止自删——与 revoke 一致的安全模型
+     * 防止：admin 误操作把自己当前正在用的设备记录抹掉
+     * 兜底：双层防护之一（前端 devices.vue :disabled 当前设备删除按钮 + 后端拒绝）
      */
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id,

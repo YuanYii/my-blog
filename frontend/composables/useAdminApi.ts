@@ -30,9 +30,13 @@ export const useAdminApi = () => {
         // 业务 code 检查
         const data: any = response._data
         if (data && typeof data === 'object' && 'code' in data && data.code !== 200) {
+          // 2026-06-15 修复：改密端点 /auth/me/password 业务错（code 400）时 HTTP 仍 200，
+          // 上一次 throw createError 会被 ofetch 误认为"onResponseError"路径，
+          // 触发 401 跳登录清空 token。把 statusCode 设为 200 + code 透传，避免误伤。
           throw createError({
-            statusCode: response.status,
-            message: data.message,
+            statusCode: 200,
+            statusMessage: 'OK',
+            message: data.message || '业务错误',
             data: data
           })
         }

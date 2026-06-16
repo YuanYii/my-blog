@@ -2,6 +2,8 @@
 definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
 const { get, post, del } = useAdminApi()
+const $toast = useToast()
+const $dialog = useDialog()
 
 const tags = ref<any[]>([])
 const articleCount = ref<Record<number, number>>({})
@@ -27,14 +29,16 @@ const load = async () => {
 }
 
 // [Bug fix 2026-06-13] handleCreateQuick：补 try/catch，后端 1002(slug 重复)/400 时 alert
+// 2026-06-16 改造：alert → $toast
 const handleCreateQuick = async () => {
   if (!newName.value.trim()) return
   try {
     await post('/articles/tags', { name: newName.value.trim() })
+    $toast.success('已创建')
     newName.value = ''
     load()
   } catch (e: any) {
-    alert('创建失败：' + (e?.data?.message || e?.message || '未知错误'))
+    $toast.error('创建失败：' + (e?.data?.message || e?.message || '未知错误'))
   }
 }
 
@@ -50,25 +54,35 @@ const closeModal = () => { showModal.value = false }
 //    传给后端后不走自动 slug 生成，直接以原始字符串落库（与 handleCreateQuick 行为不一致）。
 //    去掉 slug 字段后，后端会自动执行 name.toLowerCase().replaceAll(...) 生成合规 slug。
 // 2) 补 try/catch，后端报 1002(slug 重复)/400 时 alert 给用户。
+// 2026-06-16 改造：alert → $toast
 const handleCreate = async () => {
-  if (!newTag.name) { alert('请填写名称'); return }
+  if (!newTag.name) { $toast.warning('请填写名称'); return }
   try {
     await post('/articles/tags', { ...newTag })
+    $toast.success('已创建')
     closeModal()
     load()
   } catch (e: any) {
-    alert('创建失败：' + (e?.data?.message || e?.message || '未知错误'))
+    $toast.error('创建失败：' + (e?.data?.message || e?.message || '未知错误'))
   }
 }
 
 // [Bug fix 2026-06-13] handleDelete：补 try/catch
+// 2026-06-16 改造：confirm → $dialog.confirm，alert → $toast
 const handleDelete = async (t: any) => {
-  if (!confirm(`确认删除标签「${t.name}」？`)) return
+  const { confirmed } = await $dialog.confirm({
+    title: '删除标签',
+    message: `确认删除标签「${t.name}」？`,
+    confirmText: '删除',
+    danger: true
+  })
+  if (!confirmed) return
   try {
     await del(`/articles/tags/${t.id}`)
+    $toast.success('已删除')
     load()
   } catch (e: any) {
-    alert('删除失败：' + (e?.data?.message || e?.message || '未知错误'))
+    $toast.error('删除失败：' + (e?.data?.message || e?.message || '未知错误'))
   }
 }
 

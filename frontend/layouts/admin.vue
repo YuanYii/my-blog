@@ -1,8 +1,13 @@
 <script setup lang="ts">
+import { Toaster } from 'vue-sonner'
+
 const route = useRoute()
 const router = useRouter()
 const { user, clear, isLoggedIn, init: initAuth } = useAuth()
 const { meta, refresh: refreshMeta } = useAdminMeta()
+// 2026-06-16 新增：useDialog 在 SSR 阶段返回 noop（详见 composables/useDialog.ts）
+const { state, handleConfirm, handleCancel, confirm, prompt } = useDialog()
+const $dialog = { confirm, prompt }
 
 // 3 分组导航
 const navGroups = [
@@ -24,7 +29,7 @@ const navGroups = [
   {
     label: '系统',
     items: [
-      { to: '/admin/devices',   label: '设备', icon: 'device' },
+      { to: '/admin/devices',   label: '设备授权', icon: 'device' },
       { to: '/admin/settings', label: '设置', icon: 'settings' }
     ]
   }
@@ -32,8 +37,15 @@ const navGroups = [
 
 const isActive = (to: string) => route.path === to || route.path.startsWith(to + '/')
 
-const handleLogout = () => {
-  if (!confirm('确认退出登录？')) return
+// 2026-06-16 改造：confirm → $dialog.confirm（Promise 包装，ESC/点遮罩 = 取消）
+const handleLogout = async () => {
+  const { confirmed } = await $dialog.confirm({
+    title: '退出登录',
+    message: '确认退出登录？',
+    confirmText: '退出',
+    danger: true
+  })
+  if (!confirmed) return
   clear()
   router.push('/admin/login')
 }
@@ -164,5 +176,26 @@ onMounted(() => {
         <slot />
       </main>
     </div>
+
+    <!-- 2026-06-16 新增：Toast + Dialog 全局容器（用 client-only 避免 SSR mismatch） -->
+    <ClientOnly>
+      <Toaster position="top-right" :duration="2500" rich-colors close-button />
+    </ClientOnly>
+    <ClientOnly>
+      <GlobalDialog
+        :open="state.open"
+        :title="state.title"
+        :message="state.message"
+        :confirm-text="state.confirmText"
+        :cancel-text="state.cancelText"
+        :danger="state.danger"
+        :prompt="state.prompt"
+        :prompt-label="state.promptLabel"
+        :prompt-placeholder="state.promptPlaceholder"
+        :prompt-default="state.promptDefault"
+        @confirm="handleConfirm"
+        @cancel="handleCancel"
+      />
+    </ClientOnly>
   </div>
 </template>

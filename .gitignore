@@ -102,3 +102,6 @@ scripts/.tmp/
 .aider*
 
 # 本地运维脚本草稿（按需）
+docs/auto_fix/
+docs/audits
+docs/changelogs

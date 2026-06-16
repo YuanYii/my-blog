@@ -6,6 +6,8 @@ definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 const route = useRoute()
 const router = useRouter()
 const { get, post, put, upload } = useAdminApi()
+const $toast = useToast()
+const $dialog = useDialog()
 const fileInput = ref<HTMLInputElement | null>(null)
 const coverUploading = ref(false)
 
@@ -24,10 +26,153 @@ const handleCoverChange = async (e: Event) => {
       form.coverUrl = res.data.url
     }
   } catch (err: any) {
-    alert('上传失败：' + (err?.data?.message || err?.message))
+    $toast.error('上传失败：' + (err?.data?.message || err?.message))
   } finally {
     coverUploading.value = false
     input.value = ''  // 允许重选同一文件
+  }
+}
+
+// ====== 2026-06-15 新增：markdown 编辑器图片粘贴 / 本地选择上传 ======
+// 旧实现只有一个 `prompt('图片 URL')` 按钮（insertImagePrompt），用户粘贴或选择本地图片时
+// 浏览器把图片写到剪贴板 / OS file picker 拿到 File，但没有任何 handler 接管——
+// paste event 被浏览器默认吞掉、file 按钮不存在，体验完全断了。
+// 现在的实现：
+//   1) toolbar 图片按钮 → 打开 hidden file picker（accept=image/*）
+//   2) textarea 监听 paste event → 截获剪贴板图片 → 上传 → 插入 ![alt](url)
+//   3) textarea 监听 drop event → 拖拽图片文件 → 上传 → 插入 ![alt](url)
+//   4) 上传中占位 markdown `![uploading-xxx.png…]()`，上传完成用真 URL 替换
+//   5) 支持多文件并发（每张图一个上传 + 一个占位 marker，互不干扰）
+
+const mdImageInput = ref<HTMLInputElement | null>(null)
+const uploadingImages = reactive<Record<string, boolean>>({})  // marker → true（用于行内显示进度）
+
+/** 打开隐藏的本地文件选择器（仅图片） */
+const handleMdImagePick = () => {
+  mdImageInput.value?.click()
+}
+
+/**
+ * 上传图片并把上传中占位 marker 替换成最终 markdown 引用
+ * @param file        要上传的 File 对象
+ * @param placeholder 形如 `![uploading-foo.png…]()` 的占位字符串（用于在 markdown 里定位替换位置）
+ * @param alt         最终 markdown 里 ![] 的 alt 文本（默认 = 文件名）
+ */
+const uploadAndInsertImage = async (file: File, placeholder: string, alt: string) => {
+  if (!file.type.startsWith('image/')) {
+    $toast.warning('只支持图片文件（png/jpg/gif/webp/bmp/ico）')
+    // 把占位也清掉，避免留下半截 markdown
+    form.contentMd = form.contentMd.replace(placeholder, '')
+    return
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    $toast.warning(`图片「${file.name}」超过 5MB 上限`)
+    form.contentMd = form.contentMd.replace(placeholder, '')
+    return
+  }
+  uploadingImages[placeholder] = true
+  try {
+    const res = await upload<any>('/admin/uploads', file)
+    const url = res.data?.url
+    if (!url) throw new Error('上传响应缺 url')
+    // 用真 markdown 引用替换占位（alt 取文件名去掉扩展）
+    const finalAlt = alt || file.name.replace(/\.[^.]+$/, '')
+    const finalMd = `![${finalAlt}](${url})`
+    form.contentMd = form.contentMd.replace(placeholder, finalMd)
+  } catch (err: any) {
+    $toast.error('图片上传失败：' + (err?.data?.message || err?.message))
+    // 失败也清掉占位，避免残留
+    form.contentMd = form.contentMd.replace(placeholder, '')
+  } finally {
+    delete uploadingImages[placeholder]
+  }
+}
+
+/**
+ * 在 textarea 当前光标处插入一个唯一占位 marker，立即异步上传，结束后替换。
+ * 这是 paste / drop / file picker 三条路径的统一入口。
+ */
+const insertImageAtCursor = (file: File) => {
+  const ta = textareaRef.value
+  const placeholder = `![uploading-${file.name}…]()`
+  if (!ta) {
+    // textarea 还没 ref 到，append 到末尾
+    form.contentMd += (form.contentMd.endsWith('\n') ? '' : '\n') + placeholder + '\n'
+    uploadAndInsertImage(file, placeholder, file.name)
+    return
+  }
+  const start = ta.selectionStart
+  const end = ta.selectionEnd
+  const md = form.contentMd
+  // 占位前后加换行，避免粘连到正文里
+  const prefix = (start === 0 || md[start - 1] === '\n') ? '' : '\n'
+  const suffix = (end === md.length || md[end] === '\n') ? '' : '\n'
+  const insertion = prefix + placeholder + suffix
+  form.contentMd = md.substring(0, start) + insertion + md.substring(end)
+  // 恢复光标到占位之后
+  nextTick(() => {
+    const cursorPos = start + insertion.length
+    ta.focus()
+    ta.setSelectionRange(cursorPos, cursorPos)
+  })
+  // 异步上传 + 替换
+  uploadAndInsertImage(file, placeholder, file.name)
+}
+
+/** toolbar 图片按钮 → 触发 hidden file picker */
+const handleMdImageFileChange = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const files = input.files
+  if (!files || !files.length) return
+  for (const file of Array.from(files)) {
+    insertImageAtCursor(file)
+  }
+  input.value = ''  // 允许重选同一文件
+}
+
+/** textarea paste 事件：截获剪贴板里的图片 File */
+const handleEditorPaste = async (e: ClipboardEvent) => {
+  if (!e.clipboardData) return
+  const items = e.clipboardData.items
+  const imageFiles: File[] = []
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const f = item.getAsFile()
+      if (f) {
+        // 给剪贴板来的图一个友好文件名（默认是 "image.png" 之类）
+        if (!f.name || f.name === 'image.png') {
+          const ext = (f.type.split('/')[1] || 'png').split(';')[0]
+          const renamed = new File([f], `pasted-${Date.now()}.${ext}`, { type: f.type })
+          imageFiles.push(renamed)
+        } else {
+          imageFiles.push(f)
+        }
+      }
+    }
+  }
+  if (imageFiles.length === 0) return  // 让默认粘贴行为继续（粘贴文字 OK）
+  e.preventDefault()
+  for (const file of imageFiles) {
+    insertImageAtCursor(file)
+  }
+}
+
+/** textarea drop 事件：拖拽图片文件进来 */
+const handleEditorDrop = async (e: DragEvent) => {
+  if (!e.dataTransfer) return
+  const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'))
+  if (files.length === 0) return  // 让默认 drop 行为继续（拖文字）
+  e.preventDefault()
+  for (const file of files) {
+    insertImageAtCursor(file)
+  }
+}
+
+/** textarea dragover 必须 preventDefault，否则 drop 不触发 */
+const handleEditorDragOver = (e: DragEvent) => {
+  if (e.dataTransfer && Array.from(e.dataTransfer.items).some(i => i.kind === 'file' && i.type.startsWith('image/'))) {
+    e.preventDefault()
   }
 }
 
@@ -87,7 +232,7 @@ const loadArticle = async () => {
     viewCount.value = a.viewCount || 0
     createdAt.value = a.createdAt || ''
   } catch (e: any) {
-    alert('加载失败：' + (e?.data?.message || e?.message))
+    $toast.error('加载失败：' + (e?.data?.message || e?.message))
   } finally {
     loading.value = false
   }
@@ -138,10 +283,30 @@ const wrapLine = (prefix: string) => {
   nextTick(() => ta.focus())
 }
 
-const insertImagePrompt = () => {
-  const url = prompt('图片 URL（粘贴图片地址）')
-  if (!url) return
-  insertMarkdown(`![`, `](${url})`, 'alt 文本')
+const insertImagePrompt = async () => {
+  // 2026-06-15 重写：toolbar 图片按钮改为打开本地文件选择器（hidden <input type="file">）。
+  // 旧的 prompt('图片 URL') 流程保留为兼容路径——如果只想引用网络图片，按"图片 URL"按钮
+  // 仍可手动输入。
+  // 想要真正的粘贴图片 / 拖拽图片支持，看 handleEditorPaste / handleEditorDrop。
+  // 2026-06-16 改造：confirm → $dialog.confirm；prompt → $dialog.prompt
+  const { confirmed: useLocal } = await $dialog.confirm({
+    title: '插入图片',
+    message: '点「本地」从本地上传图片（粘贴板 / 拖拽也可）；\n点「取消」输入一个网络图片 URL。',
+    confirmText: '本地',
+    cancelText: '输入 URL'
+  })
+  if (useLocal) {
+    mdImageInput.value?.click()
+  } else {
+    const { confirmed, value } = await $dialog.prompt({
+      title: '插入网络图片',
+      label: '图片 URL',
+      placeholder: 'https://...',
+      confirmText: '插入'
+    })
+    if (!confirmed || !value) return
+    insertMarkdown(`![`, `](${value})`, 'alt 文本')
+  }
 }
 
 const wordCount = computed(() => form.contentMd.length)
@@ -152,6 +317,11 @@ const wordCount = computed(() => form.contentMd.length)
 const readTime = computed(() => Math.max(1, Math.round(wordCount.value / 400)))
 
 // 简易 markdown 渲染（与详情页一致）
+// 2026-06-15 修复：原实现只处理普通链接 `[text](url)`，没处理图片 `![alt](url)`，
+// 导致用户上传图片后 textarea 里的 markdown 是正确的 `![test.png](http://...)`，
+// 但右侧预览把 `!` 当成纯文本、把剩余部分当成普通链接，显示成 `<p>!<a>test.png</a></p>`。
+// 修法：在普通链接正则之前先匹配图片语法，渲染成 `<img>`。
+// ——和简版 markdown 渲染器保持一致（详情页用的也是同样的简版，下一步也会一起升级）。
 const renderMarkdown = (md: string) => {
   if (!md) return ''
   let html = md
@@ -161,6 +331,10 @@ const renderMarkdown = (md: string) => {
   html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>')
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>')
+  // 图片语法：必须在普通链接前匹配（图片也是 ![](url) 形式，正则覆盖普通链接的话会先匹配错）
+  // alt 文本里允许空：![](url)，url 允许双引号包起来：![alt]( "url" )
+  html = html.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
+    '<img src="$2" alt="$1" loading="lazy" />')
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
   html = html.replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>')
   html = html.replace(/^- (.*$)/gim, '<li>$1</li>')
@@ -172,14 +346,15 @@ const renderMarkdown = (md: string) => {
 
 /** DOMPurify 净化（防止 admin 编辑器预览里渲染恶意 HTML） */
 const safeMarkdown = (md: string) => DOMPurify.sanitize(renderMarkdown(md), {
-  ALLOWED_TAGS: ['p', 'h1', 'h2', 'h3', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'br', 'hr'],
-  ALLOWED_ATTR: ['href', 'target', 'class']
+  ALLOWED_TAGS: ['p', 'h1', 'h2', 'h3', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'br', 'hr', 'img'],
+  ALLOWED_ATTR: ['href', 'target', 'class', 'src', 'alt', 'loading']
 })
 
 const save = async (publishNow = false) => {
-  if (!form.title) { alert('请填写标题'); return }
-  if (!form.slug)  { alert('请填写 slug'); return }
-  if (!form.categoryId) { alert('请选择分类'); return }
+  // 2026-06-16 改造：alert → $toast
+  if (!form.title) { $toast.warning('请填写标题'); return }
+  if (!form.slug)  { $toast.warning('请填写 slug'); return }
+  if (!form.categoryId) { $toast.warning('请选择分类'); return }
   saving.value = true
   saveStatus.value = 'saving'
   try {
@@ -203,7 +378,7 @@ const save = async (publishNow = false) => {
     saveStatus.value = 'saved'
     setTimeout(() => saveStatus.value = 'idle', 2000)
   } catch (e: any) {
-    alert('保存失败：' + (e?.data?.message || e?.message))
+    $toast.error('保存失败：' + (e?.data?.message || e?.message))
     saveStatus.value = 'idle'
   } finally {
     saving.value = false
@@ -211,7 +386,8 @@ const save = async (publishNow = false) => {
 }
 
 const handlePreview = () => {
-  if (!form.slug) { alert('请先保存以生成 slug'); return }
+  // 2026-06-16 改造：alert → $toast
+  if (!form.slug) { $toast.warning('请先保存以生成 slug'); return }
   window.open(`/post/${form.slug}`, '_blank')
 }
 
@@ -281,6 +457,15 @@ onMounted(async () => {
         </div>
 
         <div class="editor-toolbar">
+          <!-- 2026-06-15 新增：markdown 编辑器本地图片上传 hidden input -->
+          <input
+            ref="mdImageInput"
+            type="file"
+            accept="image/*"
+            multiple
+            style="display: none;"
+            @change="handleMdImageFileChange"
+          />
           <button class="editor-tool" type="button" title="二级标题" @click="wrapLine('## ')"><strong style="font-size:13px;">H2</strong></button>
           <button class="editor-tool" type="button" title="三级标题" @click="wrapLine('### ')"><strong style="font-size:12px;">H3</strong></button>
           <span class="editor-tool divider"></span>
@@ -291,7 +476,7 @@ onMounted(async () => {
           <button class="editor-tool" type="button" title="链接" @click="insertMarkdown('[', '](https://)', '链接文字')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
           </button>
-          <button class="editor-tool" type="button" title="图片（粘贴 URL）" @click="insertImagePrompt">
+          <button class="editor-tool" type="button" title="图片（本地上传 / 也可粘贴图片到编辑器 / 拖拽图片）" @click="insertImagePrompt">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
           </button>
           <button class="editor-tool" type="button" title="引用" @click="wrapLine('> ')">
@@ -309,6 +494,13 @@ onMounted(async () => {
           </button>
           <span class="editor-tool divider"></span>
           <div class="editor-toolbar-right">
+            <!-- 2026-06-15 新增：图片上传进度提示（当 uploadingImages 有值时显示） -->
+            <span v-if="Object.keys(uploadingImages).length" class="upload-progress" style="font-size: 11px; color: var(--accent, #c97b3f); margin-right: 8px;">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align: -1px; animation: spin 1s linear infinite;">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+              </svg>
+              {{ Object.keys(uploadingImages).length }} 张图片上传中…
+            </span>
             <span class="word-count">{{ wordCount.toLocaleString() }} 字 · {{ readTime }} 分钟阅读</span>
           </div>
         </div>
@@ -316,7 +508,11 @@ onMounted(async () => {
         <div class="editor-split">
           <div class="editor-pane editor-source">
             <span class="editor-pane-label">MARKDOWN</span>
-            <textarea ref="textareaRef" v-model="form.contentMd" class="editor-textarea" placeholder="开始用 Markdown 写作…"></textarea>
+            <textarea ref="textareaRef" v-model="form.contentMd" class="editor-textarea"
+              placeholder="开始用 Markdown 写作…（可直接 Ctrl/Cmd+V 粘贴图片 / 拖拽图片到此处）"
+              @paste="handleEditorPaste"
+              @drop="handleEditorDrop"
+              @dragover="handleEditorDragOver"></textarea>
           </div>
           <div class="editor-pane">
             <span class="editor-pane-label">PREVIEW</span>

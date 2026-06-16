@@ -3,6 +3,8 @@ definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
 const router = useRouter()
 const { get, del, put } = useAdminApi()
+const $toast = useToast()
+const $dialog = useDialog()
 
 const articles = ref<any[]>([])
 const total = ref(0)
@@ -76,15 +78,23 @@ const handleSearch = () => { page.value = 1; load() }
 const handleStatusFilter = () => { page.value = 1; load() }
 // 2026-06-13 修复（BUG-048）：三个 handler 补 try/catch，token 过期/设备吊销/网络瞬断
 // 时能给用户看到错误提示，而不是静默失败。
+// 2026-06-16 改造：confirm → $dialog.confirm，alert → $toast
 const handleDelete = async (a: any) => {
-  if (!confirm(`确认删除「${a.title}」？`)) return
+  const { confirmed } = await $dialog.confirm({
+    title: '删除文章',
+    message: `确认删除「${a.title}」？此操作不可撤销。`,
+    confirmText: '删除',
+    danger: true
+  })
+  if (!confirmed) return
   try {
     await del(`/articles/${a.id}`)
+    $toast.success('已删除')
     selected.value = selected.value.filter(id => id !== a.id)
     load()
     loadStats()
   } catch (e: any) {
-    alert('删除失败：' + (e?.data?.message || e?.message || '未知错误'))
+    $toast.error('删除失败：' + (e?.data?.message || e?.message || '未知错误'))
   }
 }
 const handleEdit = (a: any) => router.push(`/admin/edit?id=${a.id}`)
@@ -99,12 +109,20 @@ const toggleAll = () => {
 }
 
 const handleBulkDelete = async () => {
-  if (!confirm(`确认删除选中的 ${selected.value.length} 篇文章？`)) return
+  const { confirmed } = await $dialog.confirm({
+    title: '批量删除文章',
+    message: `确认删除选中的 ${selected.value.length} 篇文章？此操作不可撤销。`,
+    confirmText: '删除',
+    danger: true
+  })
+  if (!confirmed) return
   // 并行 + 单条 try，避免一个失败导致整个 Promise.all reject
   const results = await Promise.allSettled(selected.value.map(id => del(`/articles/${id}`)))
   const failed = results.filter(r => r.status === 'rejected').length
   if (failed > 0) {
-    alert(`批量删除完成：${selected.value.length - failed} 成功，${failed} 失败`)
+    $toast.warning(`批量删除完成：${selected.value.length - failed} 成功，${failed} 失败`)
+  } else {
+    $toast.success(`已删除 ${selected.value.length} 篇`)
   }
   selected.value = []
   load()
@@ -115,7 +133,9 @@ const handleBulkPublish = async () => {
   const results = await Promise.allSettled(selected.value.map(id => put(`/articles/${id}`, { status: 1 })))
   const failed = results.filter(r => r.status === 'rejected').length
   if (failed > 0) {
-    alert(`批量发布完成：${selected.value.length - failed} 成功，${failed} 失败`)
+    $toast.warning(`批量发布完成：${selected.value.length - failed} 成功，${failed} 失败`)
+  } else {
+    $toast.success(`已发布 ${selected.value.length} 篇`)
   }
   selected.value = []
   load()

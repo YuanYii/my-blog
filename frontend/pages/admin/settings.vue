@@ -4,6 +4,7 @@ definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 const { get, put, upload } = useAdminApi()
 // 2026-06-12 新增：拿到 updateUser，profile 保存成功后立即把顶栏的 nickname/avatar 同步刷新
 const { updateUser } = useAuth()
+const $toast = useToast()
 const avatarUploading = ref(false)
 const avatarInput = ref<HTMLInputElement | null>(null)
 
@@ -20,7 +21,7 @@ const handleAvatarChange = async (e: Event) => {
       profile.avatar = res.data.url
     }
   } catch (err: any) {
-    alert('上传失败：' + (err?.data?.message || err?.message))
+    $toast.error('上传失败：' + (err?.data?.message || err?.message))
   } finally {
     avatarUploading.value = false
     input.value = ''
@@ -33,6 +34,7 @@ const message = ref('')
 
 const tabs = [
   { id: 'profile',     label: '个人资料', icon: '👤' },
+  { id: 'password',    label: '修改密码', icon: '🔒' },
   { id: 'blog',        label: '站点信息', icon: '✍️' },
   { id: 'techstack',   label: '技术栈',   icon: '🧰' },
   { id: 'experience',  label: '个人经历', icon: '📜' },
@@ -51,6 +53,12 @@ const prefs = reactive({ language: 'zh-CN', timezone: 'Asia/Shanghai', density: 
 const techstack = reactive<{ groups: { label: string; items: { name: string; dim: boolean }[] }[] }>({ groups: [] })
 const experience = reactive<{ items: { time: string; title: string; desc: string }[] }>({ items: [] })
 const advanced = reactive({ enableCache: true, enableRss: true, enableSearch: true, commentModeration: true })
+
+// 2026-06-15 新增：修改当前用户密码（独立状态，独立保存逻辑——不走 /admin/settings/* 通用 save）
+const pwd = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const pwdSaving = ref(false)
+const pwdMessage = ref('')  // 独立提示，避免与 settings 的 message 冲突
+const pwdSuccess = ref(false)
 
 const loadAll = async () => {
   try {
@@ -104,6 +112,36 @@ const save = async () => {
     message.value = '保存失败：' + (e?.data?.message || e?.message)
   } finally {
     saving.value = false
+  }
+}
+
+// 2026-06-15 新增：改密 handler
+// 关键设计：先客户端预校验再发请求；后端再用 BCrypt 二次校验——双层防护
+const changePassword = async () => {
+  pwdMessage.value = ''
+  pwdSuccess.value = false
+  if (!pwd.oldPassword) { pwdMessage.value = '请输入当前密码'; return }
+  if (!pwd.newPassword)  { pwdMessage.value = '请输入新密码'; return }
+  if (pwd.newPassword.length < 8) { pwdMessage.value = '新密码至少 8 位'; return }
+  if (pwd.newPassword !== pwd.confirmPassword) { pwdMessage.value = '新密码两次输入不一致'; return }
+  if (pwd.newPassword === pwd.oldPassword) { pwdMessage.value = '新密码不能与当前密码相同'; return }
+  pwdSaving.value = true
+  try {
+    await put('/auth/me/password', {
+      oldPassword: pwd.oldPassword,
+      newPassword: pwd.newPassword,
+      confirmPassword: pwd.confirmPassword
+    })
+    pwdSuccess.value = true
+    pwdMessage.value = '密码已更新 ✓ 当前会话保持，无需重新登录'
+    // 清空输入框（安全考虑：新密码不能停留在 DOM）
+    pwd.oldPassword = ''
+    pwd.newPassword = ''
+    pwd.confirmPassword = ''
+  } catch (e: any) {
+    pwdMessage.value = '改密失败：' + (e?.data?.message || e?.message)
+  } finally {
+    pwdSaving.value = false
   }
 }
 
@@ -188,6 +226,37 @@ onMounted(loadAll)
               <input v-model="profile.avatar" class="form-control" />
             </div>
           </div>
+        </div>
+
+        <!-- 2026-06-15 新增：修改密码（独立表单，不走 /admin/settings/* save） -->
+        <div v-else-if="activeTab === 'password'" class="card" style="padding: 24px;">
+          <div class="sidebar-card-title" style="margin-bottom: 6px;">修改密码</div>
+          <p style="color: var(--muted); font-size: 13px; margin-bottom: 18px;">
+            改密后当前会话保持有效，无需重新登录。建议新密码至少 8 位，包含字母与数字。
+          </p>
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="form-label">当前密码</label>
+            <input v-model="pwd.oldPassword" type="password" class="form-control" placeholder="请输入当前密码" autocomplete="current-password" />
+          </div>
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="form-label">新密码</label>
+            <input v-model="pwd.newPassword" type="password" class="form-control" placeholder="至少 8 位" autocomplete="new-password" />
+          </div>
+          <div class="form-group" style="margin-bottom: 18px;">
+            <label class="form-label">确认新密码</label>
+            <input v-model="pwd.confirmPassword" type="password" class="form-control" placeholder="再次输入新密码" autocomplete="new-password" @keyup.enter="changePassword" />
+          </div>
+          <div v-if="pwdMessage" :style="{
+            padding: '8px 12px',
+            borderRadius: '8px',
+            fontSize: '13px',
+            marginBottom: '12px',
+            background: pwdSuccess ? 'rgba(22, 163, 74, 0.1)' : 'rgba(194, 65, 12, 0.1)',
+            color: pwdSuccess ? 'var(--success)' : 'var(--danger)'
+          }">{{ pwdMessage }}</div>
+          <button @click="changePassword" :disabled="pwdSaving" class="btn btn-primary">
+            {{ pwdSaving ? '更新中…' : '更新密码' }}
+          </button>
         </div>
 
         <!-- 站点信息 -->
@@ -413,8 +482,8 @@ onMounted(loadAll)
           </div>
         </div>
 
-        <!-- 操作条 -->
-        <div style="display: flex; align-items: center; gap: 12px; margin-top: 16px;">
+        <!-- 操作条（password tab 独立处理——卡片内有自己的"更新密码"按钮，不显示通用"保存设置"避免误导） -->
+        <div v-if="activeTab !== 'password'" style="display: flex; align-items: center; gap: 12px; margin-top: 16px;">
           <button @click="save" :disabled="saving" class="btn btn-primary">
             {{ saving ? '保存中…' : '保存设置' }}
           </button>

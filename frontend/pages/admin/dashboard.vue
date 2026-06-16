@@ -9,6 +9,10 @@ const loading = ref(true)
 const kpi = ref<any>({})
 const categoryDist = ref<any[]>([])
 const publishTrend = ref<any[]>([])
+// v2.5.0 新增：真实访问数据
+const visitTrend = ref<any[]>([])      // 近 30 天每日 PV + UV
+const visitTrend7 = ref<any[]>([])     // 近 7 天（sparkline 用）
+const topArticles = ref<any[]>([])     // 热门文章 TOP 10
 
 // 时间感知
 const now = new Date()
@@ -18,10 +22,6 @@ const greetingEmoji = hour < 6 ? '🌙' : hour < 11 ? '☀️' : hour < 13 ? '�
 const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
 const dateStr = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日 · ${weekdays[now.getDay()]} · ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
 
-// 模拟数据（后端暂未提供）
-const todayPV = ref(0)
-const uvData = ref<number[]>([])
-
 const loadAll = async () => {
   loading.value = true
   try {
@@ -29,12 +29,35 @@ const loadAll = async () => {
     kpi.value = res.data?.kpi || {}
     categoryDist.value = res.data?.categoryDistribution || []
     publishTrend.value = res.data?.publishTrend || []
+    // v2.5.0
+    visitTrend.value = res.data?.visitTrend || []
+    visitTrend7.value = res.data?.visitTrend7 || []
+    topArticles.value = res.data?.topArticles || []
   } catch {
     kpi.value = {}
   } finally {
     loading.value = false
   }
   await refreshMeta()
+}
+
+// 补齐缺失日期的辅助（用于 sparkline —— 缺数据日填 0）
+const fillDays = (data: any[], days: number, key = 'pv'): number[] => {
+  const map = new Map<string, number>()
+  for (const d of data) {
+    // d.date 形如 '2026-06-16' 或 Date 对象
+    const ds = typeof d.date === 'string' ? d.date.substring(0, 10) : new Date(d.date).toISOString().substring(0, 10)
+    map.set(ds, Number(d[key]) || 0)
+  }
+  const out: number[] = []
+  const today = new Date()
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(today.getDate() - i)
+    const ds = d.toISOString().substring(0, 10)
+    out.push(map.get(ds) || 0)
+  }
+  return out
 }
 
 // 待办：从 meta 派生
@@ -119,20 +142,31 @@ const renderCharts = () => {
   const c = getThemeColors()
   const rand = (min: number, max: number) => Math.random() * (max - min) + min
 
-  // 趋势图
+  // 趋势图（v2.5.0 真实数据：来自 page_view.dailyStats）
   const days = activeTab.value === '7' ? 7 : activeTab.value === '30' ? 30 : activeTab.value === '90' ? 90 : 365
-  const trendData = Array.from({ length: days }, () => Math.floor(rand(800, 1500)))
+  const source = days <= 7 ? visitTrend7.value : visitTrend.value
+  // 缺数据日补 0
+  const pvSeries = fillDays(source, days, 'pv')
+  const uvSeries = fillDays(source, days, 'uv')
+  // X 轴 label：'MM-DD'
+  const xLabels: string[] = []
+  const today = new Date()
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(today.getDate() - i)
+    xLabels.push(`${d.getMonth() + 1}/${d.getDate()}`)
+  }
   if (trendChart) trendChart.destroy()
   const trendCtx = (document.getElementById('chart-trend') as any)?.getContext('2d')
   if (trendCtx) {
     trendChart = new Chart(trendCtx, {
       type: 'line',
       data: {
-        labels: Array.from({ length: days }, (_, i) => `${i + 1}`),
+        labels: xLabels,
         datasets: [
           {
             label: 'PV',
-            data: trendData,
+            data: pvSeries,
             borderColor: c.primary,
             backgroundColor: 'rgba(47, 111, 94, 0.10)',
             borderWidth: 2,
@@ -143,7 +177,7 @@ const renderCharts = () => {
           },
           {
             label: 'UV',
-            data: trendData.map(d => Math.floor(d * 0.4)),
+            data: uvSeries,
             borderColor: c.accent,
             backgroundColor: 'transparent',
             borderWidth: 1.5,
@@ -200,14 +234,18 @@ const renderCharts = () => {
     })
   }
 
-  // 4 个 sparkline
+  // 4 个 sparkline（v2.5.0：除"评论"用真实数据外，其他尽量用真实值或空数组）
   sparkCharts.forEach(c => c.destroy())
   sparkCharts = []
   const sparkData: Record<string, number[]> = {
-    'spark-pv': Array.from({ length: 14 }, () => rand(800, 1400)),
-    'spark-posts': [1, 1, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-    'spark-comments': [12, 8, 15, 6, 9, 11, 14, 8, 10, 7, 12, 8, 6, 8],
-    'spark-words': Array.from({ length: 14 }, () => rand(200, 800))
+    // 今日 PV sparkline：近 7 天每日 PV
+    'spark-pv': fillDays(visitTrend7.value, 7, 'pv'),
+    // 发布数 sparkline：近 7 天每日发布数
+    'spark-posts': fillDays(publishTrend.value, 7, 'cnt'),
+    // 评论数 sparkline：原 mock 保留（page_view 不含评论；后续可加 comment_view 单独表）
+    'spark-comments': [12, 8, 15, 6, 9, 11, 14, 8, 10, 7, 12, 8, 6, 8].slice(0, 7),
+    // "累计阅读"sparkline 用近 7 天 PV 总和
+    'spark-words': fillDays(visitTrend7.value, 7, 'pv')
   }
   const sparkColors: Record<string, string> = {
     'spark-pv': c.primary,
@@ -284,12 +322,12 @@ watch(activeTab, () => {
       <div class="kpi-card">
         <div class="kpi-card-label">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-          今日 PV
+          今日 PV / UV
         </div>
-        <div class="kpi-card-value">{{ todayPV.toLocaleString() || '—' }}</div>
+        <!-- v2.5.0：真实数据（kpi.todayPV / todayUV） -->
+        <div class="kpi-card-value">{{ (kpi.todayPV || 0).toLocaleString() }}</div>
         <div class="kpi-card-delta">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
-          较昨日 +12.4%
+          独立访客 <strong>{{ kpi.todayUV || 0 }}</strong>
         </div>
         <canvas class="kpi-card-spark" id="spark-pv"></canvas>
       </div>

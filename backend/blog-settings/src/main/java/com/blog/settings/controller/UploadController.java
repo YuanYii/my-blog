@@ -23,11 +23,11 @@ import java.util.UUID;
  * 但缺 POST 上传端点 → /api/v1/admin/uploads 一直 404。
  *
  * 设计：
- * - 路径：`${blog.upload.local.dir}/yyyy/MM/yyyyMMdd-{uuid}.ext`
- * - 大小：单文件 ≤ 5MB（业务上限；基础设施 10MB 见 application.yml multipart）
- * - 校验：MIME 必须以 image/ 开头，或 application/pdf 等允许类型
- * - 响应：返 `{url, name, size}`，url 是绝对路径（含 origin），前端直接用 img src
- *   ——避免 dev 模式 nuxt 3000 抢 /uploads/** 路由（dev SSR proxy 会触发子进程 socket 异常）
+*  - 路径：`${blog.upload.local.dir}/yyyy/MM/yyyyMMdd-{uuid}.ext`
+ *  - 大小：单文件 ≤ 5MB（业务上限；基础设施 10MB 见 application.yml multipart）
+ *  - 校验：MIME 必须以 image/ 开头，或 application/pdf 等允许类型
+ *  - 响应：返 `{url, name, size}`，url 是绝对路径（含 origin + contextPath），
+ *   前端直接用 img src 即可；不要手动拼前缀。
  */
 @RestController
 @RequestMapping("/admin/uploads")
@@ -81,11 +81,17 @@ public class UploadController {
         File target = new File(dir, name);
         file.transferTo(target);
 
-        // 绝对 URL：origin + /uploads/xxx
-        // dev 模式前端跑在 :3000 直接 GET 后端 :8080 的 /uploads/... 拿图片
-        // （dev 不走 nuxt proxy 避开 §AGENTS 历史 SSR 子进程 socket 异常）
+        // 绝对 URL：origin + contextPath + /uploads/xxx
+        // 注意：application.yml 里 server.servlet.context-path=/api/v1，
+        // Spring MVC 的 ResourceHandler（StaticResourceConfig）注册在 servlet 根 URL，
+        // 即 GET 必须带 /api/v1 前缀才能命中 /uploads/** → file:xxx。
+        // 如果只拼 /uploads/xxx，前端 img src 直 GET 会 404（这就是 2026-06-15 头像上传"假失败"的根因）。
+        // ——request.getContextPath() 在 prod 会返回 "/api/v1"，dev 同理；
+        //   前端无论跑 3000（同源反向代理）或直接跨域访问，都拿得到正确 URL。
         String origin = request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort();
-        String url = origin + "/uploads/" + yearMonth + "/" + name;
+        String contextPath = request.getContextPath();  // 已是 "/api/v1"，去掉结尾 / 也安全
+        if (contextPath.endsWith("/")) contextPath = contextPath.substring(0, contextPath.length() - 1);
+        String url = origin + contextPath + "/uploads/" + yearMonth + "/" + name;
         Map<String, Object> data = new HashMap<>();
         data.put("url", url);
         data.put("name", name);

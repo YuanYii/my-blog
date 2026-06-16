@@ -15,6 +15,11 @@ export const usePublicApi = () => {
       ...(options.headers || {})
     }
     // 公开 API：故意不带 Authorization / X-Device-Id
+    // 2026-06-16 v2.5.0 新增：自动带 X-Visitor-Id（公开页访客标识，用于按天去重 page_view）
+    if (import.meta.client) {
+      const { visitorId } = useVisitor()
+      if (visitorId.value) headers['X-Visitor-Id'] = visitorId.value
+    }
     return $fetch<T>(`${base}${path}`, {
       ...options,
       headers,

@@ -3,10 +3,12 @@ definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
 const { get, put, del } = useAdminApi()
 const { deviceId: myDeviceId } = useDevice()
+const $toast = useToast()
+const $dialog = useDialog()
 
 const devices = ref<any[]>([])
 const loading = ref(false)
-const message = ref('')
+// 2026-06-16 改造：删掉 message ref（已统一改用 $toast）
 
 const load = async () => {
   loading.value = true
@@ -14,61 +16,85 @@ const load = async () => {
     const res = await get<any>('/admin/devices')
     devices.value = res.data || []
   } catch (e: any) {
-    message.value = '加载失败：' + (e?.data?.message || e?.message)
+    $toast.error('加载失败：' + (e?.data?.message || e?.message))
   } finally {
     loading.value = false
   }
 }
 
 const approve = async (id: number) => {
-  if (!confirm('批准后该设备将可以登录管理后台，确定吗？')) return
+  const { confirmed } = await $dialog.confirm({
+    title: '批准设备',
+    message: '批准后该设备将可以登录管理后台，确定吗？',
+    confirmText: '批准'
+  })
+  if (!confirmed) return
   try {
     await put(`/admin/devices/${id}/approve`, { approvedBy: myDeviceId.value })
-    message.value = '已批准 ✓'
+    $toast.success('已批准')
     await load()
   } catch (e: any) {
-    message.value = '批准失败：' + (e?.data?.message || e?.message)
+    $toast.error('批准失败：' + (e?.data?.message || e?.message))
   }
-  setTimeout(() => message.value = '', 2000)
 }
 
 const revoke = async (id: number, name: string) => {
-  if (!confirm(`确定吊销「${name}」吗？该设备将无法再登录。`)) return
+  const { confirmed } = await $dialog.confirm({
+    title: '吊销设备',
+    message: `确定吊销「${name}」吗？该设备将无法再登录。`,
+    confirmText: '吊销',
+    danger: true
+  })
+  if (!confirmed) return
   try {
     await put(`/admin/devices/${id}/revoke`)
-    message.value = '已吊销 ✓'
+    $toast.success('已吊销')
     await load()
   } catch (e: any) {
     // 2003 DEVICE_SELF_REVOKE_FORBIDDEN：后端兜底防自吊销
     // 前端 UI 已经隐藏自己设备的吊销按钮，这是双层防护的兜底
     const code = e?.data?.code
     if (code === 2003) {
-      message.value = '不能吊销当前登录设备（请在另一台已授权设备上操作）'
+      $toast.warning('不能吊销当前登录设备（请在另一台已授权设备上操作）')
     } else {
-      message.value = '吊销失败：' + (e?.data?.message || e?.message)
+      $toast.error('吊销失败：' + (e?.data?.message || e?.message))
     }
   }
-  setTimeout(() => message.value = '', 2000)
 }
 
 // 2026-06-13 新增：物理删除设备记录（用户要求"支持删除当前记录"）
 // - 跟 revoke 区别：revoke 软删（改 status=revoked，留底），delete 真抹掉
-// - 允许删自己当前设备（业务放开；防误操作靠 confirm 二次确认）
-// - 自删后下次请求会 401 → useAdminApi onResponseError 跳 login 页
+// 2026-06-16 修正（BUG-077）：原"允许删自己当前设备"是放开策略，用户明确反对。
+// 现在禁止自删——UI 禁用按钮 + 后端兜底（与 revoke 一致双层防护）。
+// 想解绑自己当前设备：在另一台已授权设备上点「吊销」或「删除」即可。
+// 2026-06-16 再次改造：confirm → $dialog.confirm，alert → $toast
 const remove = async (d: any) => {
   const isSelf = d.deviceId === myDeviceId.value
-  const tip = isSelf
-    ? `你正在删除「${d.deviceName}」(当前设备)\n\n删除后下次操作会强制重新登录，确认吗？`
-    : `确定删除「${d.deviceName}」的设备记录？此操作不可撤销（与吊销不同，记录会被彻底抹掉）。`
-  if (!confirm(tip)) return
+  // 防御性双层校验：UI 已经禁用自删按钮，但万一 bypass 也要在请求前拦住
+  if (isSelf) {
+    $toast.warning('不能删除当前登录设备（请在另一台已授权设备上操作）')
+    return
+  }
+  const { confirmed } = await $dialog.confirm({
+    title: '删除设备记录',
+    message: `确定删除「${d.deviceName}」的设备记录？此操作不可撤销（与吊销不同，记录会被彻底抹掉）。`,
+    confirmText: '删除',
+    danger: true
+  })
+  if (!confirmed) return
   try {
     await del(`/admin/devices/${d.id}`)
-    message.value = isSelf ? '已删除当前设备，请重新登录' : '已删除 ✓'
+    $toast.success('已删除')
     await load()
   } catch (e: any) {
-    message.value = '删除失败：' + (e?.data?.message || e?.message)
+    // 2003 DEVICE_SELF_REVOKE_FORBIDDEN：后端兜底（删除沿用同一错误码）
+    const code = e?.data?.code
+    if (code === 2003) {
+      $toast.warning('不能删除当前登录设备（请在另一台已授权设备上操作）')
+    } else {
+      $toast.error('删除失败：' + (e?.data?.message || e?.message))
+    }
   }
-  setTimeout(() => message.value = '', 2000)
 }
 
 const statusLabel = (s: string) => {
@@ -91,15 +117,6 @@ onMounted(load)
         <p>管理可以登录管理后台的设备。只在已授权的设备上登录，未授权的设备需要你在已授权设备上手动批准。</p>
       </div>
     </div>
-
-    <div v-if="message" :style="{
-      padding: '10px 14px',
-      borderRadius: '10px',
-      marginBottom: '14px',
-      fontSize: '13px',
-      background: message.includes('失败') ? 'rgba(194, 65, 12, 0.1)' : 'rgba(22, 163, 74, 0.1)',
-      color: message.includes('失败') ? 'var(--danger)' : 'var(--success)'
-    }">{{ message }}</div>
 
     <div v-if="loading" style="padding: 40px; text-align: center; color: var(--muted);">加载中…</div>
 
@@ -165,7 +182,9 @@ onMounted(load)
                 <button
                   @click="remove(d)"
                   class="row-action danger"
-                  title="物理删除记录（不可恢复）"
+                  :disabled="d.deviceId === myDeviceId"
+                  :title="d.deviceId === myDeviceId ? '不能删除当前登录设备（请在另一台已授权设备上操作）' : '物理删除记录（不可恢复）'"
+                  :style="d.deviceId === myDeviceId ? { opacity: 0.4, cursor: 'not-allowed' } : null"
                   aria-label="删除"
                 >
                   <!-- 垃圾桶 icon —— 跟"吊销"的 × 区分：吊销是禁止符，删除是物理移除 -->
@@ -184,7 +203,7 @@ onMounted(load)
       ② 你在已授权设备的「设备管理」页看到待授权设备 → 点「批准」<br>
       ③ 对方重新登录即可<br>
       ④ 发现异常设备立即点「吊销」——该设备会被强制退出且无法再登录（软删，记录仍在 status=revoked）<br>
-      ⑤ 想彻底抹掉记录（含当前自己）→ 点「🗑」图标——物理删除，不可恢复
+      ⑤ 想彻底抹掉记录（不含当前自己）→ 点「🗑」图标——物理删除，不可恢复。当前登录设备被禁用删除/吊销按钮，需在另一台已授权设备上操作
     </div>
   </div>
 </template>

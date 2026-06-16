@@ -31,7 +31,8 @@ public enum ResultCode {
     // REVOKED: 当前设备已被禁止登录
     DEVICE_PENDING(2001, "设备未授权，请联系管理员"),
     DEVICE_REVOKED(2002, "当前设备已被禁止登录"),
-    DEVICE_SELF_REVOKE_FORBIDDEN(2003, "不能吊销当前登录设备");
+    // 2026-06-16 修订：消息文本同时覆盖"吊销/删除"两种自我解绑场景——见 DeviceService.revoke / delete
+    DEVICE_SELF_REVOKE_FORBIDDEN(2003, "不能吊销/删除当前登录设备");
 
     private final int code;
     private final String message;

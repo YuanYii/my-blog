@@ -1639,3 +1639,7 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
 @media (max-width: 900px) {
   .editor-grid { grid-template-columns: 1fr; }
 }
+
+/* 2026-06-15 新增：markdown 编辑器图片上传进度 spinner 动画 */
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.upload-progress { display: inline-flex; align-items: center; gap: 4px; }

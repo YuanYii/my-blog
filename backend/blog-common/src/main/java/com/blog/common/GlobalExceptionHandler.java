@@ -85,6 +85,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.ok(Result.error(400, "缺少文件字段: " + e.getRequestPartName()));
     }
 
+    /** 2026-06-15 修复（BUG-NEW-5）：请求不带 multipart 头（如 form-data 缺 boundary）
+     *  Spring 抛 MultipartException "Current request is not a multipart request" →
+     *  之前进 @ExceptionHandler 兜底返 500 不友好；补 400 提示。
+     *  触发场景：客户端用 fetch 但没设 Content-Type: multipart/form-data，或 curl 没 -F。
+     */
+    @ExceptionHandler(org.springframework.web.multipart.MultipartException.class)
+    public ResponseEntity<Result<Void>> handleMultipart(org.springframework.web.multipart.MultipartException e) {
+        log.warn("非 multipart 请求: {}", e.getMessage());
+        return ResponseEntity.ok(Result.error(400, "请求格式错误：请用 multipart/form-data 上传文件"));
+    }
+
     /** 2026-06-12 新增：缺少 @RequestParam 必填参数
      *  Spring 抛 MissingServletRequestParameterException，避免 500
      */

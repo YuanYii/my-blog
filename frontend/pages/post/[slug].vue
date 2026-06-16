@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import DOMPurify from 'dompurify'
 
+// 2026-06-13 修复（auto_fix BUG-003）：
+// 原 safeMarkdown 在 SSR 阶段调 DOMPurify.sanitize 抛 `default.sanitize is not a function`
+// → 所有 /post/* 500。修复：safeMarkdown 内 import.meta.client 守卫，SSR 走 ssrSafeHtml 兜底。
+
 const route = useRoute()
 const { get, post } = usePublicApi()
 const slug = route.params.slug as string
@@ -96,6 +100,11 @@ const formatDateTime = (d: string) => {
 }
 
 // 简易 markdown 渲染（生产用 marked/remark，这里 MVP 走最简版）
+// 2026-06-16 修复（BUG-078）：原实现只处理普通链接 `[text](url)`，没处理图片 `![alt](url)`。
+// 后果：文章详情页把 `![alt](url)` 显示成 `<p>!<a href="url">alt</a></p>`——"图片链接"而非图片。
+// 同样的 bug 之前在 admin/edit.vue 修过（2026-06-15 v2.2.0 §12.10），
+// 但 post/[slug].vue 漏改——admin 编辑器预览正确 ≠ 详情页正确，两边 markdown 渲染器独立。
+// 修法：与 edit.vue 保持完全一致——在普通链接正则之前先匹配图片语法。
 const renderMarkdown = (md: string) => {
   if (!md) return ''
   let html = md
@@ -108,6 +117,10 @@ const renderMarkdown = (md: string) => {
   // 粗体/斜体
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>')
+  // 图片语法：必须在普通链接前匹配（图片也是 ![](url) 形式，正则覆盖普通链接的话会先匹配错）
+  // alt 文本里允许空：![](url)，url 允许双引号包起来：![alt]( "url" )
+  html = html.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
+    '<img src="$2" alt="$1" loading="lazy" />')
   // 链接
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
   // 引用
@@ -121,16 +134,45 @@ const renderMarkdown = (md: string) => {
 }
 
 /**
- * 安全渲染 markdown：
- * - 先 renderMarkdown 转成 HTML 字符串
- * - 再 DOMPurify.sanitize 过滤掉危险节点/属性
+ * SSR 阶段的安全 HTML（auto_fix BUG-003）：
+ * - DOMPurify 在 SSR 不可用（默认导出不是函数），会抛 500
+ * - 替代方案：仅过滤危险协议（javascript: / data: / vbscript:），
+ *   再用一个简单的白名单把 <script> / <iframe> / on* 属性剥离。
+ * - 不依赖 DOMPurify，SSR 安全可用。
+ */
+const ssrSafeHtml = (md: string): string => {
+  if (!md) return ''
+  let html = renderMarkdown(md)
+  // 1. 过滤危险协议
+  html = html.replace(/(href|src)=(["'])\s*(javascript|data|vbscript):/gi, '$1=$2#')
+  // 2. 去掉 <script> / <iframe> / <object> / <embed> 整段
+  html = html.replace(/<(script|iframe|object|embed|style|link|meta)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+  html = html.replace(/<(script|iframe|object|embed|style|link|meta)\b[^>]*\/?>/gi, '')
+  // 3. 去掉 on* 事件属性
+  html = html.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+  return html
+}
+
+/**
+ * 安全渲染 markdown（auto_fix BUG-003 修复）：
+ * - SSR 阶段：DOMPurify 默认导出不可用会抛 500 → 走 ssrSafeHtml 兜底（协议 + 标签过滤）
+ * - Client 阶段：DOMPurify.sanitize 严格白名单（防御深度）
  * 防止用户文章里写 script 标签或 onerror 属性等触发 XSS
  */
-const safeMarkdown = (md: string) => DOMPurify.sanitize(renderMarkdown(md), {
-  ALLOWED_TAGS: ['p', 'h1', 'h2', 'h3', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'br', 'hr'],
-  ALLOWED_ATTR: ['href', 'target', 'class'],
-  ALLOW_DATA_ATTR: false
-})
+const safeMarkdown = (md: string): string => {
+  if (import.meta.client) {
+    // 客户端：DOMPurify 已就绪（顶层 import 在 client bundle 正常工作）
+    return DOMPurify.sanitize(renderMarkdown(md), {
+      // 2026-06-16 修复（BUG-078）：加 img 标签——之前白名单漏了，图片 markdown 渲染出 <img> 也被净化掉
+      ALLOWED_TAGS: ['p', 'h1', 'h2', 'h3', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'br', 'hr', 'img'],
+      // 2026-06-16 修复（BUG-078）：加 src/alt/loading（与 edit.vue 一致）
+      ALLOWED_ATTR: ['href', 'target', 'class', 'src', 'alt', 'loading'],
+      ALLOW_DATA_ATTR: false
+    })
+  }
+  // SSR：避免 DOMPurify 不可用导致 500
+  return ssrSafeHtml(md)
+}
 
 onMounted(async () => {
   // 评论 + 相关文章是依赖 article.id 的子加载，setup 顶层 useAsyncData 拿不到 dynamic param

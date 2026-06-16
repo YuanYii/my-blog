@@ -66,7 +66,16 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         // 明确 admin → 必须鉴权
         if (hit != null && "admin".equals(hit.getType())) return false;
 
-        // 未命中 → 防御性默认放行（注释保持原意：新增接口不要误伤）
+        // 2026-06-13 修复（auto_fix BUG-001 + BUG-002 联合兜底）：
+        // 即使最长前缀命中了 public（如 `/api/v1/articles`），子路径含以下任一特征
+        // 时强制走鉴权，防止"父前缀 public 把 admin 子路径一起放行"：
+        //   - `/admin/`：admin 子空间（/articles/admin/all、/comments/admin、/admin/uploads 等）
+        //   - `/id/{数字}`：admin 按 id 取详情（/articles/id/123）
+        //   - path 以 `/api/v1/admin/` 开头但未在白名单显式登记（如 /admin/uploads 漏登记）
+        // 这些端点都是 admin 写/读敏感数据，匿名放行属于严重安全漏洞。
+        if (isAdminSubpath(path)) return false;
+
+        // 未命中 + 非 admin 子空间 → 防御性默认放行（注释保持原意：新增接口不要误伤）
         if (hit == null) return true;
 
         // 命中 public：GET / HEAD 是读，匿名 OK
@@ -75,6 +84,23 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         // 命中 public 但是写方法：除非显式在 isPublicWriteAllowed 里授权，
         // 否则一律要求鉴权（兜底防御）
         return isPublicWriteAllowed(path, method);
+    }
+
+    /**
+     * 判定 path 是否为"应被鉴权但可能被父前缀 public 误放行"的 admin 子空间。
+     * 配合最长前缀匹配使用，作为多层防御。
+     */
+    private boolean isAdminSubpath(String path) {
+        if (path == null) return false;
+        // 1. 含 `/admin/` 子段（排除 `/admin/login` —— 那个走 isPublicWriteAllowed）
+        if (path.contains("/admin/")) return true;
+        // 2. 以 `/admin` 结尾（如 `/comments/admin`、`/articles/admin`）—— 父前缀 public 的子段
+        if (path.endsWith("/admin")) return true;
+        // 3. `/id/{纯数字}` —— admin 按 id 取详情（编辑页加载）
+        if (path.matches(".*/id/\\d+(/.*)?$")) return true;
+        // 4. `/api/v1/admin/*` 但白名单未登记（如 /admin/uploads 漏登记）
+        if (path.startsWith("/api/v1/admin/")) return true;
+        return false;
     }
 
     /**

@@ -137,6 +137,71 @@ public class AuthController {
     }
 
     /**
+     * 2026-06-15 新增：修改当前登录用户密码
+     * 路径：/auth/me/password（语义跟 /auth/me 一致——作用于"我"）
+     *
+     * 安全约束：
+     * 1. 必须带 Authorization Bearer
+     * 2. 必须传 oldPassword（防 CSRF 拿到 token 后恶意改密）
+     * 3. 新密码 ≥ 8 位（简单强度，BCrypt 自身抗暴力）
+     * 4. 新旧密码不能相同
+     * 5. 写入用 BCrypt hash（不存明文）
+     *
+     * 改密后：当前 token 仍然有效（不强制重登，admin 场景下保持会话不断；
+     * 如要"改密踢出所有设备"可在后端加 admin_device 状态翻转，本期不做）
+     */
+    @PutMapping("/me/password")
+    public Result<Void> changePassword(@RequestHeader(value = "Authorization", required = false) String auth,
+                                       @RequestBody Map<String, String> body) {
+        if (auth == null || !auth.startsWith("Bearer ")) {
+            return Result.error(ResultCode.UNAUTHORIZED);
+        }
+        Long uid;
+        try {
+            Claims claims = jwtUtil.parse(auth.substring(7));
+            uid = claims.get("uid", Long.class);
+            if (uid == null) return Result.error(ResultCode.UNAUTHORIZED);
+        } catch (Exception e) {
+            return Result.error(ResultCode.TOKEN_INVALID);
+        }
+
+        String oldPassword = body.get("oldPassword");
+        String newPassword = body.get("newPassword");
+        String confirmPassword = body.get("confirmPassword");
+        if (oldPassword == null || oldPassword.isEmpty()
+            || newPassword == null || newPassword.isEmpty()
+            || confirmPassword == null || confirmPassword.isEmpty()) {
+            return Result.error(400, "请填写当前密码、新密码、确认密码");
+        }
+        if (!newPassword.equals(confirmPassword)) {
+            return Result.error(400, "新密码两次输入不一致");
+        }
+        // 2026-06-15 修复（BUG-NEW-1/2）：
+        // 原逻辑只校验下界 8 位，没上限。1000+ 字符密码会让 BCrypt 卡死请求几秒（DoS），
+        // 且 BCrypt 实际截断 72 字节——超过 72 字节的密码会被静默截断，
+        // 错误信息也会错位（截断后 hash 失败被误报"当前密码错误"）。
+        // 业务上限 64 字符：留点余量避开 BCrypt 的 72 字节边界，UX 友好。
+        if (newPassword.length() < 8 || newPassword.length() > 64) {
+            return Result.error(400, "新密码长度须在 8-64 位之间");
+        }
+        if (newPassword.equals(oldPassword)) {
+            return Result.error(400, "新密码不能与当前密码相同");
+        }
+
+        User user = userMapper.selectById(uid);
+        if (user == null) return Result.error(ResultCode.UNAUTHORIZED);
+        // 校验旧密码（恒定时间防时序）
+        if (user.getPasswordHash() == null || user.getPasswordHash().isEmpty()
+            || !BCrypt.checkpw(oldPassword, user.getPasswordHash())) {
+            return Result.error(400, "当前密码错误");
+        }
+
+        user.setPasswordHash(BCrypt.hashpw(newPassword, BCrypt.gensalt(10)));
+        userMapper.updateById(user);
+        return Result.success();
+    }
+
+    /**
      * 是否处于登录锁定状态：1 分钟内同 IP 失败 >= LOGIN_FAIL_LIMIT 次
      * 同时清理掉过期的 entry（避免内存泄漏）
      */

@@ -2,6 +2,7 @@ package com.blog.settings.controller;
 
 import cn.hutool.crypto.digest.BCrypt;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.blog.auth.entity.User;
 import com.blog.auth.mapper.UserMapper;
 import com.blog.common.Result;
@@ -16,6 +17,7 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.File;
 import java.io.IOException;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -75,38 +77,63 @@ public class SettingsController {
     @PutMapping("/profile")
     public Result<Void> updateProfile(@RequestBody(required = false) Map<String, String> body) {
         if (body == null) return Result.error(400, "请求体不能为空");
-        User user = userMapper.selectById(1L);
-        if (user == null) return Result.error(1005, "用户不存在");
+        // 2026-06-15 修复：原实现 selectById + 字段级 setXxx + updateById(user)——
+        // MyBatis-Plus updateById 默认**全字段更新**，会把 user.password_hash 也写回数据库。
+        // 即使本次没动密码字段，只要前面有人改过密码（落库了正确 BCrypt hash），
+        // 这一步 updateById 也会把 password_hash 一并更新——看似无害，但场景一旦变成
+        //   "前端 PUT /admin/settings/profile 时 body 里包含 password_hash 字段（被覆盖）"
+        // 就会把 hash 改成错的旧值，导致后续登录失败。
+        //
+        // 修法：改用 UpdateWrapper + set("col", val) 严格只更新 body 里出现的列，
+        // 不依赖实体的 select-then-update 模式，杜绝 password_hash 等敏感字段被波及。
+        User exist = userMapper.selectById(1L);
+        if (exist == null) return Result.error(1005, "用户不存在");
+
+        UpdateWrapper<User> uw = new UpdateWrapper<>();
+        uw.eq("id", 1L);
+        boolean changed = false;
+
         if (body.containsKey("nickname")) {
             String nickname = body.get("nickname");
             if (nickname != null && nickname.length() > 50) {
                 return Result.error(400, "昵称长度不能超过 50 字符");
             }
-            user.setNickname(nickname);
+            uw.set("nickname", nickname);
+            changed = true;
         }
         if (body.containsKey("email")) {
             String email = body.get("email");
             if (email != null && !email.isEmpty() && !email.matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
                 return Result.error(400, "邮箱格式不正确");
             }
-            user.setEmail(email);
+            uw.set("email", email);
+            changed = true;
         }
-        if (body.containsKey("avatar")) user.setAvatar(body.get("avatar"));
+        if (body.containsKey("avatar")) {
+            uw.set("avatar", body.get("avatar"));
+            changed = true;
+        }
         if (body.containsKey("bio")) {
             String bio = body.get("bio");
             if (bio != null && bio.length() > 500) {
                 return Result.error(400, "简介长度不能超过 500 字符");
             }
-            user.setBio(bio);
+            uw.set("bio", bio);
+            changed = true;
         }
         if (body.containsKey("location")) {
             String loc = body.get("location");
             if (loc != null && loc.length() > 50) {
                 return Result.error(400, "地址长度不能超过 50 字符");
             }
-            user.setLocation(loc);
+            uw.set("location", loc);
+            changed = true;
         }
-        userMapper.updateById(user);
+        // 防御性兜底：body 里即便带上 password_hash / role / username 等敏感字段也忽略
+        // ——只允许改以上 5 个白名单字段。这是这一轮 password_hash 被覆盖的根本防御。
+
+        if (!changed) return Result.success();  // 没东西可改直接返回 200
+        userMapper.update(null, uw);
         return Result.success();
     }
 
@@ -127,8 +154,13 @@ public class SettingsController {
         if (!BCrypt.checkpw(oldPwd, user.getPasswordHash())) {
             return Result.error(1001, "旧密码不正确");
         }
-        user.setPasswordHash(BCrypt.hashpw(newPwd, BCrypt.gensalt()));
-        userMapper.updateById(user);
+        // 2026-06-15 修复：用 UpdateWrapper 只 set password_hash + updated_at，
+        // 避免 updateById 全字段更新（虽然此处就是要改 password_hash，但后续如果加字段
+        // 一并写到 user 对象里时会一并被 UPDATE——白名单式更新更稳）。
+        String newHash = BCrypt.hashpw(newPwd, BCrypt.gensalt());
+        UpdateWrapper<User> uw = new UpdateWrapper<>();
+        uw.eq("id", 1L).set("password_hash", newHash).set("updated_at", LocalDateTime.now());
+        userMapper.update(null, uw);
         return Result.success();
     }
 

@@ -194,22 +194,29 @@ public class DeviceService {
     }
 
     /**
-     * 物理删除设备记录（任何设备都能删，包括"当前设备"自己）
+     * 物理删除设备记录
      *
      * 跟 revoke 的区别：revoke 是软删除（改 status=revoked，留底审计），
      * delete 是真抹掉记录（pending 误授权 / 长期 revoked 不再需要 / 想换新设备 等场景）
      *
-     * 注：admin 删除自己当前设备后，下一次请求 X-Device-Id 校验会因设备记录不存在
-     * 返 401 → 强制重新登录。这是"删了就要重新登录"的预期行为，不是 bug。
+     * 2026-06-16 修正（BUG-077）：之前"不阻止自删"的策略被用户推翻。
+     * 现在禁止自删——与 revoke 保持完全一致的安全模型（双层防护：UI 禁用 + 后端兜底）。
+     * 后果：用户想解绑当前设备时，必须先在另一台已授权设备上吊销/删除本机。
      *
      * @param id               要删除的设备 id
-     * @param currentDeviceId  当前操作者自己的 deviceId（仅做日志/审计，
-     *                         业务上不阻止自删——前端 UI 单独做"自删二次确认"防误操作）
-     * @throws BusinessException 404（设备不存在）
+     * @param currentDeviceId  当前操作者自己的 deviceId（X-Device-Id header）
+     *                         与被删设备 deviceId 一致则拒绝（防误操作把自己踢出）
+     * @throws BusinessException 404（设备不存在）/ 2003（自删——复用吊销的错误码）
      */
     public void delete(Long id, String currentDeviceId) {
         AdminDevice device = deviceMapper.selectById(id);
         if (device == null) throw new BusinessException(ResultCode.NOT_FOUND);
+        // 安全（2026-06-16）：禁止自删——admin 不能把当前正在用的设备记录抹掉
+        // 双层防护：前端 UI 禁用当前设备的删除按钮（devices.vue :disabled）+ 后端拒绝
+        if (currentDeviceId != null && !currentDeviceId.isEmpty()
+                && currentDeviceId.equals(device.getDeviceId())) {
+            throw new BusinessException(ResultCode.DEVICE_SELF_REVOKE_FORBIDDEN);
+        }
         deviceMapper.deleteById(id);
     }
 
