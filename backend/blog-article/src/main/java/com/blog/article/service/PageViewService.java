@@ -10,12 +10,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.servlet.http.HttpServletRequest;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 访问记录 service
  * 2026-06-16 v2.5.0 新增
+ * 2026-06-16 v2.5.0-fix：修 page_view UK "按天去重"失效问题
  *
  * - recordVisit：被 PageViewFilter 同步调用（filter 链不能用 @Async，DB 写是必须的）
  * - 聚合查询（今日 PV/UV/趋势/热门）走 JdbcTemplate
@@ -36,14 +39,26 @@ public class PageViewService {
      * @param articleId   文章详情 ID（其它页 NULL）
      * @param visitor     访客 UUID（前端 header X-Visitor-Id 透传，可能为 NULL）
      * @param request     原始 request（取 IP / UA / Referer）
-     * @return 1 = 新增，0 = 当天已存在
+     * @return 1 = 新增，0 = 当天已存在，-1 = visitor 缺失跳过
+     *
+     * 2026-06-16 v2.5.0-fix：
+     * 1) visitor 缺失时**直接跳过不记录**（不再用 IP 兜底——IP 兜底会让所有同一 IP 用户
+     *    共享 visitor，污染 UV 统计；同时让"无效请求"也能写入 DB 浪费存储）
+     * 2) createdAt 截断到 visitDate 当天 00:00:00，配合 UK (visitor, path, visit_date, created_at)
+     *    实现真正的按天去重（DATETIME 精度 1 秒，原 NOW() 在跨秒插入时 created_at 不同 → UK 不命中）
      */
     public int recordVisit(String path, Long articleId, String visitor, HttpServletRequest request) {
         if (visitor == null || visitor.isEmpty()) {
-            // 极少数情况：客户端没传 X-Visitor-Id（老浏览器 / 反爬 / curl）
-            // 用 IP 兜底当 visitor，行为退化为"同 IP 同 path 当天一次"
-            visitor = "ip:" + TrustedProxyUtil.resolveClientIp(request);
+            // 2026-06-16 fix：visitor 缺失（X-Visitor-Id 没传）直接跳过，不写脏数据
+            // - 老浏览器 / 反爬 / curl 等场景不进入统计——保护数据质量
+            // - 期望后续考虑在 PageViewFilter 强制下发 Set-Cookie 标识访客（无需登录态）
+            log.debug("[PageView] visitor 缺失，跳过记录: path={}, ip={}",
+                    path, TrustedProxyUtil.resolveClientIp(request));
+            return -1;
         }
+        LocalDate today = LocalDate.now();
+        LocalDateTime dayStart = today.atStartOfDay();  // visit_date 00:00:00
+
         PageView pv = new PageView();
         pv.setPath(truncate(path, 200));
         pv.setArticleId(articleId);
@@ -51,6 +66,9 @@ public class PageViewService {
         pv.setIp(TrustedProxyUtil.resolveClientIp(request));
         pv.setUserAgent(truncate(request.getHeader("User-Agent"), 200));
         pv.setReferer(truncate(request.getHeader("Referer"), 500));
+        // 关键：把 createdAt 设为 visit_date 当天 00:00:00，UK 真正按天去重
+        pv.setCreatedAt(dayStart);
+        pv.setVisitDate(today);
         return pageViewMapper.insertIgnore(pv);
     }
 
