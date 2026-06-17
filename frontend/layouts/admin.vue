@@ -89,7 +89,7 @@ onMounted(() => {
           <ClientOnly>
             <span>{{ user?.nickname || user?.username || 'Admin' }}</span>
             <template #fallback>
-              <span>Yuan Yi</span>
+              <span>加载中</span>
             </template>
           </ClientOnly>
         </NuxtLink>

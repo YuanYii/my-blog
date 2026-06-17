@@ -2,6 +2,10 @@
 export default defineNuxtConfig({
   compatibilityDate: '2024-08-01',
   devtools: { enabled: false },
+  // 2026-06-17 关掉 SSR，改纯 SPA：开发期冷启动 / HMR 体验大幅提升，部署可走静态 CDN
+  // 代价：SEO 和分享卡片 og:meta 弱化（个人博客可接受）
+  // 公开页面后续用 nitro.prerender 在 build 时生成静态 HTML 补救（见 changelog）
+  ssr: false,
   modules: ['@nuxtjs/tailwindcss'],
   css: ['~/assets/css/main.css'],
   app: {

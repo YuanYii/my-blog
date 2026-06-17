@@ -9,7 +9,7 @@ const { data: blogRes } = await useAsyncData('site-blog', () => get<any>('/publi
 const blog = computed(() => blogRes.value?.data || {})
 
 // 让 <title> 跟 blog.title 联动；description 用 computed 覆盖 nuxt.config.ts 里的静态默认值
-const siteTitle = computed(() => blog.value?.title || 'Yuan Yi · 个人博客')
+const siteTitle = computed(() => blog.value?.title || '加载中')
 const siteDesc = computed(() => blog.value?.description || '后端工程师的博客 - 技术、读书、生活')
 
 useHead({

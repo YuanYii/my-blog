@@ -4,14 +4,14 @@
       <NuxtLink to="/" class="flex items-center gap-2">
         <!-- 2026-06-12 修复：原 logo 文字和首字母圈都硬编码 "Y" / "Yuan Yi"，
              无论 admin 在「站点设置 → 站点信息」改成什么，前台 nav 永远没反应。
-             改成读 /public/settings/blog 拿真实 title；缺省时 fallback 到 "Yuan Yi"。
+             改成读 /public/settings/blog 拿真实 title；缺省时 fallback 到 "加载中"。
              - title 缺省首字母圈
              - 有 logo URL 时优先显示 logo 图片 -->
         <div class="w-7 h-7 rounded-lg flex items-center justify-center text-white text-sm font-semibold overflow-hidden" style="background: var(--color-primary);">
           <img v-if="blog?.logo" :src="blog.logo" alt="logo" class="w-full h-full object-cover" />
-          <span v-else>{{ (blog?.title || 'Yuan Yi')[0] }}</span>
+          <span v-else>{{ (blog?.title || '加载中')[0] }}</span>
         </div>
-        <span class="font-serif-display text-lg">{{ blog?.title || 'Yuan Yi' }}</span>
+        <span class="font-serif-display text-lg">{{ blog?.title || '加载中' }}</span>
       </NuxtLink>
 
       <div class="hidden md:flex items-center gap-1">

@@ -16,7 +16,7 @@ const mailHref = computed(() => social.value?.emailPublic ? `mailto:${social.val
   <footer class="mt-16 py-10" style="border-top: 1px solid var(--color-line);">
     <div class="max-w-5xl mx-auto px-4 md:px-8 text-sm" style="color: var(--color-muted);">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>{{ blog.copyright || '© 2026 Yuan Yi' }} · Powered by Nuxt 3 &amp; Spring Boot</div>
+        <div>{{ blog.copyright || '加载中' }} · Powered by Nuxt 3 &amp; Spring Boot</div>
         <div>
           <a v-if="social.rss" :href="social.rss" class="hover:text-primary transition-colors">RSS</a>
           <template v-if="social.rss && social.github"><span class="mx-2">·</span></template>

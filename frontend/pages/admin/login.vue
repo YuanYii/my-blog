@@ -77,7 +77,7 @@ const handleSubmit = async () => {
     <div class="auth-card">
       <div class="auth-logo">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary);"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-        <span>Yuan Yi</span>
+        <span>加载中</span>
       </div>
       <h1 class="auth-title">欢迎回来 👋</h1>
       <p class="auth-subtitle">登录后台管理你的博客</p>

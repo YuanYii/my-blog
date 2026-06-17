@@ -98,7 +98,7 @@ const pageList = computed(() => {
           <span v-else>{{ avatarLetter }}</span>
         </div>
         <div class="hero-text">
-          <h1>嗨，这里是 {{ blog.title || 'Yuan Yi · 个人博客' }}</h1>
+          <h1>嗨，这里是 {{ blog.title || '加载中' }}</h1>
           <div class="hero-role">{{ blog.subtitle || '后端工程师的日常' }}</div>
           <p class="hero-desc">{{ blog.description || '记录技术、读书、生活' }}</p>
           <div class="hero-meta">

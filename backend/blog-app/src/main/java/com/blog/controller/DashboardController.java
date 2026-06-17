@@ -55,6 +55,12 @@ public class DashboardController {
         kpi.put("totalViewCount", jdbc.queryForObject(
                 "SELECT COALESCE(SUM(view_count), 0) FROM article WHERE deleted = 0", Long.class));
 
+        // 2026-06-16 v2.5.0 OPT：仪表盘"总字数"按已发布文章的实际字数（strip markdown）累加
+        // - 仅已发布（status=1）符合"读者可见内容"语义
+        // - 一次性 query 取所有 content_md，到 Java 端 strip markdown 后累加
+        // - mediumtext 不全量 SELECT * 没问题：只取 content_md 字段，传输可控
+        kpi.put("totalWordCount", computeTotalWordCount());
+
         data.put("kpi", kpi);
 
         // === 分类分布（v2.1.0 已有） ===
@@ -99,5 +105,88 @@ public class DashboardController {
         data.put("todos", todos);
 
         return Result.success(data);
+    }
+
+    /**
+     * 2026-06-16 v2.5.0 OPT：已发布文章总字数（strip markdown 后按字符数累加）
+     *
+     * 策略：
+     * 1) 一次性 SELECT content_md 取所有已发布文章原文
+     * 2) 逐篇调用 stripMarkdown 去掉标记（# ** * ` ``` > - * + [text](url) ![alt](url) 等）
+     * 3) strip 后用 Java String length 累加（CJK 字符每个 1 字，ASCII 每个 1 字符——MVP 阶段不做词分词）
+     *
+     * 为什么不存 article.word_count 字段：
+     * - schema 改动 = 改表 + 改 entity + 改 mapper + 改所有写路径
+     * - 当前文章量（个位数～几十）量级下，每秒 dashboard 调用成本可控
+     * - 后续如文章量 >1000，再加 word_count 字段（写时计算 + 增量更新）即可
+     */
+    private long computeTotalWordCount() {
+        List<String> mds = jdbc.queryForList(
+                "SELECT content_md FROM article WHERE status = 1 AND deleted = 0",
+                String.class);
+        long total = 0;
+        for (String md : mds) {
+            if (md == null || md.isEmpty()) continue;
+            total += countChars(stripMarkdown(md));
+        }
+        return total;
+    }
+
+    /**
+     * Markdown 标记去除（轻量版——按"渲染后读者看到的"字符为准，不做完美 HTML 还原）
+     * 处理顺序：
+     * 1) 代码块 ```...``` → 内部内容保留（代码字符也算"字数"）
+     * 2) 行内代码 `...` → 内部内容保留
+     * 3) 图片 ![alt](url) → 替换成 alt
+     * 4) 链接 [text](url) → 替换成 text
+     * 5) 标题前缀 # / ## / ### 等 → 去掉
+     * 6) 引用前缀 > → 去掉
+     * 7) 列表标记 - / * / + / 1. → 去掉
+     * 8) 粗体 **xxx** / 斜体 *xxx* / 删除线 ~~xxx~~ → 去掉标记符
+     */
+    static String stripMarkdown(String md) {
+        if (md == null || md.isEmpty()) return "";
+        String s = md;
+        // 1) 代码块：保留内部内容
+        s = s.replaceAll("```[\\s\\S]*?```", " ");
+        // 2) 行内代码：保留内部内容
+        s = s.replaceAll("`([^`]+)`", "$1");
+        // 3) 图片：保留 alt
+        s = s.replaceAll("!\\[([^\\]]*)\\]\\([^)]*\\)", "$1");
+        // 4) 链接：保留 text
+        s = s.replaceAll("\\[([^\\]]+)\\]\\([^)]*\\)", "$1");
+        // 5) 标题前缀（行首的 #）
+        s = s.replaceAll("(?m)^#+\\s*", "");
+        // 6) 引用前缀
+        s = s.replaceAll("(?m)^>\\s*", "");
+        // 7) 列表标记（无序 - * +，有序 1. 2.）
+        s = s.replaceAll("(?m)^\\s*[-*+]\\s+", "");
+        s = s.replaceAll("(?m)^\\s*\\d+\\.\\s+", "");
+        // 8) 粗体 / 斜体 / 删除线
+        s = s.replaceAll("\\*\\*([^*]+)\\*\\*", "$1");
+        s = s.replaceAll("\\*([^*]+)\\*", "$1");
+        s = s.replaceAll("~~([^~]+)~~", "$1");
+        return s;
+    }
+
+    /**
+     * 字符数统计
+     * - CJK 字符每个 1 字
+     * - ASCII 字符每个 1 字符
+     * - 空白/换行不算
+     * - MVP 不做"英文按词数"——保持简单可解释
+     */
+    static int countChars(String s) {
+        if (s == null || s.isEmpty()) return 0;
+        int n = 0;
+        for (int i = 0; i < s.length(); ) {
+            int cp = s.codePointAt(i);
+            // 跳过空白字符（含空格 \n \r \t 全角空格）
+            if (!Character.isWhitespace(cp) && !Character.isSpaceChar(cp)) {
+                n++;
+            }
+            i += Character.charCount(cp);
+        }
+        return n;
     }
 }

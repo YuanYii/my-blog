@@ -298,7 +298,7 @@ watch(activeTab, () => {
     <div class="welcome-bar">
       <div>
         <h1 class="welcome-greeting">
-          {{ greeting }}，<ClientOnly><span>{{ user?.nickname || user?.username || 'Admin' }}</span><template #fallback><span>Yuan Yi</span></template></ClientOnly> <span class="emoji">{{ greetingEmoji }}</span>
+          {{ greeting }}，<ClientOnly><span>{{ user?.nickname || user?.username || 'Admin' }}</span><template #fallback><span>加载中</span></template></ClientOnly> <span class="emoji">{{ greetingEmoji }}</span>
         </h1>
         <div class="welcome-meta">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
@@ -337,8 +337,11 @@ watch(activeTab, () => {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
           总文章
         </div>
-        <div class="kpi-card-value">{{ kpi.totalArticles || 0 }}</div>
-        <div class="kpi-card-delta">+{{ kpi.publishedArticles || 0 }} 已发布</div>
+        <!-- 2026-06-16 OPT：包 NuxtLink 跳 /admin/posts -->
+        <NuxtLink to="/admin/posts" class="kpi-card-link">
+          <div class="kpi-card-value">{{ kpi.totalArticles || 0 }}</div>
+          <div class="kpi-card-delta">+{{ kpi.publishedArticles || 0 }} 已发布 · 查看 →</div>
+        </NuxtLink>
         <canvas class="kpi-card-spark" id="spark-posts"></canvas>
       </div>
 
@@ -347,10 +350,13 @@ watch(activeTab, () => {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
           待审评论
         </div>
-        <div class="kpi-card-value" :style="{ color: meta.pendingComments > 0 ? 'var(--accent)' : 'var(--text)' }">{{ meta.pendingComments }}</div>
-        <div class="kpi-card-delta" :style="{ color: meta.pendingComments > 0 ? 'var(--accent)' : 'var(--success)' }">
-          {{ meta.pendingComments > 0 ? '需要处理' : '已全部处理' }}
-        </div>
+        <!-- 2026-06-16 OPT：包 NuxtLink 跳 /admin/comments -->
+        <NuxtLink to="/admin/comments" class="kpi-card-link">
+          <div class="kpi-card-value" :style="{ color: meta.pendingComments > 0 ? 'var(--accent)' : 'var(--text)' }">{{ meta.pendingComments }}</div>
+          <div class="kpi-card-delta" :style="{ color: meta.pendingComments > 0 ? 'var(--accent)' : 'var(--success)' }">
+            {{ meta.pendingComments > 0 ? '需要处理 · 去处理 →' : '已全部处理 · 查看 →' }}
+          </div>
+        </NuxtLink>
         <canvas class="kpi-card-spark" id="spark-comments"></canvas>
       </div>
 
@@ -359,8 +365,9 @@ watch(activeTab, () => {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
           总字数
         </div>
-        <div class="kpi-card-value">{{ Math.round((kpi.totalViewCount || 0) / 100) / 10 }}k</div>
-        <div class="kpi-card-delta">累计阅读 {{ (kpi.totalViewCount || 0).toLocaleString() }}</div>
+        <!-- 2026-06-16 OPT：总字数按已发布文章实际字数（strip markdown 后字符数）展示 -->
+        <div class="kpi-card-value">{{ (kpi.totalWordCount || 0).toLocaleString() }}</div>
+        <div class="kpi-card-delta">已发布文章累计</div>
         <canvas class="kpi-card-spark" id="spark-words"></canvas>
       </div>
     </div>
