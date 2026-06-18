@@ -1,7 +1,10 @@
 /**
  * 认证状态管理
- * - token 存 localStorage + cookie（双写：cookie 让 SSR 也能读到，admin 接口在 SSR 可带 token）
+ * - token 存 localStorage + cookie（双写：admin 走 client 渲染，cookie 主要是早期 SSR 残留用法）
  * - userInfo 存 sessionStorage（防止刷新闪烁）
+ *
+ * 2026-06-17 v2.7.0：移除 SSR 阶段从 cookie 读 token 的逻辑（Nuxt 已改全静态，无 SSR 阶段）
+ * 改静态后 init() 只在 client 跑，cookie 写入保留（兼容性，不影响功能）
  */
 const TOKEN_KEY = 'blog_admin_token'
 const COOKIE_KEY = 'admin_token'
@@ -18,27 +21,12 @@ export interface AdminUser {
   avatar?: string
 }
 
-// 从 cookie 字符串里解析 token
-const readTokenFromCookie = (raw: string | undefined | null): string | null => {
-  if (!raw) return null
-  const m = raw.match(new RegExp(`(?:^|;\\s*)${COOKIE_KEY}=([^;]+)`))
-  return m ? decodeURIComponent(m[1]) : null
-}
-
 export const useAuth = () => {
   const user = useState<AdminUser | null>('auth-user', () => null)
   const token = useState<string | null>('auth-token', () => null)
 
-  // SSR 阶段：从 request headers 读 cookie 恢复 token
-  // ——这样 admin 接口在 SSR 也能带 token，前台首屏直接渲染真数据，没有"先默认后真实"的闪烁
-  if (import.meta.server) {
-    const headers = useRequestHeaders(['cookie'])
-    if (!token.value) {
-      token.value = readTokenFromCookie(headers.cookie)
-    }
-  }
-
-  // 初始化：client 阶段从 localStorage 恢复（cookie 只在 client 写，localStorage 是兜底）
+  // 初始化：client 阶段从 localStorage 恢复 token + sessionStorage 恢复 user
+  // 全静态化后只走 client 分支（import.meta.client 永远为 true）
   const init = () => {
     if (import.meta.client) {
       const t = localStorage.getItem(TOKEN_KEY)

@@ -79,12 +79,16 @@ public class DashboardController {
         data.put("tagDistribution", tagDist);
 
         // === 近 30 天文章发布趋势（真实数据，v2.1.0 已有） ===
+        // 2026-06-17 v2.6.0：DATE_SUB(NOW(), INTERVAL 30 DAY) → Java 端传 LocalDateTime
+        // - SQLite / MySQL 都支持参数化绑定
         List<Map<String, Object>> trend = new ArrayList<>();
         try {
+            java.time.LocalDateTime fromTime = java.time.LocalDateTime.now().minusDays(30);
             trend = jdbc.queryForList(
                     "SELECT DATE(created_at) AS date, COUNT(*) AS cnt FROM article " +
-                            "WHERE deleted = 0 AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) " +
-                            "GROUP BY DATE(created_at) ORDER BY date ASC");
+                            "WHERE deleted = 0 AND created_at >= ? " +
+                            "GROUP BY DATE(created_at) ORDER BY date ASC",
+                    fromTime);
         } catch (Exception ignored) {}
         data.put("publishTrend", trend);
 

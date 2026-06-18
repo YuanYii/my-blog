@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "nuxt dev --host 0.0.0.0",
-    "build": "nuxt build",
+    "build": "npm run fetch-routes && nuxt generate",
+    "fetch-routes": "node scripts/fetch-routes.js",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare"

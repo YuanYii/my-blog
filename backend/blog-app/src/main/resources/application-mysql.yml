@@ -1,0 +1,23 @@
+# 2026-06-17 v2.6.0：可选 profile 片段——切回 MySQL
+#
+# 用法：
+#   dev：  spring.profiles.active=dev,mysql
+#   prod： spring.profiles.active=prod,mysql
+#
+# 这个 profile 片段只覆盖 datasource，dev/prod 里的 Redis/HTTP 等其他配置保持。
+#
+# 注意：MySQL 部署需要单独的 MySQL 容器/服务（不在 jar 内）。
+# dev 在 Mac 上用 docker run 起的 MySQL 8.0；生产用阿里云 RDS 或自装。
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:blog}?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:root}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: blog-mysql-pool

@@ -62,6 +62,11 @@ package-lock.json.bak
 .env.*.local
 .env.prod.example
 
+# 部署脚本的本地环境（含 GitHub token）—— 永远不要 commit
+scripts/deploy.*
+scripts/deploy-server.env.example
+scripts/*.env.local
+
 # TypeScript 增量编译
 **/*.tsbuildinfo
 
@@ -105,3 +110,14 @@ scripts/.tmp/
 docs/auto_fix/
 docs/audits
 docs/changelogs
+
+# 2026-06-17 v2.6.0：本地 SQLite db（dev 用）
+backend/blog.db
+backend/blog.db-journal
+backend/blog.db-wal
+backend/blog.db-shm
+backend/tmp/
+backend/blog-app/blog.db
+backups
+
+frontend/dist

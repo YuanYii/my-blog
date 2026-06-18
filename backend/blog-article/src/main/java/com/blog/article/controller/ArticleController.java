@@ -151,6 +151,20 @@ public class ArticleController {
     }
 
     /** 给文章列表填充 tagIds */
+    /**
+     * 2026-06-17 v2.6.0：业务层去重插入 article_tag
+     * 替代原 `INSERT IGNORE INTO article_tag ...`（SQLite 不支持该语法）
+     * 性能：多一次 SELECT COUNT（毫秒级，文章-标签关联表通常 0~10 行）
+     */
+    private void insertArticleTagIfNotExists(Long articleId, Long tagId) {
+        Integer exists = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM article_tag WHERE article_id = ? AND tag_id = ?",
+                Integer.class, articleId, tagId);
+        if (exists == null || exists == 0) {
+            jdbc.update("INSERT INTO article_tag (article_id, tag_id) VALUES (?, ?)", articleId, tagId);
+        }
+    }
+
     private void fillTagIds(List<Map<String, Object>> records) {
         if (records == null || records.isEmpty()) return;
         List<Long> articleIds = records.stream()
@@ -226,10 +240,10 @@ public class ArticleController {
         }
         articleMapper.insert(article);
         // 2026-06-12 修复：原 create 完全没写 article_tag 关联，admin 编辑器选 tag 全部丢失
+        // 2026-06-17 v2.6.0：改用业务层 selectCount 去重（替代 SQL `INSERT IGNORE`，跨 SQLite/MySQL）
         if (tagIds != null && !tagIds.isEmpty()) {
             for (Long tid : tagIds) {
-                jdbc.update("INSERT IGNORE INTO article_tag (article_id, tag_id) VALUES (?, ?)",
-                    article.getId(), tid);
+                insertArticleTagIfNotExists(article.getId(), tid);
             }
         }
         Map<String, Object> data = new HashMap<>();
@@ -298,11 +312,12 @@ public class ArticleController {
         }
         articleMapper.updateById(article);
         // 2026-06-12 修复：原 update 完全没动 article_tag，编辑 tag 完全无效
+        // 2026-06-17 v2.6.0：改用业务层 selectCount 去重
         if (tagIds != null) {
             // 全量替换策略：先删后插
             jdbc.update("DELETE FROM article_tag WHERE article_id = ?", id);
             for (Long tid : tagIds) {
-                jdbc.update("INSERT IGNORE INTO article_tag (article_id, tag_id) VALUES (?, ?)", id, tid);
+                insertArticleTagIfNotExists(id, tid);
             }
         }
         return Result.success();

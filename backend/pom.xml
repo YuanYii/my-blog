@@ -13,7 +13,7 @@
 
     <groupId>com.blog</groupId>
     <artifactId>blog-parent</artifactId>
-    <version>0.1.0</version>
+    <version>${revision}</version>
     <packaging>pom</packaging>
     <name>blog-parent</name>
     <description>Personal blog backend - parent pom (multi-module, Java 8 / Spring Boot 2.7)</description>
@@ -28,6 +28,9 @@
     </modules>
 
     <properties>
+        <!-- CI-friendly 版本号:所有子模块用 ${revision} 引用父 POM,升级只改这一行 -->
+        <revision>3.1.0</revision>
+
         <java.version>1.8</java.version>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>

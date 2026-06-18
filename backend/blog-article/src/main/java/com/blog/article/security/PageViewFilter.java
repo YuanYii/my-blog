@@ -109,10 +109,13 @@ public class PageViewFilter extends OncePerRequestFilter {
 
             String visitor = request.getHeader("X-Visitor-Id");
 
-            pageViewService.recordVisit(sub, articleId, visitor, request);
+            int rows = pageViewService.recordVisit(sub, articleId, visitor, request);
+            if (rows == 0 && visitor != null && !visitor.isEmpty()) {
+                log.debug("[PageView] 业务层去重命中: visitor={}, path={}", visitor, sub);
+            }
         } catch (Exception e) {
             // 统计失败绝不能影响业务响应
-            log.debug("[PageView] 记录失败：{}", e.getMessage());
+            log.warn("[PageView] 记录失败：{}", e.getMessage(), e);
         }
 
         chain.doFilter(request, response);

@@ -3,6 +3,8 @@ package com.blog.article.service;
 import com.blog.article.entity.PageView;
 import com.blog.article.mapper.PageViewMapper;
 import com.blog.common.TrustedProxyUtil;
+// PageView 写库改用 JdbcTemplate.update（见 recordVisit），PageViewMapper/PageView 仍保留给 BaseMapper 兼容用
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,10 +20,10 @@ import java.util.Map;
 /**
  * 访问记录 service
  * 2026-06-16 v2.5.0 新增
- * 2026-06-16 v2.5.0-fix：修 page_view UK "按天去重"失效问题
- *
- * - recordVisit：被 PageViewFilter 同步调用（filter 链不能用 @Async，DB 写是必须的）
- * - 聚合查询（今日 PV/UV/趋势/热门）走 JdbcTemplate
+ * 2026-06-17 v2.6.0：跨方言改造
+ *  - 4 处 MySQL 特有函数（DATE_SUB / CURDATE / NOW）→ Java 端传 LocalDate/LocalDateTime
+ *  - INSERT IGNORE 业务层 selectCount 判断（@Insert 注解不再写方言特定 SQL）
+ *  - 聚合查询走 JdbcTemplate，参数化绑定（兼容 SQLite/MySQL）
  */
 @Slf4j
 @Service
@@ -34,42 +36,54 @@ public class PageViewService {
     private JdbcTemplate jdbc;
 
     /**
-     * 记录一次访问
-     * @param path        URL 路径（已去掉 context-path）
-     * @param articleId   文章详情 ID（其它页 NULL）
-     * @param visitor     访客 UUID（前端 header X-Visitor-Id 透传，可能为 NULL）
-     * @param request     原始 request（取 IP / UA / Referer）
-     * @return 1 = 新增，0 = 当天已存在，-1 = visitor 缺失跳过
+     * 记录一次访问（v2.6.0：业务层去重，跨方言兼容）
      *
-     * 2026-06-16 v2.5.0-fix：
-     * 1) visitor 缺失时**直接跳过不记录**（不再用 IP 兜底——IP 兜底会让所有同一 IP 用户
-     *    共享 visitor，污染 UV 统计；同时让"无效请求"也能写入 DB 浪费存储）
-     * 2) createdAt 截断到 visitDate 当天 00:00:00，配合 UK (visitor, path, visit_date, created_at)
-     *    实现真正的按天去重（DATETIME 精度 1 秒，原 NOW() 在跨秒插入时 created_at 不同 → UK 不命中）
+     * 去重策略（替代原来的 SQL `INSERT IGNORE`）：
+     * 1) 先 SELECT COUNT(*) 看当天同 visitor+path 是否已存在
+     * 2) 存在 → 跳过
+     * 3) 不存在 → INSERT
+     *
+     * 性能：
+     * - 每访问多一次 SELECT（毫秒级，SQLite/MySQL 都快）
+     * - 替代方案：分两步写 SQL `INSERT OR IGNORE`（SQLite）/ `INSERT IGNORE`（MySQL）
+     *   —— 但 MyBatis @Insert 注解是字符串，跨方言要写两份 mapper（太丑）
+     * - 业务层判断 = 单 SQL 路径，跨方言无歧义
      */
     public int recordVisit(String path, Long articleId, String visitor, HttpServletRequest request) {
         if (visitor == null || visitor.isEmpty()) {
-            // 2026-06-16 fix：visitor 缺失（X-Visitor-Id 没传）直接跳过，不写脏数据
-            // - 老浏览器 / 反爬 / curl 等场景不进入统计——保护数据质量
-            // - 期望后续考虑在 PageViewFilter 强制下发 Set-Cookie 标识访客（无需登录态）
-            log.debug("[PageView] visitor 缺失，跳过记录: path={}, ip={}",
-                    path, TrustedProxyUtil.resolveClientIp(request));
+            log.debug("[PageView] visitor 缺失，跳过记录: path={}", path);
             return -1;
         }
         LocalDate today = LocalDate.now();
-        LocalDateTime dayStart = today.atStartOfDay();  // visit_date 00:00:00
+        LocalDateTime dayStart = today.atStartOfDay();
 
-        PageView pv = new PageView();
-        pv.setPath(truncate(path, 200));
-        pv.setArticleId(articleId);
-        pv.setVisitor(visitor);
-        pv.setIp(TrustedProxyUtil.resolveClientIp(request));
-        pv.setUserAgent(truncate(request.getHeader("User-Agent"), 200));
-        pv.setReferer(truncate(request.getHeader("Referer"), 500));
-        // 关键：把 createdAt 设为 visit_date 当天 00:00:00，UK 真正按天去重
-        pv.setCreatedAt(dayStart);
-        pv.setVisitDate(today);
-        return pageViewMapper.insertIgnore(pv);
+        // 业务层去重（替代 SQL IGNORE）
+        Integer exists = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM page_view WHERE visitor = ? AND path = ? AND visit_date = ?",
+                Integer.class, visitor, path, today);
+        if (exists != null && exists > 0) {
+            return 0;  // 当天已记录
+        }
+
+        // 2026-06-17 v2.6.0-fix：直接用 JdbcTemplate 写（不经过 MyBatis-Plus BaseMapper.insert）
+        // 原因：MyBatis-Plus 在 SQLite 下用 IdType.AUTO 调 getGeneratedKeys()，
+        //       SQLite 默认不返回 generated keys，导致异常被吞、SQL 不真执行
+        // 性能：与 BaseMapper.insert 相同（Hikari 池 + 参数化绑定）
+        int rows = jdbc.update(
+                "INSERT INTO page_view (path, article_id, visitor, ip, user_agent, referer, created_at, visit_date) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                truncate(path, 200),
+                articleId,
+                visitor,
+                TrustedProxyUtil.resolveClientIp(request),
+                truncate(request.getHeader("User-Agent"), 200),
+                truncate(request.getHeader("Referer"), 500),
+                dayStart,
+                today);
+        if (rows == 0) {
+            log.warn("[PageView] INSERT 影响 0 行（可能 UK 冲突）: visitor={}, path={}", visitor, path);
+        }
+        return rows;
     }
 
     /**
@@ -86,56 +100,59 @@ public class PageViewService {
         }
     }
 
-    /** 今日 PV（行数） */
+    /**
+     * 今日 PV（v2.6.0：传 today 进去，跨方言）
+     */
     public long countTodayPv() {
+        LocalDate today = LocalDate.now();
         Long n = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM page_view WHERE created_at >= CURDATE()",
-                Long.class);
-        return n == null ? 0L : n;
-    }
-
-    /** 今日 UV（按 visitor 去重） */
-    public long countTodayUv() {
-        Long n = jdbc.queryForObject(
-                "SELECT COUNT(DISTINCT visitor) FROM page_view WHERE created_at >= CURDATE()",
-                Long.class);
+                "SELECT COUNT(*) FROM page_view WHERE visit_date = ?",
+                Long.class, today);
         return n == null ? 0L : n;
     }
 
     /**
-     * 近 N 天每日 PV + UV
-     * 返回 [{date: '2026-06-16', pv: 100, uv: 80}, ...] 按日期升序
-     * 用 LEFT JOIN + 日期序列表，保证没访问的日期也有 0
+     * 今日 UV（v2.6.0：传 today 进去，跨方言）
+     */
+    public long countTodayUv() {
+        LocalDate today = LocalDate.now();
+        Long n = jdbc.queryForObject(
+                "SELECT COUNT(DISTINCT visitor) FROM page_view WHERE visit_date = ?",
+                Long.class, today);
+        return n == null ? 0L : n;
+    }
+
+    /**
+     * 近 N 天每日 PV + UV（v2.6.0：传 fromDate 进去）
      */
     public List<Map<String, Object>> dailyStats(int days) {
-        // MySQL 序列生成：使用递归 CTE 或 numbers 表
-        // 简化方案：直接查实际有数据的日期，缺失的日期前端自己补 0
+        LocalDate fromDate = LocalDate.now().minusDays(days - 1);
         return jdbc.queryForList(
-                "SELECT DATE(created_at) AS date, " +
+                "SELECT visit_date AS date, " +
                         "       COUNT(*) AS pv, " +
                         "       COUNT(DISTINCT visitor) AS uv " +
                         "FROM page_view " +
-                        "WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY) " +
-                        "GROUP BY DATE(created_at) " +
+                        "WHERE visit_date >= ? " +
+                        "GROUP BY visit_date " +
                         "ORDER BY date ASC",
-                days);
+                fromDate);
     }
 
     /**
-     * 热门文章 TOP N（按 page_view 行数）
-     * 返回 [{articleId, title, slug, pv}, ...]
+     * 热门文章 TOP N（v2.6.0：传 fromDate 进去）
      */
     public List<Map<String, Object>> topArticles(int limit) {
+        LocalDate fromDate = LocalDate.now().minusDays(30);
         return jdbc.queryForList(
                 "SELECT pv.article_id AS articleId, a.title, a.slug, COUNT(*) AS pv " +
                         "FROM page_view pv " +
                         "LEFT JOIN article a ON a.id = pv.article_id AND a.deleted = 0 " +
                         "WHERE pv.article_id IS NOT NULL " +
-                        "  AND pv.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) " +
+                        "  AND pv.visit_date >= ? " +
                         "GROUP BY pv.article_id, a.title, a.slug " +
                         "ORDER BY pv DESC " +
                         "LIMIT ?",
-                limit);
+                fromDate, limit);
     }
 
     private static String truncate(String s, int max) {

@@ -1,14 +1,19 @@
+# 2026-06-17 v2.6.0：dev 默认改用 SQLite（之前是 MySQL）
+# 切回 MySQL：spring.profiles.active=dev,mysql
 spring:
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/blog?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: root
+    # SQLite（dev 默认）
+    # 2026-06-17 v2.6.0-fix：用 ${SQLITE_PATH} 绝对路径（避免 ${user.dir} 在 spring-boot:run 下指向 blog-app/ 而非 backend/）
+    driver-class-name: org.sqlite.JDBC
+    url: jdbc:sqlite:${SQLITE_PATH:${user.dir}/../blog.db}
+    hikari:
+      # SQLite 单写者锁：必须 1 个连接，否则并发写 SQLITE_BUSY
+      maximum-pool-size: 1
+      minimum-idle: 1
+      connection-timeout: 30000
+      pool-name: blog-sqlite-pool
 
-  # 2026-06-12 修复：Spring Boot 2.7 使用 `spring.redis.*` 前缀绑定 RedisProperties，
-  # `spring.data.redis.*` 是 Spring Boot 3.x 才生效——之前写在 spring.data.redis 下的
-  # host/port/password/database/pool 配置全部被静默忽略，Spring 走默认 localhost:6379 无密码。
-  # dev 本机正好是 localhost:6379 → 假装能用，但 prod 容器内 host=redis 也被忽略 → 连不上。
+  # Redis（dev 用本机 docker 起的 redis）
   redis:
     host: localhost
     port: 6379
@@ -24,8 +29,7 @@ spring:
 blog:
   upload:
     local:
-      # 2026-06-12 修复：dev 环境覆盖默认值（默认是容器 /root/blog-uploads，本机写不动 → 500）
-      # 注意：tomcat 的 working dir 不是项目根，相对路径会找不到。dev 用绝对路径写到项目内 tmp/
+      # dev 用项目内 tmp/ 目录（Git ignore）
       dir: ${UPLOAD_DIR:${user.dir}/tmp/blog-uploads}
 
 logging:

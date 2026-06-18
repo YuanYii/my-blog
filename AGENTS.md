@@ -8,7 +8,9 @@
 
 ## 1. TL;DR
 
-- **栈**：Spring Boot 2.7（多模块）+ Nuxt 3 前后端分离；MySQL 8.0 + Redis 7.x；JWT 鉴权；API 前缀 `/api/v1`
+- **栈**：Spring Boot 2.7（多模块）+ Nuxt 3 前后端分离；**SQLite 3.45**（dev/prod 默认，MySQL 8.0 可选 profile）+ Redis 7.x；JWT 鉴权；API 前缀 `/api/v1`
+- **v2.7.0 前端全静态**：`nuxt generate` + nginx:alpine serve `.output/public/`，**省 150-250MB 内存**
+- **2026-06-18 加密数据迁移**：`sqlite-export.sh` 加密导 db → `.sql.gz.enc`（AES-256-CBC + PBKDF2 100k）→ `sqlite-import.sh` 解密导入；publish-release.sh / deploy-server.sh 通过 `EXPORT_DB` / `IMPORT_DB` / `DEPLOY_MODE` 外置开关集成
 - **入口**：先看 §10 关键文件索引 + §8 用户偏好（强制遵守） + §9 安全红线
 
 ---
@@ -17,13 +19,20 @@
 
 - `backend/` — Spring Boot 多模块
   - `blog-common` / `blog-auth` / `blog-article` / `blog-comment` / `blog-settings` / `blog-app`
-- `frontend/` — Nuxt 3
+- `frontend/` — Nuxt 3（v2.7.0 全静态）
   - `pages/` 13 个（5 公开 + 8 admin）
   - `layouts/admin.vue` — **admin 布局 + 鉴权兜底**
-  - `middleware/admin-auth.ts` — **SSR-safe 鉴权**
-  - `composables/` — `useApi` / `useAuth` / `useAdminApi` / `useDialog` / `useToast` / `useDevice` / `useAdminMeta`
-  - `components/` / `plugins/` / `nuxt.config.ts`
-- `docs/` — `设计文档/` / `接口契约审计报告.md` / `阿里云部署方案.md` / `changelogs/` / `audits/` / `sql/` / `docker/` / `nginx/`
+  - `middleware/admin-auth.ts` — **SSR-safe 鉴权**（v2.7.0 全静态化后 `import.meta.server` 恒为 `false`，SSR 判断已删）
+  - `composables/` — `useApi` / `useAuth` / `useAdminApi` / `usePublicApi` / `useDialog` / `useToast` / `useDevice` / `useAdminMeta`
+  - `components/` / `plugins/` / `nuxt.config.ts` / `scripts/fetch-routes.js`（build 前拉公开页路由）
+- `scripts/` — 部署/验证/迁移/rebuild
+  - `deploy-sqlite.sh` — 1C2G 无 docker 一键部署
+  - `rebuild-static.sh` — 每日 cron 重建前端静态文件
+  - `verify-sqlite.sh` — 端到端 29 端点验证
+  - `migrate-mysql-to-sqlite-direct.py` — MySQL → SQLite 数据迁移（pymysql 直连版）
+  - `sqlite-export.sh` — **加密导出** dev db（`AES-256-CBC + PBKDF2 100k`，交互式密码两次输入；产出 `.sql.gz.enc`）
+  - `sqlite-import.sh` — **解密导入** 到目标 db（密码一次输入；支持本地 + `--remote user@host` 远端模式；错密码不碰目标 db）
+- `docs/` — `设计文档/` / `接口契约审计报告.md` / `changelogs/`（v2.0.0 → v2.7.0）/ `sql/`（v2.6.0 整合后 2 个 schema）/ `docker/` / `nginx/`
 - `README.md` / `AGENTS.md`（本文件）
 
 ---
@@ -33,8 +42,9 @@
 | 层 | 选型 | 备注 |
 |---|---|---|
 | 后端 | Java 1.8 + Spring Boot 2.7.18 + MyBatis-Plus 3.4.3.4 | **环境降级**（原始目标 Java 21 / SB 3.3.5 / MP 3.5+），详见 §4.1 |
-| DB | MySQL 8.0（utf8mb4）+ Redis 7.x | JJWT 0.11.5 + Hutool 5.8.27 + Lombok |
-| 前端 | Nuxt 3 ^3.13 + Tailwind ^3.4 + TS ^5.5 + Pinia | npm（无 pnpm 改用） |
+| DB | **SQLite 3.45**（dev/prod 默认，v2.6.0 起）+ MySQL 8.0（可选 profile） | sqlite-jdbc 3.45.0.0 + mysql-connector-j（runtime） |
+| 缓存 | Redis 7.x（apt 装系统服务 / docker run 都行） | JJWT 0.11.5 + Hutool 5.8.27 + Lombok |
+| 前端 | Nuxt 3 ^3.13 + Tailwind ^3.4 + TS ^5.5 + Pinia | **v2.7.0 `ssr: false` + `nuxt generate` 全静态** |
 | 工具 | Playwright + Chromium（设计稿审计、端到端） | — |
 
 ---
@@ -44,50 +54,113 @@
 ### 4.1 环境降级链（**不要升级**）
 开发机只有 JDK 1.8。**不要试图升级** Java / Spring Boot / MyBatis-Plus / 包管理工具到"原始目标"版本——会破坏所有依赖。
 
-### 4.2 字符编码：双重 UTF-8
+### 4.2 字符编码：双重 UTF-8（MySQL profile 仍需注意）
 **症状**：`GET /api/v1/articles/categories` 返回 `"name":"æŠ€æœ¯"`（API 端乱码）。
 **根因**：`docker exec mysql ... < blog.sql` 默认走 latin1，中文被双重编码写入 utf8mb4。
-**修复 SQL** 见 `docs/sql/migrations/20260608_fix_double_utf8.sql`（不删表，可逆）。
+**修复 SQL** 见 `docs/sql/migrations/20260608_fix_double_utf8.sql`（不删表，可逆，**v2.6.0 已整合到 schema-mysql.sql**）。
 **后续导入必须**：
 ```bash
-docker exec -i blog-mysql mysql -uroot -proot --default-character-set=utf8mb4 blog < docs/sql/blog.sql
+docker exec -i blog-mysql mysql -uroot -proot --default-character-set=utf8mb4 blog < docs/sql/schema-mysql.sql
 ```
+**SQLite profile 无此问题**（v2.6.0 起默认）。
 
 ### 4.3 admin-auth SSR 修复（BUG-001，**不要回退**）
 **症状**：直接访问 `/admin/*`，已登录用户被踢回 `/admin/login`。
 **根因**：`admin-auth.ts` 在 SSR 阶段（`import.meta.server`）调 `localStorage.getItem('token')`——服务端无 localStorage。
-**修复**：
+**修复**（v2.0.0）：
 1. `admin-auth.ts` 头部加 `if (import.meta.server) return`
 2. `layouts/admin.vue` 加 `onMounted` 兜底，client `initAuth()` 后未登录再 `router.replace('/admin/login')`
+**v2.7.0 后续清理**：全静态化后 `import.meta.server` 恒为 `false`，第 1 条的 SSR 判断已删；layouts/admin.vue 兜底保留。
 
 ### 4.4 简化项（首版 MVP 决策）
-- Controller 直调 Mapper（无 Service 层）
+- Controller 直调 Mapper（无 Service 层）——**部分回退**：v2.0+ 已下沉 `DeviceService` / `ApiWhitelistService` / `SiteSettingsService` / `PageViewService`
 - 仪表盘直查 DB
 - 评论列表扁平（无 parent_id 树形）
 - 单体单 DB
-- 详细 changelog 见 `docs/changelogs/`（v2.0.0 → v2.5.0）
+- 详细 changelog 见 `docs/changelogs/`（v2.0.0 → v2.7.0）
+
+### 4.5 数据库双 profile（v2.6.0，**不要回退**）
+dev/prod 默认 **SQLite**（一文件 0 内存占用）；MySQL 8.0 降级为可选 profile。
+- 切回 MySQL：`spring.profiles.active=dev,mysql` 或 `prod,mysql`
+- **SQLite 单写者锁**：Hikari `maximum-pool-size: 1` **必须保持**，否则并发写 `SQLITE_BUSY`
+- 业务 SQL 跨方言已统一（38 处）——`PageViewService` / `ArticleController` / `DashboardController` 用 `LocalDate` / `LocalDateTime` 传参替代 MySQL 特有函数（`CURDATE()` / `DATE_SUB` / `NOW()` / `INSERT IGNORE` → 业务层去重）
+- 旧 8 个散 SQL 文件（`blog.sql` + 5 migrations + 2 migration-*.sql）已整合删除；新增数据走 `scripts/migrate-mysql-to-sqlite-direct.py`（pymysql 直连版，123/123 行导入）
+- MyBatis-Plus 3.4.3.4 `IdType.AUTO` 自动适配 MySQL / SQLite，7 个 entity 的 `@TableId(type = IdType.AUTO)` **不动**
+
+### 4.6 前端全静态化（v2.7.0，**不要回退**）
+`nuxt generate` 产出 `.output/public/`，nginx:alpine 直接 serve。
+- 公开页 SEO 预渲染：`nitro.prerender.routes`（由 `scripts/fetch-routes.js` 拉后端所有公开页 slug 生成 `.routes.json`）+ `crawlLinks: true` + `failOnError: false`
+- admin 路由不预渲染（`ignore: '/admin/**'` + `'/api/**'`）
+- 新文章延迟：每日凌晨 3 点 cron `scripts/rebuild-static.sh` rebuild（构建 ~60s，吃 200-300MB 临时内存）
+- `import.meta.server` 永远是 `false`（全静态化后），不要回退 `useAuth.ts` 的 SSR cookie 读取代码（v2.7.0 已删）
+- 镜像：node 20-alpine build → nginx:alpine runtime（~50MB vs v2.6 之前的 ~200MB）
+
+### 4.7 业务层去重：page_view（v2.5.0+，**不要改回 INSERT IGNORE**）
+- `PageViewService` 用 `JdbcTemplate.update` + `selectCount` 做"先查后插"
+- 不要用 MyBatis-Plus `BaseMapper.insert` ——SQLite 下 `getGeneratedKeys()` 失败会返回 1 但数据未落库（**假象**）
+- `PageViewMapper` 没有 `@Insert` 注解，走通用 `JdbcTemplate.update` 路径
 
 ---
 
 ## 5. 常用命令
 
 ```bash
-# 1. 启 MySQL + Redis（dev 用 docker run，prod 看 docs/阿里云部署方案.md）
-docker run -d --name blog-mysql -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=blog \
-  -p 3306:3306 -v blog-mysql-data:/var/lib/mysql \
-  mysql:8.0 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+# ============ Dev 默认（v2.6.0 起：SQLite）============
+# 1. 启 Redis（SQLite 是文件型 DB 不需要单独启）
 docker run -d --name blog-redis -p 6379:6379 redis:7-alpine
 
-# 2. 导入数据（**必须带 --default-character-set=utf8mb4**，详见 §4.2）
-docker exec -i blog-mysql mysql -uroot -proot --default-character-set=utf8mb4 blog < docs/sql/blog.sql
-
-# 3. 启动
+# 2. 启动后端（默认 SQLite，dev profile）
 cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev
-cd frontend && npm run dev   # dev 模式，HMR；prod build 见 docs/阿里云部署方案.md
+
+# 2.1 可选：切回 MySQL profile
+# docker run -d --name blog-mysql -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=blog \
+#   -p 3306:3306 -v blog-mysql-data:/var/lib/mysql \
+#   mysql:8.0 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+# docker exec -i blog-mysql mysql -uroot -proot --default-character-set=utf8mb4 blog < docs/sql/schema-mysql.sql
+# cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev,mysql
+
+# 3. 启动前端（dev 模式，HMR）
+cd frontend && npm run dev
 
 # 4. 健康检查
 curl http://localhost:8080/api/v1/health
 # 期望 {"code":200,"data":{"status":"UP",...}}
+
+# 5. 端到端验证（29 端点）
+bash scripts/verify-sqlite.sh
+
+# ============ Prod（v2.6.0/v2.7.0：无 docker）============
+# 上传 jar + schema + 脚本到 ECS
+scp backend/blog-app/target/blog-app.jar myblog@<ecs-ip>:/tmp/
+scp docs/sql/schema-sqlite.sql myblog@<ecs-ip>:/tmp/
+scp scripts/deploy-sqlite.sh myblog@<ecs-ip>:/tmp/
+
+# ECS 一键部署
+sudo bash /opt/myblog/scripts/deploy-sqlite.sh
+
+# 每日 cron rebuild（v2.7.0 配套）
+0 3 * * * bash /opt/myblog/scripts/rebuild-static.sh
+
+# 数据库热备份（SQLite）
+sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%M%S).db"
+
+# ============ Dev → Prod 加密数据迁移(2026-06-18 起)============
+# 1. dev 导出加密 dump(交互式输两次密码)
+bash scripts/sqlite-export.sh --exclude page_view -o /tmp/migration.sql.gz.enc
+
+# 2. 上传到生产(走任意介质:scp/邮件附件/OSS——加密态下不敏感)
+scp /tmp/migration.sql.gz.enc myblog@<ecs-ip>:/tmp/
+
+# 3. 生产端解密 + 导入(交互式输一次密码)
+ssh myblog@<ecs-ip> "sudo bash /opt/myblog/scripts/sqlite-import.sh /opt/myblog/db/blog.db /tmp/migration.sql.gz.enc"
+# 注:scp + ssh 走 SSH 加密通道,但加 .enc 是**第二道防线**——dump 落到本地磁盘/U 盘/OSS 时也安全
+
+# 4. publish-release + deploy-server 集成(两个外置开关,默认关)
+EXPORT_DB=1 ./scripts/publish-release.sh          # dev:数据加密导出到 release
+IMPORT_DB=1 sudo ./scripts/deploy-server.sh v3.x.x # prod:自动下载+解密导入
+DEPLOY_MODE=code sudo ./scripts/deploy-server.sh v3.x.x   # 只装代码,不动 db
+DEPLOY_MODE=data IMPORT_DB=1 sudo ./scripts/deploy-server.sh v3.x.x   # 只导入数据,跳过 jar/schema/前端
+# ⚠️ DEPLOY_MODE=data 但 IMPORT_DB=0 → 报错退出(语义矛盾)
 ```
 
 ---
@@ -119,7 +192,8 @@ curl http://localhost:8080/api/v1/health
 - **包名** `com.blog.<module>.<feature>`；**类** PascalCase；**方法** camelCase；**常量** UPPER_SNAKE
 - **Lombok** `@Data` / `@Builder` / `@Slf4j` 避免手写 getter/setter
 - **前端** 文件 PascalCase（`NavBar.vue`）；composables `useXxx.ts`；`<script setup lang="ts">`；TS，避免 `any`
-- **数据库** 表/字段 snake_case；主键 `id` BIGINT；时间 `created_at` / `updated_at` DATETIME；逻辑删除 `deleted` TINYINT
+- **数据库** 表/字段 snake_case；主键 `id` BIGINT/MySQL / INTEGER SQLite；时间 `created_at` / `updated_at` DATETIME；逻辑删除 `deleted` TINYINT
+- **profile 命名** `application-{env}.yml` + 可选 `application-{db}.yml` 片段（dev/prod/mysql 自由组合）
 
 ---
 
@@ -130,6 +204,7 @@ curl http://localhost:8080/api/v1/health
 | **8.1 需求跟踪文档 / 报告：先看后写** | 涉及 BUG/OPT/DEV 项时，**先在对话里展示完整内容**，等用户确认后再落盘 |
 | **8.2 提示词优化：不落盘** | "优化提示词"任务**只在对话里输出**——不写文件（无论是否提示"输出为 MD"） |
 | **8.3 过程文件：放项目目录** | 主动写的 draft / 临时分析 / 截图 / 比对资料一律写到**对应项目目录下**（docs/、scripts/、.audit/、tmp/、screenshots/ 等），或只输出在对话里。**不写到 `~/`、`~/Desktop/`、`~/.mavis/` 等家目录**。mavis 系统自管文件（scratchpad / memory / session log）不受此约束 |
+| **8.4 git commit 默认不自动** | 默认不自动 git commit —— 改完代码停留在工作区，等用户显式说"提交"才执行；触发词必须是用户原话 |
 
 跨项目 / 跨会话 / 跨场景适用。
 
@@ -138,7 +213,7 @@ curl http://localhost:8080/api/v1/health
 ## 9. 安全红线
 
 - **不要在 commit / 文档 / 日志中暴露 secrets**（DB 密码、JWT secret、API key、密码 hash）
-- **不要 SQL 字符串拼接**（用 MyBatis-Plus Wrapper 或 `@Select` 注解）
+- **不要 SQL 字符串拼接**（用 MyBatis-Plus Wrapper 或 `@Select` 注解；page_view 走 `JdbcTemplate.update` 跨方言兼容）
 - **不要在前端 store / localStorage 存明文密码**（只用 token）
 - 默认 admin 账号 `admin / 123456`（dev 占位）——**生产环境必须改 + BCrypt 加密**
 
@@ -161,15 +236,20 @@ curl http://localhost:8080/api/v1/health
 
 | 路径 | 用途 | 优先级 |
 |---|---|---|
-| `README.md` | 项目门面 | 🔴 必读 |
-| `docs/设计文档/博客系统设计方案.md` | 完整设计 v0.3 | 🔴 必读 |
+| `README.md` | 项目门面（v2.7.0 同步重写） | 🔴 必读 |
+| `docs/设计文档/博客系统设计方案.md` | 完整设计 v0.3（含 v2.6.0/v2.7.0 变更记录） | 🔴 必读 |
 | `frontend/middleware/admin-auth.ts` | SSR-safe 鉴权（**不要回退 BUG-001 修复**） | 🔴 必读 |
 | `frontend/layouts/admin.vue` | admin 布局 + 鉴权兜底 + 全局 Toast/Dialog 容器 | 🔴 必读 |
-| `frontend/composables/useDialog.ts` / `useToast.ts` | 替代浏览器原生 alert/confirm/prompt | 🔴 必读 |
-| `frontend/components/GlobalDialog.vue` | confirm + prompt 共用对话框 | 🔴 必读 |
-| `docs/changelogs/` | 版本变更记录（v2.0.0 → v2.5.0） | 🟠 重要 |
+| `frontend/nuxt.config.ts` | v2.7.0 全静态 prerender 配置（routes / crawlLinks / failOnError / ignore） | 🔴 必读 |
+| `backend/blog-app/src/main/resources/application-{dev,prod,mysql}.yml` | v2.6.0 拆 4 profile 矩阵（dev / dev,mysql / prod / prod,mysql） | 🔴 必读 |
+| `scripts/rebuild-static.sh` | 每日 cron 重建前端静态文件 | 🔴 必读 |
+| `scripts/verify-sqlite.sh` | 端到端 29 端点验证脚本 | 🟠 重要 |
+| `scripts/sqlite-export.sh` | dev 加密导出 db（**只支持加密**，无明文兜底） | 🟠 重要 |
+| `scripts/sqlite-import.sh` | prod 解密导入 db（**只支持 .enc**，错密码不碰目标 db） | 🟠 重要 |
+| `scripts/publish-release.sh` | 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子） | 🟠 重要 |
+| `scripts/deploy-server.sh` | 服务器端一键部署（`DEPLOY_MODE=full\|code\|data` + `IMPORT_DB=1`） | 🟠 重要 |
+| `docs/changelogs/` | 版本变更记录（v2.0.0 → v2.7.0） | 🟠 重要 |
 | `docs/接口契约审计报告.md` | API 100% 一致 | 🟠 重要 |
-| `docs/阿里云部署方案.md` | 部署方案 | 🟠 重要 |
 | `AGENTS.md` | **本文件** | 🔴 必读 |
 
 ---
@@ -177,4 +257,5 @@ curl http://localhost:8080/api/v1/health
 ## 11. 备注
 
 - 之前版本的"常见任务 / 踩坑记录 / 调试技巧 / 维护记录"已删除（内容散落 `docs/changelogs/` + 各文件注释里）
-- agent 启动建议顺序：1) 读本文件 → 2) `docs/changelogs/` 最新版 → 3) 关键文件索引中的 🔴 必读项 → 4) 接到任务时再按需 Read
+- agent 启动建议顺序：1) 读本文件 → 2) **`docs/changelogs/` 最新两版**（v2.7.0 / v2.6.0，理解当前架构） → 3) 关键文件索引中的 🔴 必读项 → 4) 接到任务时再按需 Read
+- v2.6.0 / v2.7.0 是**架构大变更**（DB 引擎 + 前端部署模型），接到新任务前务必先读这两个 changelog
