@@ -5,7 +5,7 @@
 # 执行方式：
 #   docker exec -i blog-mysql mysql -uroot -proot --default-character-set=utf8mb4 blog < docs/sql/schema-mysql.sql
 #
-# 表清单（11 张）：
+# 表清单（12 张）：
 #   - user           管理员账号
 #   - article        文章
 #   - category       分类
@@ -17,6 +17,7 @@
 #   - site_settings  站点设置（按 section 存 JSON）
 #   - page_view      访问统计（v2.5.0 新增，按月分区）
 #   - article_view_log  历史表（v2.5.0 之前的访问日志，0 数据保留 schema 兼容）
+#   - ip_ban         IP 频率限制封禁记录（2026-06-18 新增）
 -- =============================================================
 
 SET NAMES utf8mb4;
@@ -227,6 +228,27 @@ CREATE TABLE IF NOT EXISTS `article_view_log` (
   KEY `idx_article` (`article_id`),
   KEY `idx_date` (`view_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章访问日志（v2.5.0 之前的旧表，新版用 page_view）';
+
+-- ----------------------------------------------------
+-- 12. ip_ban 全站请求频率封禁（2026-06-18 新增）
+-- 触发：IpRateLimitFilter 检测到同一 IP 1 秒内请求数超过阈值
+-- ----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `ip_ban` (
+  `id`            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `ip`            VARCHAR(45)  NOT NULL                COMMENT '被封禁的客户端 IP',
+  `request_count` INT          NOT NULL DEFAULT 0       COMMENT '触发封禁时 1 秒窗口内的请求数（快照）',
+  `reason`        VARCHAR(255) NOT NULL DEFAULT ''      COMMENT '封禁原因',
+  `banned_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '封禁开始时间',
+  `expire_at`     DATETIME     NOT NULL                COMMENT '封禁到期时间（过期自动解封）',
+  `unbanned`      TINYINT      NOT NULL DEFAULT 0       COMMENT '是否被管理员手动解封',
+  `unbanned_at`   DATETIME     DEFAULT NULL             COMMENT '手动解封时间',
+  `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ip` (`ip`),
+  KEY `idx_expire` (`expire_at`),
+  KEY `idx_unbanned` (`unbanned`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='IP 频率限制封禁记录';
 
 SET FOREIGN_KEY_CHECKS = 1;
 

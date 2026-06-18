@@ -26,6 +26,12 @@
             <version>3.4.3.4</version>
         </dependency>
 
+        <!-- 2026-06-18 新增：IpBanService 用 StringRedisTemplate 做封禁标记的热路径读写 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-api</artifactId>

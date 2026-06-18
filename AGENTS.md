@@ -100,6 +100,19 @@ dev/prod 默认 **SQLite**（一文件 0 内存占用）；MySQL 8.0 降级为�
 - 不要用 MyBatis-Plus `BaseMapper.insert` ——SQLite 下 `getGeneratedKeys()` 失败会返回 1 但数据未落库（**假象**）
 - `PageViewMapper` 没有 `@Insert` 注解，走通用 `JdbcTemplate.update` 路径
 
+### 4.8 日志体系（REQ-LOG-2026-06-18，**已实现**）
+- **门面**：SLF4J + Logback（Spring Boot 默认，无新依赖）；`@Slf4j` Lombok 注解
+- **配置**：`backend/blog-app/src/main/resources/logback-spring.xml`（dev 落 `/tmp/blog-dev-logs/`，prod 落 `/opt/myblog/logs/`，按天滚动 100MB/30 天，主 2GB + warn 1GB = 3GB 上限，异步 `neverBlock`）。日志级别/路径全在此文件，**dev/prod yml 的 `logging.*` 已清空**避免冲突
+- **文件名**：`blog.log` / `blog-YYYY-MM-DD.N.log`（全量）+ `blog-warn.log` / `blog-warn-YYYY-MM-DD.N.log`（WARN+），与 `deploy-server.sh` 的 logrotate glob 对齐
+- **traceId**：每个请求由 `TraceIdFilter`（`com.blog.common.web`，`@Order(Ordered.HIGHEST_PRECEDENCE)`）注入 MDC，长度 32 字符（UUID 去横线），响应头 `X-Trace-Id` 回写；`IpRateLimitFilter` 已让位下调到 `HIGHEST_PRECEDENCE+1`
+- **操作人传递**：`AdminAuthFilter` 放行时把 uid/deviceId 写入 request attribute（`com.blog.common.web.AuthContext`），admin 业务日志据此打"操作人"
+- **必须覆盖的 4 个 P0 安全类**：`AdminAuthFilter`、`AuthController.login`、`DeviceService`、`JwtUtil` —— 任一拒绝点必须打 WARN，含 IP / path / 拒绝原因
+- **禁打日志的字段**：明文 password、`passwordHash`、`token` 全文、JWT secret（合规硬线）
+- **降噪规则**：`PageViewFilter` / `PageViewService` / `view_count` 自增 等高频路径**禁止** INFO 级（会爆磁盘）
+- **prod console**：FR-6.5 强制 prod profile **必须关闭 CONSOLE appender**（避免 systemd 重定向的 app.log 与 Logback 文件双写，绕过 3GB 预算）
+- **systemd 重定向文件**：`/opt/myblog/logs/app.log` + `app-error.log` 由 logrotate 单独管（按天切，保留 7 天）
+- **完整需求**：见 `docs/需求文档/REQ-LOG-2026-06-18.md`
+
 ---
 
 ## 5. 常用命令
@@ -257,5 +270,59 @@ DEPLOY_MODE=data IMPORT_DB=1 sudo ./scripts/deploy-server.sh v3.x.x   # 只导�
 ## 11. 备注
 
 - 之前版本的"常见任务 / 踩坑记录 / 调试技巧 / 维护记录"已删除（内容散落 `docs/changelogs/` + 各文件注释里）
-- agent 启动建议顺序：1) 读本文件 → 2) **`docs/changelogs/` 最新两版**（v2.7.0 / v2.6.0，理解当前架构） → 3) 关键文件索引中的 🔴 必读项 → 4) 接到任务时再按需 Read
-- v2.6.0 / v2.7.0 是**架构大变更**（DB 引擎 + 前端部署模型），接到新任务前务必先读这两个 changelog
+- agent 启动建议顺序：1) 读本文件 → 2) **`docs/changelogs/` 最新两版**（v4.0.0 / v2.7.0，理解当前架构） → 3) 关键文件索引中的 🔴 必读项 → 4) 接到任务时再按需 Read
+- v4.0.0 / v2.7.0 / v2.6.0 是**架构大变更**（日志体系 + 全静态化 + SQLite 改造），接到新任务前务必先读这几个 changelog
+
+---
+
+## 12. 版本号管理规范（2026-06-18 v4.0.0 起强制）
+
+### 12.1 权威源
+- **Maven `<revision>` 是项目唯一权威版本号**（`backend/pom.xml` line 32）
+- 当前 `<revision>` = **4.0.0**
+- Git tag / 部署脚本 / 文档里的所有版本号必须与 `<revision>` **同步**（按 §12.3 工作流）
+
+### 12.2 版本号引用分类（决定改 vs 不改）
+
+**A 类 — 必须随 `<revision>` 同步改的"活跃引用"**：
+
+| 文件 | 位置 | 说明 |
+|---|---|---|
+| `backend/pom.xml` | line 32 `<revision>` | 🔴 唯一入口，改这个其他全跟着同步 |
+| `scripts/deploy-server.sh` | line 7, 26, 27, 28, 29（注释） / line 54, 55（Usage 提示）/ line 641（rollback 提示） | 注释里的 `vX.Y.Z` + 错误提示 |
+| `scripts/publish-release.sh` | line 279（README 模板里的 deploy 例子） | GitHub Release README 解锁用的初始内容 |
+
+**B 类 — 绝对不改的"历史引用"**（破坏它就破坏历史追溯）：
+
+| 类别 | 例子 |
+|---|---|
+| 历史 changelog | `docs/changelogs/*.md` 所有文件 |
+| 历史设计文档 | `docs/需求文档/博客系统设计方案.md` / `docs/部署方案.md` / `docs/阿里云部署方案.md` |
+| AGENTS.md / README.md 里的"历史描述"段 | §3 Tech Stack / §4 关键决策 / §10 关键文件索引里所有 `v2.x` 引用 |
+| 历史升级指南 | `docs/scripts/upgrade-guide.md` 里所有 `v2.x` 引用 |
+| 代码注释里的"vX.Y.Z 加的"标注 | `frontend/middleware/admin-auth.ts` / `frontend/composables/*.ts` / `frontend/nuxt.config.ts` / `backend/**/application*.yml` |
+
+**C 类 — 每次版本变更新建**：
+
+- `docs/changelogs/YYYY-MM-DD-vX.Y.Z-{slug}.md`（命名按既有风格：`v2.6.0-sqlite-migration` / `v2.7.0-nuxt-static`）
+
+### 12.3 改版本号的工作流
+
+1. 改 `backend/pom.xml` `<revision>` ← 唯一入口
+2. 全仓 grep `v<旧版本号>` 找 A 类引用 → 同步改成 `v<新版本号>`
+3. B 类历史引用一律不动（grep 时排除 `docs/changelogs/` `docs/需求文档/` `docs/部署方案.md` `docs/阿里云部署方案.md`）
+4. 新建 `docs/changelogs/YYYY-MM-DD-vX.Y.Z-{slug}.md` 写变更摘要（背景 / 新增 / 改动 / 升级回滚说明）
+5. AGENTS.md §3 / §4 / §10 索引如有相关条目 → 仅在"agent 启动建议顺序"那行加新版本号
+6. 测试：`bash scripts/verify-sqlite.sh` 全过 + 部署脚本能跑
+
+### 12.4 禁止
+
+- ❌ 在 B 类位置把 v2.7.0 改成 v4.0.0（破坏历史追溯）
+- ❌ 用 Maven `${revision}` 以外的来源定义版本号（避免双系统漂移）
+- ❌ 改 `<revision>` 不改 deploy-server.sh 注释（注释误导运维）
+- ❌ 跳过新建 changelog（破坏 §12.2 C 类规则）
+
+### 12.5 兼容原则
+
+- 历史 changelog 文件名 / 内容 / commit 全部**只读**，即便后续修正也要新建 changelog 引用旧 changelog
+- "上次是什么版本"问题永远以 `<revision>` 为准，B 类历史引用只回答"当时是什么时候"

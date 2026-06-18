@@ -204,6 +204,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_article_view_log_article_date
 CREATE INDEX IF NOT EXISTS idx_article_view_log_article ON article_view_log(article_id);
 CREATE INDEX IF NOT EXISTS idx_article_view_log_date ON article_view_log(view_date);
 
+-- ----------------------------------------------------
+-- 12. ip_ban 全站请求频率封禁（2026-06-18 新增）
+-- 触发：IpRateLimitFilter 检测到同一 IP 1 秒内请求数超过阈值
+-- ----------------------------------------------------
+CREATE TABLE IF NOT EXISTS ip_ban (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  ip              VARCHAR(45)   NOT NULL,
+  request_count   INT           NOT NULL DEFAULT 0,
+  reason          VARCHAR(255)  NOT NULL DEFAULT '',
+  banned_at       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expire_at       DATETIME      NOT NULL,
+  unbanned        TINYINT       NOT NULL DEFAULT 0,
+  unbanned_at     DATETIME,
+  created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ip_ban_ip ON ip_ban(ip);
+CREATE INDEX IF NOT EXISTS idx_ip_ban_expire ON ip_ban(expire_at);
+CREATE INDEX IF NOT EXISTS idx_ip_ban_unbanned ON ip_ban(unbanned);
+
 -- =====================================================
 -- Seed Data
 -- =====================================================

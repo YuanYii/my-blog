@@ -56,7 +56,7 @@ my-blog/
 │   │   └── 防重放攻击方案设计.md
 │   ├── changelogs/                    # 版本变更记录（v2.0.0 → v2.7.0）
 │   ├── 接口契约审计报告.md            # API 契约 100% 一致性审计
-│   └── 阿里云部署方案.md              # 生产部署方案（阿里云 ECS 1C2G，无 docker）
+│   └── 部署方案.md              # 生产部署方案（VPS 1C2G，无 docker）
 ├── AGENTS.md                          # 项目级 agent 上下文（v2.7.0 同步）
 └── README.md                          # 本文件
 ```
@@ -471,11 +471,11 @@ Nginx (:80 → 443)         ← apt 装 nginx（系统服务）
 
 ### 5.2 前置资源
 
-| 资源 | 规格 | 成本 |
-|------|------|------|
-| 阿里云 ECS 香港轻量 | 1C2G / 40G SSD / 3M 带宽 | ~¥30/月 |
-| 域名 | `.com` | ¥55/年 |
-| SSL 证书 | Let's Encrypt (certbot 自动续期) | ¥0 |
+| 资源       | 规格                           | 成本     |
+|----------|------------------------------|--------|
+| VPS 洛杉矶 | 1C2G / 30G SSD / 3M 带宽       | ~¥70/年 |
+| 域名       | `coreyai.com`                | ¥55/年  |
+| SSL 证书   | Let's Encrypt (certbot 自动续期) | ¥0     |
 
 > v2.7.0 释放前端 150-250MB 内存后，JVM heap 可从 256MB 提到 384MB（详见 `scripts/deploy-sqlite.sh`）。
 
@@ -669,16 +669,16 @@ sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%
 
 ### 6.3 参考文档
 
-| 文档 | 说明 |
-|------|------|
-| [`docs/设计文档/博客系统设计方案.md`](docs/设计文档/博客系统设计方案.md) | 完整需求与架构设计（v0.3，含 v2.6.0/v2.7.0 变更记录） |
-| [`docs/阿里云部署方案.md`](docs/阿里云部署方案.md) | 生产部署方案（阿里云 ECS 1C2G，无 docker，v2.6.0/v2.7.0 配套） |
-| [`docs/接口契约审计报告.md`](docs/接口契约审计报告.md) | API 契约 100% 一致性审计 |
-| [`docs/设计文档/防重放攻击方案设计.md`](docs/设计文档/防重放攻击方案设计.md) | 防重放攻击方案 |
-| [`docs/changelogs/`](docs/changelogs/) | 版本变更记录（v2.0.0 → v2.7.0，每个版本独立 md） |
-| [`AGENTS.md`](AGENTS.md) | 项目级 agent 上下文（v2.7.0 同步更新） |
-| [`docs/changelogs/2026-06-17-v2.6.0-sqlite-migration.md`](docs/changelogs/2026-06-17-v2.6.0-sqlite-migration.md) | v2.6.0 SQLite 改造完整 changelog |
-| [`docs/changelogs/2026-06-17-v2.7.0-nuxt-static.md`](docs/changelogs/2026-06-17-v2.7.0-nuxt-static.md) | v2.7.0 全静态化完整 changelog |
+| 文档 | 说明                                         |
+|------|--------------------------------------------|
+| [`docs/设计文档/博客系统设计方案.md`](docs/需求文档/博客系统设计方案.md) | 完整需求与架构设计（v0.3，含 v2.6.0/v2.7.0 变更记录）       |
+| [`docs/阿里云部署方案.md`](docs/阿里云部署方案.md) | 生产部署方案（VPS 1C2G，无 docker，v2.6.0/v2.7.0 配套） |
+| [`docs/接口契约审计报告.md`](docs/接口契约审计报告.md) | API 契约 100% 一致性审计                          |
+| [`docs/设计文档/防重放攻击方案设计.md`](docs/需求文档/防重放攻击方案设计.md) | 防重放攻击方案                                    |
+| [`docs/changelogs/`](docs/changelogs/) | 版本变更记录（v2.0.0 → v2.7.0，每个版本独立 md）          |
+| [`AGENTS.md`](AGENTS.md) | 项目级 agent 上下文（v2.7.0 同步更新）                 |
+| [`docs/changelogs/2026-06-17-v2.6.0-sqlite-migration.md`](docs/changelogs/2026-06-17-v2.6.0-sqlite-migration.md) | v2.6.0 SQLite 改造完整 changelog               |
+| [`docs/changelogs/2026-06-17-v2.7.0-nuxt-static.md`](docs/changelogs/2026-06-17-v2.7.0-nuxt-static.md) | v2.7.0 全静态化完整 changelog                    |
 
 ---
 

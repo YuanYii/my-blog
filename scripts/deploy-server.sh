@@ -4,7 +4,7 @@
 # 跑法(root 或 sudo):
 #   curl -L https://raw.githubusercontent.com/OWNER/REPO/main/scripts/deploy-server.sh -o deploy-server.sh
 #   chmod +x deploy-server.sh
-#   sudo ./deploy-server.sh v2.7.0
+#   sudo ./deploy-server.sh v4.0.0
 #
 # 自定义参数(环境变量):
 #   GITHUB_REPO=owner/repo       必填
@@ -23,10 +23,10 @@
 #                                 产物:dev-blog-dump.sql.gz.enc (publish-release.sh 加 EXPORT_DB=1 才有)
 #
 # 部署模式组合示例:
-#   默认发版:           ./deploy-server.sh v2.7.0
-#   只装代码(保留 db):  DEPLOY_MODE=code ./deploy-server.sh v2.7.0
-#   只导入数据:          DEPLOY_MODE=data IMPORT_DB=1 ./deploy-server.sh v2.7.0
-#   代码+数据全装:      IMPORT_DB=1 ./deploy-server.sh v2.7.0
+#   默认发版:           ./deploy-server.sh v4.0.0
+#   只装代码(保留 db):  DEPLOY_MODE=code ./deploy-server.sh v4.0.0
+#   只导入数据:          DEPLOY_MODE=data IMPORT_DB=1 ./deploy-server.sh v4.0.0
+#   代码+数据全装:      IMPORT_DB=1 ./deploy-server.sh v4.0.0
 # 语义约束:
 #   DEPLOY_MODE=data + IMPORT_DB=0  →  报错退出(语义矛盾)
 
@@ -51,8 +51,8 @@ err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # 校验
 if [ -z "$TAG" ]; then
-    err "Usage: $0 <tag>  e.g. $0 v2.7.0"
-    err "Or:RELEASE_TAG=v2.7.0 $0"
+    err "Usage: $0 <tag>  e.g. $0 v4.0.0"
+    err "Or:RELEASE_TAG=v4.0.0 $0"
     exit 1
 fi
 if [ -z "$GITHUB_REPO" ]; then
@@ -406,6 +406,42 @@ systemctl enable myblog
 systemctl restart myblog
 info "[OK] systemd service configured and started"
 
+# ============= 8.6 logrotate 配置(REQ-LOG-2026-06-18)=============
+# 覆盖两类日志:
+#   ① Logback 管理的滚动文件(blog.YYYY-MM-DD.NN.log + blog-warn.YYYY-MM-DD.NN.log)
+#      —— Logback 自己按 30 天滚动,但 systemd 重启/异常退出可能留下孤儿,兜底
+#   ② systemd 重定向的 app.log / app-error.log —— Logback 管不到,必须单独配
+# 周期按天,保留 7 天(日志在 prod 仅供 owner 单人排查,7 天足够)
+LOGROTATE_FILE="/etc/logrotate.d/myblog"
+if [ -w /etc/logrotate.d ] || command -v sudo >/dev/null 2>&1; then
+    cat > "$LOGROTATE_FILE" <<'LOGROTATE_EOF'
+/opt/myblog/logs/blog-*.log /opt/myblog/logs/blog-warn-*.log {
+    daily
+    rotate 30
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}
+
+/opt/myblog/logs/app.log /opt/myblog/logs/app-error.log {
+    daily
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}
+LOGROTATE_EOF
+    # 权限 644,root 拥有
+    chmod 644 "$LOGROTATE_FILE" 2>/dev/null || sudo chmod 644 "$LOGROTATE_FILE" 2>/dev/null || true
+    info "[OK] logrotate configured: $LOGROTATE_FILE"
+else
+    warn "[WARN] cannot write /etc/logrotate.d, log rotation not configured (systemd-redirected logs may grow unbounded)"
+fi
+
 # ============= 8.5 数据导入(IMPORT_DB=1 触发)=============
 # 调用 sqlite-import.sh 解密 .enc 并导入到 $DB_FILE
 # DEPLOY_MODE=data 模式强制要求 IMPORT_DB=1(已在顶部矛盾检测)
@@ -602,5 +638,5 @@ info "  Default account:    admin / 123456  (change password in production)"
 info "  View logs:    journalctl -u myblog -f"
 info "                  tail -f $INSTALL_DIR/logs/app.log"
 info "  Restart service:    systemctl restart myblog"
-info "  Version rollback:    $0 v2.6.0   (specify old tag)"
+info "  Version rollback:    $0 v4.0.0   (specify old tag)"
 info "=========================================="

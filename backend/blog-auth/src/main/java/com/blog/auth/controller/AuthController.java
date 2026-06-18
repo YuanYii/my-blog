@@ -12,6 +12,7 @@ import com.blog.common.ResultCode;
 import com.blog.common.TrustedProxyUtil;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
@@ -30,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * - 登录限流：同一 IP 5 次/分钟失败后锁定 1 分钟（in-memory 计数器，**多实例部署需换 Redis**）
  * - 设备白名单集成：login 时校验 X-Device-Id，未授权设备返回 DEVICE_PENDING
  */
+@Slf4j
 @RestController
 @RequestMapping("/auth")
 @RequiredArgsConstructor
@@ -63,6 +65,8 @@ public class AuthController {
 
         // 1) 登录限流检查：同 IP 失败次数超限则直接拒
         if (isLoginLocked(ip)) {
+            // FR-2.3：限流触发打 WARN（含 username + IP，便于排查暴力破解——US-2）
+            log.warn("登录限流触发：username={} ip={} 已达 {} 次/分钟上限", username, ip, LOGIN_FAIL_LIMIT);
             return Result.error(429, "尝试次数过多，请 1 分钟后再试");
         }
 
@@ -76,10 +80,14 @@ public class AuthController {
             // 即使没用户也跑一次 BCrypt 占用 CPU，避免时序攻击判断"用户是否存在"
             BCrypt.checkpw(password, "$2a$10$0YSdd8Tf7xcsmAk.05Kn4uEjjX8dQvqJYhqLrE5Gnd4wj5jEa0000");
             recordLoginFail(ip);
+            // FR-2.3/2.4：登录失败打 WARN，含 username + IP（禁打 password / hash —— FR-2.5 合规硬线）
+            // 文案与返回码合并为"凭证错误"（不暴露"用户是否存在"），日志侧不区分以保持安全语义一致
+            log.warn("登录失败：凭证错误 username={} ip={}", username, ip);
             return Result.error(ResultCode.INVALID_CREDENTIALS);
         }
         if (!BCrypt.checkpw(password, user.getPasswordHash())) {
             recordLoginFail(ip);
+            log.warn("登录失败：凭证错误 username={} ip={}", username, ip);
             return Result.error(ResultCode.INVALID_CREDENTIALS);
         }
 
@@ -93,6 +101,9 @@ public class AuthController {
         } catch (com.blog.common.BusinessException e) {
             // 设备白名单失败也算登录失败（防止攻击者用设备白名单做密码侧信道）
             recordLoginFail(ip);
+            // FR-2.3：密码已对但设备未通过（待授权/吊销）——WARN 记录，便于区分"密码错"与"设备拦截"
+            log.warn("登录受阻：密码正确但设备校验未通过 username={} ip={} code={} reason={}",
+                    username, ip, e.getCode(), e.getMessage());
             return Result.error(e.getCode(), e.getMessage());
         }
 
@@ -100,6 +111,8 @@ public class AuthController {
         LOGIN_FAIL_MAP.remove(ip);
 
         String token = jwtUtil.generate(user.getId(), user.getUsername(), user.getRole(), device.getDeviceId());
+        // FR-2.3/2.4：登录成功打 INFO，含 username + IP + deviceId（禁打 token 全文 —— FR-2.5）
+        log.info("登录成功：username={} uid={} ip={} deviceId={}", username, user.getId(), ip, device.getDeviceId());
 
         // 响应平铺：前端 useAuth 需要 res.data.uid/username/role
         Map<String, Object> data = new HashMap<>();

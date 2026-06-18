@@ -9,7 +9,7 @@
     "fetch-routes": "node scripts/fetch-routes.js",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "patch-package && nuxt prepare"
   },
   "dependencies": {
     "@types/dompurify": "^3.0.5",
@@ -22,6 +22,7 @@
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.12.1",
     "@types/node": "^22.5.0",
+    "patch-package": "^8.0.1",
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.4"
   }

@@ -32,10 +32,6 @@ blog:
       # dev 用项目内 tmp/ 目录（Git ignore）
       dir: ${UPLOAD_DIR:${user.dir}/tmp/blog-uploads}
 
-logging:
-  level:
-    root: INFO
-    com.blog: DEBUG
-    com.baomidou.mybatisplus: WARN
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"
+# 日志体系（REQ-LOG-2026-06-18）：appender / 级别 / 滚动 / 路径全部由
+# logback-spring.xml 统一管理（dev 落 /tmp/blog-dev-logs，CONSOLE+FILE 双写）。
+# 这里不再配 logging.level / logging.pattern，避免与 logback-spring.xml 冲突。

@@ -3,6 +3,7 @@ package com.blog.comment.controller;
 import com.blog.common.PageResult;
 import com.blog.common.Result;
 import com.blog.common.TrustedProxyUtil;
+import com.blog.common.web.AuthContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -113,13 +114,13 @@ public class CommentController {
             return Result.error(400, "网站 URL 长度不能超过 200 字符");
         }
 
-        // 验证文章存在且已发布
-        Long articleExists = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM article WHERE id = ? AND status = 1 AND deleted = 0",
-                Long.class, articleId);
-        if (articleExists == null || articleExists == 0) {
+        // 验证文章存在且已发布（顺便取 slug 供日志记录，避免再查一次）
+        List<Map<String, Object>> articleRows = jdbc.queryForList(
+                "SELECT slug FROM article WHERE id = ? AND status = 1 AND deleted = 0", articleId);
+        if (articleRows.isEmpty()) {
             return Result.error(1001, "文章不存在或未发布");
         }
+        String articleSlug = (String) articleRows.get(0).get("slug");
 
         // 2026-06-12 修复：原 INSERT 后用独立 `SELECT LAST_INSERT_ID()` 取自增 ID，
         // 但 JdbcTemplate 不在事务里时两次调用从连接池拿到的可能不是同一条 Connection，
@@ -150,6 +151,9 @@ public class CommentController {
         Number key = keyHolder.getKey();
         Long newId = key != null ? key.longValue() : null;
 
+        // FR-3.3：访客评论提交 INFO（含 IP、UA、文章 slug）。不打评论正文/邮箱等 PII。
+        log.info("访客评论提交：commentId={} articleSlug={} ip={} ua=\"{}\"",
+                newId, articleSlug, ip, request.getHeader("User-Agent"));
         Map<String, Object> data = new HashMap<>();
         data.put("id", newId);
         data.put("message", "评论已提交，待审核");
@@ -180,7 +184,8 @@ public class CommentController {
 
     /** admin：通过 / 屏蔽 */
     @PutMapping("/{id}/status")
-    public Result<Void> updateStatus(@PathVariable Long id, @RequestBody(required = false) Map<String, Integer> body) {
+    public Result<Void> updateStatus(@PathVariable Long id, @RequestBody(required = false) Map<String, Integer> body,
+                                     HttpServletRequest request) {
         if (body == null) return Result.error(400, "请求体不能为空");
         Integer status = body.get("status");
         if (status == null) return Result.error(400, "status 不能为空");
@@ -195,12 +200,14 @@ public class CommentController {
             return Result.error(1001, "评论不存在");
         }
         jdbc.update("UPDATE comment SET status = ? WHERE id = ?", status, id);
+        // FR-3.4：admin 评论审核 INFO（含操作人 uid）。status：0待审/1通过/2拒绝
+        log.info("评论审核：commentId={} status={} operator={}", id, status, AuthContext.uid(request));
         return Result.success();
     }
 
     /** admin：物理删除评论 */
     @DeleteMapping("/{id}")
-    public Result<Void> delete(@PathVariable Long id) {
+    public Result<Void> delete(@PathVariable Long id, HttpServletRequest request) {
         // 校验评论存在
         Long exists = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM comment WHERE id = ?", Long.class, id);
@@ -208,6 +215,8 @@ public class CommentController {
             return Result.error(1001, "评论不存在");
         }
         jdbc.update("DELETE FROM comment WHERE id = ?", id);
+        // FR-3.4：admin 删除评论 INFO（含操作人 uid）
+        log.info("评论删除：commentId={} operator={}", id, AuthContext.uid(request));
         return Result.success();
     }
 

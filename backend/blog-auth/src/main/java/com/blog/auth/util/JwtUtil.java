@@ -1,9 +1,14 @@
 package com.blog.auth.util;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.UnsupportedJwtException;
 import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.security.SignatureException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +21,7 @@ import java.util.Map;
 /**
  * JWT 工具类（HS256）
  */
+@Slf4j
 @Component
 public class JwtUtil {
 
@@ -73,12 +79,31 @@ public class JwtUtil {
         return generate(userId, username, role, "");
     }
 
-    /** 解析 token，返回 Claims；失败抛异常 */
+    /**
+     * 解析 token，返回 Claims；失败抛异常。
+     *
+     * REQ-LOG-2026-06-18 / FR-2.8：try/catch 落在此处，按失败原因（过期 / 签名错 / 格式错）
+     * 分类打 WARN 后**重新抛出原异常**——调用方（如 AdminAuthFilter）保持现有
+     * `catch (Exception e)` 简化写法不变，行为零回归。
+     *
+     * 安全（NFR-2 / FR-2.5）：只记录失败原因，**不打印 token 全文 / secret**。
+     */
     public Claims parse(String token) {
-        return Jwts.parserBuilder()
-                .setSigningKey(getKey())
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
+        try {
+            return Jwts.parserBuilder()
+                    .setSigningKey(getKey())
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+        } catch (ExpiredJwtException e) {
+            log.warn("JWT 解析失败：token 已过期 expiredAt={}", e.getClaims() != null ? e.getClaims().getExpiration() : null);
+            throw e;
+        } catch (SignatureException e) {
+            log.warn("JWT 解析失败：签名校验不通过（疑似伪造或 secret 不匹配）");
+            throw e;
+        } catch (MalformedJwtException | UnsupportedJwtException | IllegalArgumentException e) {
+            log.warn("JWT 解析失败：token 格式非法（{}）", e.getClass().getSimpleName());
+            throw e;
+        }
     }
 }

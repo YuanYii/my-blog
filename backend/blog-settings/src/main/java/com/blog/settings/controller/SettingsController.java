@@ -6,10 +6,14 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.blog.auth.entity.User;
 import com.blog.auth.mapper.UserMapper;
 import com.blog.common.Result;
+import com.blog.common.web.AuthContext;
 import com.blog.settings.service.SiteSettingsService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.PostConstruct;
@@ -37,6 +41,7 @@ import java.util.Arrays;
  * 简版：6 个 tab 端点 + 单文件上传（本地磁盘）
  * social / preferences / blog / theme / advanced 全部持久化到 site_settings 表
  */
+@Slf4j
 @RestController
 @RequestMapping("/admin/settings")
 @RequiredArgsConstructor
@@ -44,6 +49,22 @@ public class SettingsController {
 
     private final UserMapper userMapper;
     private final SiteSettingsService siteSettingsService;
+
+    /**
+     * FR-3.7：配置修改 INFO（含 key 名 + 操作人）。
+     * 通过 RequestContextHolder 取当前请求里的操作人 uid（AdminAuthFilter 已写入），
+     * 避免给每个 PUT 方法都加 HttpServletRequest 形参。
+     */
+    private void logSettingChange(String key) {
+        Object operator = null;
+        try {
+            ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attrs != null) operator = AuthContext.uid(attrs.getRequest());
+        } catch (Exception ignore) {
+            // 取不到操作人不影响主流程
+        }
+        log.info("配置修改：key={} operator={}", key, operator);
+    }
 
     // 修复（2026-06-07）：原 static final + System.getProperty("user.home") 在容器里是 /root/blog-uploads
     // 改成读 yml/env，prod 容器用 /data/uploads（volume 持久化）
@@ -134,6 +155,7 @@ public class SettingsController {
 
         if (!changed) return Result.success();  // 没东西可改直接返回 200
         userMapper.update(null, uw);
+        logSettingChange("profile");
         return Result.success();
     }
 
@@ -161,6 +183,8 @@ public class SettingsController {
         UpdateWrapper<User> uw = new UpdateWrapper<>();
         uw.eq("id", 1L).set("password_hash", newHash).set("updated_at", LocalDateTime.now());
         userMapper.update(null, uw);
+        // FR-3.7 / FR-2.5：只记录"密码已修改"事件，绝不打印新旧密码 / hash
+        logSettingChange("password");
         return Result.success();
     }
 
@@ -184,6 +208,7 @@ public class SettingsController {
             if (s.length() > 500) return Result.error(400, "twitter URL 不能超过 500 字符");
         }
         siteSettingsService.merge(SiteSettingsService.SECTION_SOCIAL, body);
+        logSettingChange(SiteSettingsService.SECTION_SOCIAL);
         return Result.success(siteSettingsService.get(SiteSettingsService.SECTION_SOCIAL));
     }
 
@@ -202,6 +227,7 @@ public class SettingsController {
             }
         }
         siteSettingsService.merge(SiteSettingsService.SECTION_PREFERENCES, body);
+        logSettingChange(SiteSettingsService.SECTION_PREFERENCES);
         return Result.success(siteSettingsService.get(SiteSettingsService.SECTION_PREFERENCES));
     }
 
@@ -228,6 +254,7 @@ public class SettingsController {
             return Result.error(400, "logo URL 不能超过 500 字符");
         }
         siteSettingsService.merge(SiteSettingsService.SECTION_BLOG, body);
+        logSettingChange(SiteSettingsService.SECTION_BLOG);
         return Result.success(siteSettingsService.get(SiteSettingsService.SECTION_BLOG));
     }
 
@@ -265,6 +292,7 @@ public class SettingsController {
             }
         }
         siteSettingsService.merge(SiteSettingsService.SECTION_THEME, body);
+        logSettingChange(SiteSettingsService.SECTION_THEME);
         return Result.success(siteSettingsService.get(SiteSettingsService.SECTION_THEME));
     }
 
@@ -277,6 +305,7 @@ public class SettingsController {
     public Result<Map<String, Object>> updateAdvanced(@RequestBody(required = false) Map<String, Object> body) {
         if (body == null) return Result.error(400, "请求体不能为空");
         siteSettingsService.merge(SiteSettingsService.SECTION_ADVANCED, body);
+        logSettingChange(SiteSettingsService.SECTION_ADVANCED);
         return Result.success(siteSettingsService.get(SiteSettingsService.SECTION_ADVANCED));
     }
 
@@ -327,6 +356,7 @@ public class SettingsController {
         }
         // 全量替换（编辑器每次提交完整结构）
         siteSettingsService.merge(SiteSettingsService.SECTION_TECHSTACK, body);
+        logSettingChange(SiteSettingsService.SECTION_TECHSTACK);
         return Result.success(siteSettingsService.get(SiteSettingsService.SECTION_TECHSTACK));
     }
 
@@ -366,6 +396,7 @@ public class SettingsController {
             }
         }
         siteSettingsService.merge(SiteSettingsService.SECTION_EXPERIENCE, body);
+        logSettingChange(SiteSettingsService.SECTION_EXPERIENCE);
         return Result.success(siteSettingsService.get(SiteSettingsService.SECTION_EXPERIENCE));
     }
 

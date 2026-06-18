@@ -10,11 +10,14 @@ import com.blog.article.mapper.CategoryMapper;
 import com.blog.article.mapper.TagMapper;
 import com.blog.common.PageResult;
 import com.blog.common.Result;
+import com.blog.common.web.AuthContext;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import javax.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -25,6 +28,7 @@ import java.util.stream.Collectors;
 /**
  * 文章 CRUD（简版：直接调 mapper）
  */
+@Slf4j
 @RestController
 @RequestMapping("/articles")
 @RequiredArgsConstructor
@@ -187,7 +191,7 @@ public class ArticleController {
 
     /** 创建文章（admin） */
     @PostMapping
-    public Result<Map<String, Object>> create(@RequestBody Article article) {
+    public Result<Map<String, Object>> create(@RequestBody Article article, HttpServletRequest request) {
         if (article.getTitle() == null || article.getTitle().trim().isEmpty()) {
             return Result.error(400, "标题不能为空");
         }
@@ -214,6 +218,8 @@ public class ArticleController {
         Article existing = articleMapper.selectOne(
             new QueryWrapper<Article>().eq("slug", article.getSlug()));
         if (existing != null) {
+            // FR-3.2：业务校验失败 WARN（slug 重复）
+            log.warn("文章创建校验失败：slug 重复 slug={} operator={}", article.getSlug(), AuthContext.uid(request));
             return Result.error(1002, "slug 已存在");
         }
         // 2026-06-12 修复：tagIds 校验——必须全部存在；不传则当作空
@@ -221,6 +227,8 @@ public class ArticleController {
         if (tagIds != null && !tagIds.isEmpty()) {
             for (Long tid : tagIds) {
                 if (tagMapper.selectById(tid) == null) {
+                    // FR-3.2：业务校验失败 WARN（标签不存在）
+                    log.warn("文章创建校验失败：标签不存在 tagId={} slug={} operator={}", tid, article.getSlug(), AuthContext.uid(request));
                     return Result.error(1003, "标签不存在: id=" + tid);
                 }
             }
@@ -231,6 +239,8 @@ public class ArticleController {
         if (article.getStatus() == null) article.setStatus(0);
         // 2026-06-13 修复（BUG-064）：status 白名单 0/1/2；越界（4xx 业务码 1010）拒绝
         if (!Arrays.asList(0, 1, 2).contains(article.getStatus())) {
+            // FR-3.2：业务校验失败 WARN（status 非法）
+            log.warn("文章创建校验失败：status 非法 status={} slug={} operator={}", article.getStatus(), article.getSlug(), AuthContext.uid(request));
             return Result.error(1010, "status 取值非法: " + article.getStatus());
         }
         // 2026-06-13 修复：发布状态(status=1)但未携带 publishedAt 时，由后端补当前时间。
@@ -246,6 +256,8 @@ public class ArticleController {
                 insertArticleTagIfNotExists(article.getId(), tid);
             }
         }
+        // FR-3.1：创建成功 INFO（含 slug、操作人）
+        log.info("文章创建：id={} slug={} status={} operator={}", article.getId(), article.getSlug(), article.getStatus(), AuthContext.uid(request));
         Map<String, Object> data = new HashMap<>();
         data.put("id", article.getId());
         data.put("slug", article.getSlug());
@@ -254,7 +266,7 @@ public class ArticleController {
 
     /** 更新文章（admin） */
     @PutMapping("/{id}")
-    public Result<Void> update(@PathVariable Long id, @RequestBody Article article) {
+    public Result<Void> update(@PathVariable Long id, @RequestBody Article article, HttpServletRequest request) {
         Article existing = articleMapper.selectById(id);
         if (existing == null) {
             return Result.error(1001, "文章不存在");
@@ -282,6 +294,8 @@ public class ArticleController {
             Article existingBySlug = articleMapper.selectOne(
                 new QueryWrapper<Article>().eq("slug", article.getSlug()));
             if (existingBySlug != null && !existingBySlug.getId().equals(id)) {
+                // FR-3.2：业务校验失败 WARN（slug 重复）
+                log.warn("文章更新校验失败：slug 重复 id={} slug={} operator={}", id, article.getSlug(), AuthContext.uid(request));
                 return Result.error(1002, "slug 已存在");
             }
         }
@@ -293,6 +307,8 @@ public class ArticleController {
         if (tagIds != null && !tagIds.isEmpty()) {
             for (Long tid : tagIds) {
                 if (tagMapper.selectById(tid) == null) {
+                    // FR-3.2：业务校验失败 WARN（标签不存在）
+                    log.warn("文章更新校验失败：标签不存在 id={} tagId={} operator={}", id, tid, AuthContext.uid(request));
                     return Result.error(1003, "标签不存在: id=" + tid);
                 }
             }
@@ -300,6 +316,8 @@ public class ArticleController {
         article.setId(id);
         // 2026-06-13 修复（BUG-064）：status 白名单 0/1/2；越界（业务码 1010）拒绝
         if (article.getStatus() != null && !Arrays.asList(0, 1, 2).contains(article.getStatus())) {
+            // FR-3.2：业务校验失败 WARN（status 非法）
+            log.warn("文章更新校验失败：status 非法 id={} status={} operator={}", id, article.getStatus(), AuthContext.uid(request));
             return Result.error(1010, "status 取值非法: " + article.getStatus());
         }
         // 2026-06-13 修复：发布时若 publishedAt 仍为空（含 posts.vue 批量发布只传 {status:1} 的场景），
@@ -320,18 +338,24 @@ public class ArticleController {
                 insertArticleTagIfNotExists(id, tid);
             }
         }
+        // FR-3.1：更新成功 INFO（含 slug、操作人）。slug 可能未传 → 用现有值兜底
+        log.info("文章更新：id={} slug={} operator={}", id,
+                article.getSlug() != null ? article.getSlug() : existing.getSlug(), AuthContext.uid(request));
         return Result.success();
     }
 
     /** 删除文章（admin，逻辑删除） */
     @DeleteMapping("/{id}")
-    public Result<Void> delete(@PathVariable Long id) {
-        if (articleMapper.selectById(id) == null) {
+    public Result<Void> delete(@PathVariable Long id, HttpServletRequest request) {
+        Article existing = articleMapper.selectById(id);
+        if (existing == null) {
             return Result.error(1001, "文章不存在");
         }
         articleMapper.deleteById(id);
         // 2026-06-12 修复：原 delete 没清 article_tag，删完留垃圾关联
         jdbc.update("DELETE FROM article_tag WHERE article_id = ?", id);
+        // FR-3.1：删除成功 INFO（含 slug、操作人）
+        log.info("文章删除：id={} slug={} operator={}", id, existing.getSlug(), AuthContext.uid(request));
         return Result.success();
     }
 

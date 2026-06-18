@@ -23,12 +23,43 @@ public final class TrustedProxyUtil {
         if (isTrustedProxy(remoteAddr)) {
             String xff = req.getHeader("X-Forwarded-For");
             if (xff != null && !xff.isEmpty() && !"unknown".equalsIgnoreCase(xff)) {
-                return xff.split(",")[0].trim();
+                return normalizeToIpv4(xff.split(",")[0].trim());
             }
             String xri = req.getHeader("X-Real-IP");
-            if (xri != null && !xri.isEmpty()) return xri;
+            if (xri != null && !xri.isEmpty()) return normalizeToIpv4(xri);
         }
-        return remoteAddr;
+        return normalizeToIpv4(remoteAddr);
+    }
+
+    /**
+     * 2026-06-18 新增：把 IPv6 形态的 loopback / IPv4-mapped IPv6 转成纯 IPv4
+     *
+     * 触发场景：
+     *   - dev 本机 curl localhost → req.getRemoteAddr() 在 macOS 默认返回 "0:0:0:0:0:0:0:1" (IPv6 loopback)
+     *     即使是 IPv4 客户端（curl http://127.0.0.1:8080），servlet 容器也可能返回 IPv6 loopback
+     *   - nginx 反代后端时偶尔也会用 IPv4-mapped IPv6 形式（::ffff:1.2.3.4）
+     *
+     * 不转的：纯 IPv6 公网地址（如 "2001:db8::1"）—— 这种是真实客户端 IPv6，不应该丢信息，
+     * 限流按 IPv6 维度进行也没问题（admin_device / ip_ban 列宽 45 都装得下）。
+     *
+     * @param ip 任意形态的 IP 字符串
+     * @return 优先 IPv4；纯 IPv6 保留原样；null/空原样返回
+     */
+    static String normalizeToIpv4(String ip) {
+        if (ip == null || ip.isEmpty()) return ip;
+        String s = ip.trim();
+        // IPv6 loopback 两种写法 → 127.0.0.1
+        if ("::1".equals(s) || "0:0:0:0:0:0:0:1".equalsIgnoreCase(s)) {
+            return "127.0.0.1";
+        }
+        // IPv4-mapped IPv6（::ffff:1.2.3.4）→ 1.2.3.4
+        if (s.regionMatches(true, 0, "::ffff:", 0, 7)) {
+            String tail = s.substring(7);
+            // 防止出现 ::ffff:1.2.3.4.5 之类非法形态——只取第一段有效 IPv4
+            // 简单按字符过滤：若 tail 含 ":" 说明不是 IPv4（IPv4-mapped 必须 7 字节完整）
+            if (!tail.contains(":")) return tail;
+        }
+        return s;
     }
 
     /** loopback + RFC 1918 私网 + IPv6 loopback / ULA / link-local 都视为受信任反代 */

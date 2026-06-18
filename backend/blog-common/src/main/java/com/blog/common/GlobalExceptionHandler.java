@@ -1,6 +1,7 @@
 package com.blog.common;
 
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
@@ -21,7 +22,13 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /** 业务异常 */
+    /** MDC key —— 与 TraceIdFilter / logback-spring.xml 对齐 */
+    private static final String MDC_TRACE_ID = "traceId";
+
+    /**
+     * 业务异常（FR-4.1）：已知业务异常输出 WARN。
+     * traceId 由 logback pattern 的 %X{traceId} 自动带上（FR-4.3），此处无需手工拼。
+     */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Result<Void>> handleBusiness(BusinessException e) {
         log.warn("业务异常: code={} msg={}", e.getCode(), e.getMessage());
@@ -114,11 +121,19 @@ public class GlobalExceptionHandler {
         return ResponseEntity.ok(Result.error(400, "参数 " + e.getName() + " 类型错误"));
     }
 
-    /** 兜底 */
+    /**
+     * 兜底（FR-4.2/4.3）：未预期异常输出 ERROR（含完整 stacktrace），日志带 traceId（MDC pattern）。
+     * 同时把 traceId 回写到响应 message，方便用户/owner 即使不看响应头也能复制编号定位（US-3）。
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleAny(Exception e) {
         log.error("未预期异常", e);
+        String traceId = MDC.get(MDC_TRACE_ID);
+        String message = ResultCode.INTERNAL_ERROR.getMessage();
+        if (traceId != null && !traceId.isEmpty()) {
+            message = message + "（请反馈编号 traceId=" + traceId + "）";
+        }
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Result.error(ResultCode.INTERNAL_ERROR));
+                .body(Result.error(ResultCode.INTERNAL_ERROR.getCode(), message));
     }
 }

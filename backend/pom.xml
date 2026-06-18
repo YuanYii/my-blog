@@ -29,7 +29,7 @@
 
     <properties>
         <!-- CI-friendly 版本号:所有子模块用 ${revision} 引用父 POM,升级只改这一行 -->
-        <revision>3.1.0</revision>
+        <revision>4.0.0</revision>
 
         <java.version>1.8</java.version>
         <maven.compiler.source>1.8</maven.compiler.source>

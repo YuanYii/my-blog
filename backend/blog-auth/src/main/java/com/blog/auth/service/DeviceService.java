@@ -6,6 +6,7 @@ import com.blog.auth.mapper.AdminDeviceMapper;
 import com.blog.common.ResultCode;
 import com.blog.common.BusinessException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -23,6 +24,7 @@ import java.util.List;
  *    - approved：更新 last_seen_at → 通过
  * 3. 客户端不传 device_id（旧客户端兼容 / 升级过渡期）：trust-migrate，自动建 approved
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DeviceService {
@@ -62,15 +64,34 @@ public class DeviceService {
         AdminDevice device = deviceMapper.selectOne(qw);
 
         if (device == null) {
-            // 全新设备：建 pending 记录，等后台批准
+            // 全新设备：默认 pending，等后台批准
             device = new AdminDevice();
             device.setDeviceId(deviceId);
             device.setDeviceName(safe(deviceName));
             device.setUserAgent(safe(userAgent));
             device.setIp(safe(ip));
-            device.setStatus(STATUS_PENDING);
             device.setLastSeenAt(LocalDateTime.now());
+
+            // Bootstrap: admin_device 表为空时，第一个成功通过密码校验的设备自动 approved
+            // Why: 否则首次部署 / 误清空表 后会陷入死锁——没有任何 approved 设备就无法登录后台,
+            //      也就无法去批准其他设备。等同于鸡生蛋问题。
+            // 安全：能走到这里说明密码已经校验通过（AuthController 在调本方法前先验密码），
+            //      bootstrap 仅是"省去 admin 自批准自己"的一次性开关，不绕过密码。
+            if (isDeviceTableEmpty()) {
+                device.setStatus(STATUS_APPROVED);
+                device.setApprovedAt(LocalDateTime.now());
+                device.setApprovedBy("system-bootstrap");
+                deviceMapper.insert(device);
+                // FR-2.6：设备注册（bootstrap 自动授权）INFO
+                log.info("设备注册：bootstrap 首设备自动授权 deviceId={} ip={}", deviceId, ip);
+                return device;
+            }
+
+            device.setStatus(STATUS_PENDING);
             deviceMapper.insert(device);
+            // FR-2.6/2.7：新设备登记为 pending（注册）+ 因 pending 被拒
+            log.info("设备注册：新设备登记为 pending deviceId={} ip={}", deviceId, ip);
+            log.warn("设备登录被拒：状态=pending（待授权）deviceId={} ip={}", deviceId, ip);
             throw new BusinessException(ResultCode.DEVICE_PENDING);
         }
 
@@ -85,9 +106,12 @@ public class DeviceService {
             case STATUS_APPROVED:
                 return device;
             case STATUS_REVOKED:
+                // FR-2.7：拒绝访问 WARN（含 deviceId 状态）
+                log.warn("设备登录被拒：状态=revoked（已吊销）deviceId={} ip={}", deviceId, ip);
                 throw new BusinessException(ResultCode.DEVICE_REVOKED);
             case STATUS_PENDING:
             default:
+                log.warn("设备登录被拒：状态=pending（待授权）deviceId={} ip={}", deviceId, ip);
                 throw new BusinessException(ResultCode.DEVICE_PENDING);
         }
     }
@@ -170,6 +194,8 @@ public class DeviceService {
         device.setApprovedAt(LocalDateTime.now());
         device.setApprovedBy(safe(approvedByDeviceId));
         deviceMapper.updateById(device);
+        // FR-2.6：设备授权 INFO（操作者 deviceId）
+        log.info("设备授权：deviceId={} approvedBy={}", device.getDeviceId(), safe(approvedByDeviceId));
     }
 
     /**
@@ -191,6 +217,8 @@ public class DeviceService {
         }
         device.setStatus(STATUS_REVOKED);
         deviceMapper.updateById(device);
+        // FR-2.6：设备吊销 INFO（被吊销 deviceId + 操作者 deviceId）
+        log.info("设备吊销：deviceId={} operatorDeviceId={}", device.getDeviceId(), safe(currentDeviceId));
     }
 
     /**
@@ -218,6 +246,8 @@ public class DeviceService {
             throw new BusinessException(ResultCode.DEVICE_SELF_REVOKE_FORBIDDEN);
         }
         deviceMapper.deleteById(id);
+        // FR-2.6：设备物理删除 INFO
+        log.info("设备删除：deviceId={} operatorDeviceId={}", device.getDeviceId(), safe(currentDeviceId));
     }
 
     /** 触摸活跃时间（每次 admin API 调用时更新，可选） */
@@ -259,6 +289,8 @@ public class DeviceService {
         qw.eq("device_id", deviceId);
         AdminDevice device = deviceMapper.selectOne(qw);
         if (device == null) {
+            // FR-2.7：请求侧设备未登记 —— WARN（含 deviceId）
+            log.warn("设备请求校验被拒：deviceId 未登记 deviceId={}", deviceId);
             throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
         switch (device.getStatus()) {
@@ -268,12 +300,26 @@ public class DeviceService {
                 deviceMapper.updateById(device);
                 return device;
             case STATUS_REVOKED:
+                // FR-2.7：拒绝访问 WARN（含 deviceId 状态）—— 实现"吊销即踢出"
+                log.warn("设备请求校验被拒：状态=revoked（已吊销）deviceId={}", deviceId);
                 throw new BusinessException(ResultCode.DEVICE_REVOKED);
             case STATUS_PENDING:
             default:
+                log.warn("设备请求校验被拒：状态=pending（待授权）deviceId={}", deviceId);
                 throw new BusinessException(ResultCode.DEVICE_PENDING);
         }
     }
 
     private String safe(String s) { return s == null ? "" : s; }
+
+    /**
+     * admin_device 表是否完全为空（无任何记录，含 pending/revoked）
+     * 用于 bootstrap 通道判断：首次部署或误清空时让第一个登录设备自动 approved。
+     * 比 selectCount(*) 略快（命中第一行即返回），SQLite/MySQL 都兼容。
+     */
+    private boolean isDeviceTableEmpty() {
+        QueryWrapper<AdminDevice> qw = new QueryWrapper<>();
+        qw.select("id").last("LIMIT 1");
+        return deviceMapper.selectOne(qw) == null;
+    }
 }

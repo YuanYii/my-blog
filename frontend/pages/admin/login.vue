@@ -96,7 +96,6 @@ const handleSubmit = async () => {
         <div v-if="pendingDevice" style="background: var(--accent); color: white; font-size: 13px; padding: 12px 14px; border-radius: 10px; margin-bottom: 12px; line-height: 1.6;">
           <div style="font-weight: 600; margin-bottom: 4px;">⏳ 设备未授权</div>
           <div style="opacity: 0.95;">设备「<strong>{{ pendingDevice }}</strong>」未授权，请联系管理员在「设备管理 → 待授权」中批准后再次登录。</div>
-          <div style="opacity: 0.85; margin-top: 6px; font-size: 12px;">💡 首次部署？如尚无已授权设备，请通过 <code style="background: rgba(255,255,255,0.15); padding: 1px 5px; border-radius: 3px;">SSH + MySQL</code> 直接将该设备 status 置为 <code style="background: rgba(255,255,255,0.15); padding: 1px 5px; border-radius: 3px;">approved</code>。</div>
         </div>
 
         <div v-if="error" style="color: var(--danger); font-size: 13px; margin-bottom: 12px;">{{ error }}</div>

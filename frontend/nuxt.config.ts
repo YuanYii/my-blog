@@ -52,10 +52,12 @@ export default defineNuxtConfig({
   },
   app: {
     head: {
-      title: 'Yuan Yi · 个人博客',
+      // 静态 HTML 默认 title——会被 app.vue 的 useHead 用 site_settings.blog.title 覆盖。
+      // 也避免每次 admin 改 title 都得来同步硬编码值。
+      title: 'Loading...',
       meta: [
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { name: 'description', content: '后端工程师的博客 - 技术、读书、生活' }
+        { name: 'description', content: '' }
       ],
       link: [
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },

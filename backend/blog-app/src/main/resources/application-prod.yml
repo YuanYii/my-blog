@@ -97,16 +97,9 @@ springdoc:
   swagger-ui:
     enabled: false
 
-# ---------- 日志 ----------
-logging:
-  level:
-    root: INFO
-    com.blog: INFO
-    com.baomidou.mybatisplus: WARN
-  file:
-    name: /var/log/blog/app.log
-    max-size: 50MB
-    max-history: 7
-  pattern:
-    file: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"
-    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"
+# ---------- 日志（REQ-LOG-2026-06-18） ----------
+# appender / 级别 / 滚动 / 路径全部由 logback-spring.xml 统一管理：
+#   - prod 落 /opt/myblog/logs/，按天 + 100MB 滚动，30 天 / 3GB 上限，异步写
+#   - prod **强制关闭 CONSOLE**（FR-6.5）：systemd 把 stdout 重定向到 app.log，
+#     若再开 CONSOLE 会与 Logback 文件双写，绕过 3GB 容量预算
+# 这里不再配 logging.file / logging.level / logging.pattern，避免与 logback-spring.xml 冲突。

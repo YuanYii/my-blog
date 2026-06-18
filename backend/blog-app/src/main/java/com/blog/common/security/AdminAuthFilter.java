@@ -7,8 +7,10 @@ import com.blog.auth.util.JwtUtil;
 import com.blog.common.BusinessException;
 import com.blog.common.Result;
 import com.blog.common.ResultCode;
+import com.blog.common.TrustedProxyUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -25,6 +27,7 @@ import java.io.IOException;
  * - 校验设备白名单（X-Device-Id 是否在 approved 列表）
  * - /auth/* /health /articles /comments 等公开接口不走这里
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class AdminAuthFilter extends OncePerRequestFilter {
@@ -122,6 +125,13 @@ public class AdminAuthFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
+        // 鉴权链路日志（REQ-LOG-2026-06-18 / FR-2）：每个拒绝点打 WARN，含 path / method / IP / 拒绝原因，
+        // 便于 owner grep 溯源（US-1）。traceId 由 TraceIdFilter 注入 MDC，logback pattern 自动带上。
+        // 安全（FR-2.5 / NFR-2）：禁打 token 全文 / password，仅记录必要要素。
+        String path = request.getRequestURI();
+        String method = request.getMethod();
+        String ip = TrustedProxyUtil.resolveClientIp(request);
+
         // 给所有 /admin/* 响应加 CORS 头
         String origin = request.getHeader("Origin");
         if (origin != null) {
@@ -134,20 +144,25 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         // 1) 校验 token
         String auth = request.getHeader("Authorization");
         if (auth == null || !auth.startsWith("Bearer ")) {
+            log.warn("admin 鉴权拒绝：缺少 Bearer token, method={} path={} ip={}", method, path, ip);
             writeUnauthorized(response, ResultCode.UNAUTHORIZED.getCode(), "未登录");
             return;
         }
         String token = auth.substring(7);
         Object tokenDeviceId;
+        Object uid;
         try {
             io.jsonwebtoken.Claims claims = jwtUtil.parse(token);
-            Object uid = claims.get("uid");
+            uid = claims.get("uid");
             if (uid == null) {
+                log.warn("admin 鉴权拒绝：token 缺少 uid claim, method={} path={} ip={}", method, path, ip);
                 writeUnauthorized(response, ResultCode.TOKEN_INVALID.getCode(), "token 无效");
                 return;
             }
             tokenDeviceId = claims.get("deviceId");
         } catch (Exception e) {
+            // 具体失败分类由 JwtUtil.parse 内部已打 WARN，这里补充请求上下文
+            log.warn("admin 鉴权拒绝：token 过期或无效, method={} path={} ip={}", method, path, ip);
             writeUnauthorized(response, ResultCode.TOKEN_INVALID.getCode(), "token 过期或无效");
             return;
         }
@@ -158,6 +173,8 @@ public class AdminAuthFilter extends OncePerRequestFilter {
             deviceService.verifyOnRequest(deviceId);
         } catch (BusinessException e) {
             // 设备相关 code 透传（2001 待授权 / 2002 吊销 / 401 未授权）
+            log.warn("admin 鉴权拒绝：设备校验未通过 code={} reason={} deviceId={} method={} path={} ip={}",
+                    e.getCode(), e.getMessage(), deviceId, method, path, ip);
             writeUnauthorized(response, e.getCode(), e.getMessage());
             return;
         }
@@ -169,10 +186,18 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         if (deviceId != null && !deviceId.isEmpty()
                 && tokenDeviceId != null && !tokenDeviceId.toString().isEmpty()
                 && !tokenDeviceId.toString().equals(deviceId)) {
+            log.warn("admin 鉴权拒绝：token 与设备不匹配 tokenDeviceId={} headerDeviceId={} method={} path={} ip={}",
+                    tokenDeviceId, deviceId, method, path, ip);
             writeUnauthorized(response, ResultCode.UNAUTHORIZED.getCode(), "token 与设备不匹配");
             return;
         }
 
+        // 放行：INFO 含 uid / deviceId / path（FR-2.2）。INFO 级，量可控（admin 操作低频）。
+        if (log.isInfoEnabled()) {
+            log.info("admin 鉴权通过：uid={} deviceId={} method={} path={} ip={}", uid, deviceId, method, path, ip);
+        }
+        // 传递操作人给下游 controller，供业务日志记录"操作人"（FR-3.1/3.4/3.7）
+        com.blog.common.web.AuthContext.set(request, uid, deviceId);
         chain.doFilter(request, response);
     }
 

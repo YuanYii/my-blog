@@ -1,7 +1,9 @@
 package com.blog.settings.controller;
 
 import com.blog.common.Result;
+import com.blog.common.web.AuthContext;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,6 +31,7 @@ import java.util.UUID;
  *  - 响应：返 `{url, name, size}`，url 是绝对路径（含 origin + contextPath），
  *   前端直接用 img src 即可；不要手动拼前缀。
  */
+@Slf4j
 @RestController
 @RequestMapping("/admin/uploads")
 @RequiredArgsConstructor
@@ -46,6 +49,9 @@ public class UploadController {
             return Result.error(400, "文件不能为空");
         }
         if (file.getSize() > MAX_SIZE) {
+            // FR-3.6：上传失败 WARN（超限）
+            log.warn("文件上传失败：超过 5MB 上限 size={} name={} operator={}",
+                    file.getSize(), file.getOriginalFilename(), AuthContext.uid(request));
             return Result.error(400, "文件超过 5MB 上限");
         }
         // 2026-06-13 安全修复：原逻辑只校验 Content-Type 请求头（客户端可任意伪造），
@@ -56,6 +62,8 @@ public class UploadController {
         String ext = original.contains(".")
                 ? original.substring(original.lastIndexOf('.')).toLowerCase() : "";
         if (!ext.matches("\\.(png|jpg|jpeg|gif|webp|bmp|ico)")) {
+            // FR-3.6：上传失败 WARN（类型不符）
+            log.warn("文件上传失败：类型不符 ext={} name={} operator={}", ext, original, AuthContext.uid(request));
             return Result.error(400, "不支持的文件类型，仅允许图片格式 (png/jpg/jpeg/gif/webp/bmp/ico)");
         }
         byte[] head = new byte[12];
@@ -63,9 +71,13 @@ public class UploadController {
             int read = file.getInputStream().read(head);
             if (read < 8) return Result.error(400, "文件格式异常或文件过小");
         } catch (IOException e) {
+            // FR-3.6：上传失败 ERROR（IO 异常，含 stacktrace）
+            log.error("文件上传失败：读取 IO 异常 name={} operator={}", original, AuthContext.uid(request), e);
             return Result.error(400, "文件读取失败");
         }
         if (!isImageMagicBytes(head, ext)) {
+            // FR-3.6：上传失败 WARN（内容与扩展名不符，疑似伪造）
+            log.warn("文件上传失败：magic bytes 与扩展名不符 ext={} name={} operator={}", ext, original, AuthContext.uid(request));
             return Result.error(400, "文件内容与扩展名不符，请上传真正的图片");
         }
 
@@ -76,10 +88,14 @@ public class UploadController {
                                     UUID.randomUUID().toString().substring(0, 8), ext);
         File dir = new File(uploadDir, yearMonth);
         if (!dir.exists() && !dir.mkdirs()) {
+            // FR-3.6：上传失败 ERROR（目录创建失败）
+            log.error("文件上传失败：无法创建上传目录 dir={} operator={}", dir.getAbsolutePath(), AuthContext.uid(request));
             return Result.error(500, "无法创建上传目录: " + dir.getAbsolutePath());
         }
         File target = new File(dir, name);
         file.transferTo(target);
+        // FR-3.5：上传成功 INFO（路径、大小、操作人）
+        log.info("文件上传成功：path={} size={} operator={}", target.getAbsolutePath(), file.getSize(), AuthContext.uid(request));
 
         // 绝对 URL：origin + contextPath + /uploads/xxx
         // 注意：application.yml 里 server.servlet.context-path=/api/v1，
