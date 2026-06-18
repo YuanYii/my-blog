@@ -264,9 +264,7 @@ DEPLOY_MODE=data IMPORT_DB=1 sudo ./docs/scripts/deploy-server.sh v3.x.x   # 只
 | `docs/scripts/sqlite-import.sh` | prod 解密导入 db（**只支持 .enc**，错密码不碰目标 db） | 🟠 重要 |
 | `docs/scripts/publish-release.sh` | 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子） | 🟠 重要 |
 | `docs/scripts/deploy-server.sh` | 服务器端一键部署（`DEPLOY_MODE=full\|code\|data` + `IMPORT_DB=1`） | 🟠 重要 |
-| `docs/scripts/dev-prod.sh` | 本地 dev 模拟生产（nginx:alpine 容器 serve `.output/public/` + 反代 8080） | 🟢 已知 |
-| `docs/docker/docker-compose.local-dev.yml` | dev-prod 编排（与生产 `docker-compose.prod.yml` 思路一致） | 🟢 已知 |
-| `docs/changelogs/` | 版本变更记录（v2.0.0 → v4.0.1） | 🟠 重要 |
+| `docs/changelogs/` | 版本变更记录（v2.0.0 → v2.7.0） | 🟠 重要 |
 | `docs/接口契约审计报告.md` | API 100% 一致 | 🟠 重要 |
 | `AGENTS.md` | **本文件** | 🔴 必读 |
 
