@@ -27,7 +27,14 @@ export const useAdminApi = () => {
       ...options,
       headers,
       onResponse({ response }) {
-        // 业务 code 检查
+        // 2026-06-18 修复：onResponse 对所有响应无条件执行，早于 ofetch 内部
+        // `status >= 400 → onResponseError` 的判断。之前这里不分状态码，只要业务 code
+        // !== 200 就 throw，导致真正的 401/403 错误响应也被这里截胡 → onResponseError
+        // 里"清空 token + 跳转 /admin/login"永远执行不到（会话失效后页面停留在原地，
+        // 只能看见 toast）。只在 HTTP 本身成功（2xx）时才需要识别"业务错误码"，
+        // 真正的 HTTP 错误状态交给下面 onResponseError 处理。
+        if (!response.ok) return
+        // 业务 code 检查（HTTP 200 但 body.code !== 200，例如改密接口的业务校验失败）
         const data: any = response._data
         if (data && typeof data === 'object' && 'code' in data && data.code !== 200) {
           // 2026-06-15 修复：改密端点 /auth/me/password 业务错（code 400）时 HTTP 仍 200，
@@ -93,6 +100,8 @@ export const useAdminApi = () => {
       body: form,
       headers,
       onResponse({ response }) {
+        // 同上修复：仅 2xx 才识别业务错误码，避免抢在 onResponseError（401 跳登录）前面
+        if (!response.ok) return
         const data: any = response._data
         if (data && typeof data === 'object' && 'code' in data && data.code !== 200) {
           throw createError({
