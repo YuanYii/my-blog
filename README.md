@@ -1,7 +1,7 @@
 # 个人博客系统
 
-> **v2.7.0** — Spring Boot 2.7（多模块）+ Nuxt 3 前后端分离的个人博客 MVP。
-> 当前状态：v2.6.0 dev/prod 默认 SQLite（一文件 0 内存占用，MySQL 降级为可选 profile） + v2.7.0 前端全静态化（`nuxt generate` + nginx serve，省 150-250MB 内存）+ 公开页 SEO 预渲染 + 完整部署/迁移/验证脚本就绪。
+> **v4.0.0** — Spring Boot 2.7（多模块）+ Nuxt 3 前后端分离的个人博客 MVP。
+> 当前状态：v2.6.0 dev/prod 默认 SQLite（一文件 0 内存占用，MySQL 降级为可选 profile） + v2.7.0 前端全静态化（`nuxt generate` + nginx serve，省 150-250MB 内存）+ 公开页 SEO 预渲染 + **v4.0.0 日志体系（SLF4J/Logback + traceId + 文件滚动 30 天）+ IP 限流封禁（Redis + DB 持久化）+ 动态 favicon**。
 
 ---
 
@@ -9,20 +9,21 @@
 
 ### 1.1 是什么
 
-一个前后端分离的个人博客系统，包含**公开前台**（文章浏览/归档/标签/关于）和**管理后台**（仪表盘/文章管理/评论审核/分类标签/个人设置/设备管理）。**面向单机 1C2G 低配服务器优化**——SQLite 替代 MySQL、前端静态化替代 SSR Node，生产部署无 docker。
+一个前后端分离的个人博客系统，包含**公开前台**（文章浏览/归档/标签/关于）和**管理后台**（仪表盘/文章管理/评论审核/分类标签/个人设置/设备管理/IP 封禁）。**面向单机 1C2G 低配服务器优化**——SQLite 替代 MySQL、前端静态化替代 SSR Node，生产部署无 docker。
 
 ### 1.2 核心功能
 
 | 模块 | 功能 |
 |------|------|
 | **前台公开** | 首页（Hero 个人介绍 + 文章列表）/ 文章详情 / 归档 / 标签云 / 关于页（**SEO 预渲染**） |
-| **管理后台** | 仪表盘（KPI 聚合 + 30 天趋势）/ 文章增删改 / 评论审核 / 分类&标签管理 / 7-tab 站点设置 / 设备白名单管理 |
-| **系统** | JWT 鉴权 / 设备白名单（X-Device-Id 绑定 token）/ API 路由白名单（DB 驱动，最长前缀匹配）/ 文件上传（本地存储）/ 站点设置 5 section（blog/social/preferences/theme/advanced） / Swagger API 文档 / 全静态前端 |
+| **管理后台** | 仪表盘（KPI 聚合 + 30 天趋势）/ 文章增删改 / 评论审核 / 分类&标签管理 / 8-tab 站点设置 / 设备白名单管理 / **IP 封禁查看与手动解封** |
+| **系统** | JWT 鉴权 / 设备白名单（X-Device-Id 绑定 token）/ API 路由白名单（DB 驱动，最长前缀匹配）/ 文件上传（本地存储 + 扩展名 + magic bytes 双重校验）/ 站点设置 8 section（blog/social/preferences/theme/advanced/techstack/experience + admin profile）/ Swagger API 文档 / 全静态前端 / **SLF4J+Logback 日志体系（traceId 串联全链路，文件滚动 30 天，3GB 容量上限）** / **IP 限流（10 次/秒 + 30 分钟封禁，Redis 热路径 + DB 持久化 + admin 手动解封）** |
 
 ### 1.3 版本记录
 
+- **v4.0.0**（2026-06-18）— **日志体系**（SLF4J/Logback + traceId + 文件滚动 30 天 + 3GB 上限，dev/prod 分离，prod 关 CONSOLE 防 systemd 双写绕过预算）+ **IP 限流封禁**（10 次/秒 + 30 分钟封禁，Redis 计数 + DB 持久化 + admin 后台手动解封 + 应用重启回灌）+ 动态 favicon + 加密数据迁移链路（`sqlite-export.sh` AES-256-CBC + PBKDF2 100k → `sqlite-import.sh` 解密导入，publish-release / deploy-server 通过 `EXPORT_DB` / `IMPORT_DB` 外置开关集成）
 - **v2.7.0**（2026-06-17）— 前端改全静态（`nuxt generate` + nginx serve），1C2G 省 150-250MB 内存 + 公开页 SEO 预渲染 + 每日凌晨 3 点 cron `rebuild-static.sh` rebuild
-- **v2.6.0**（2026-06-17）— dev/prod 默认改 SQLite（一文件 0 内存），MySQL 降级可选 profile（`spring.profiles.active=*,mysql`）+ 业务 SQL 跨方言统一（38 处）+ 数据迁移工具（MySQL → SQLite，123/123 行导入）+ 端到端 29 端点验证脚本
+- **v2.6.0**（2026-06-17）— dev/prod 默认改 SQLite（一文件 0 内存），MySQL 降级可选 profile（`spring.profiles.active=*,mysql`）+ 业务 SQL 跨方言统一（38 处）+ 端到端 29 端点验证脚本
 - **v2.5.0**（2026-06-16）— 需求五件套（评论自删/自吊销、Toast/Dialog、字数统计、page_view 业务层去重、page_view 统计聚合）
 - **v2.2.0**（2026-06-12）— 设备白名单（X-Device-Id 绑定 token）+ API 路由白名单（DB 驱动 + 最长前缀匹配）+ 防重放攻击设计 + 写端点匿名访问漏洞修复
 - **v2.1.0**（2026-06-08）— site_settings DB 持久化 + 公开读端点 + 前台首页实时同步后台改动
@@ -40,24 +41,25 @@ my-blog/
 ├── frontend/                          # Nuxt 3 前端（v2.7.0 全静态）
 ├── docs/                              # 设计文档与审计报告
 │   ├── scripts/                       # 部署 / 验证 / 迁移 / rebuild 脚本（2026-06-18 由 scripts/ 迁移至此）
-│   │   ├── deploy-sqlite.sh          # 1C2G 无 docker 一键部署
-│   │   ├── rebuild-static.sh         # 每日 cron 重建前端静态文件
-│   │   ├── verify-sqlite.sh          # 端到端 29 端点验证
-│   │   ├── migrate-mysql-to-sqlite-direct.py  # MySQL → SQLite 数据迁移
-│   │   ├── dev-frontend.sh / restart-*.sh     # 本地开发辅助
-│   │   └── ...
-│   ├── sql/                           # 数据库脚本（v2.6.0 整合后只剩 2 个 schema）
-│   │   ├── schema-mysql.sql           # MySQL 完整 schema + seed data（11 张表）
-│   │   └── schema-sqlite.sql          # SQLite 完整 schema + seed data（dev/prod 默认）
+│   │   ├── deploy-server.sh           # 服务器端一键部署（DEPLOY_MODE=full|code|data）
+│   │   ├── publish-release.sh         # 本地打包 + 发布到 GitHub Release（EXPORT_DB=1 加密导出数据）
+│   │   ├── sqlite-export.sh           # 加密导出 dev db（AES-256-CBC + PBKDF2 100k，产出 .sql.gz.enc）
+│   │   ├── sqlite-import.sh           # 解密导入到目标 db（错密码不碰目标 db）
+│   │   ├── rebuild-static.sh          # 每日 cron 重建前端静态文件
+│   │   └── verify-sqlite.sh           # 端到点验证脚本（v2.6.0 29 端点；v4.0.0 已扩到 60 端点）
+│   ├── sql/                           # 数据库脚本（v2.6.0 整合后 2 个 schema）
+│   │   ├── schema-mysql.sql           # MySQL 完整 schema + seed data（12 张表）
+│   │   └── schema-sqlite.sql          # SQLite 完整 schema + seed data（dev/prod 默认，12 张表）
 │   ├── docker/                        # 历史 docker-compose（v2.5 之前用，v2.6+ 不再推荐）
 │   ├── nginx/                         # Nginx 反向代理配置（nginx.conf / nginx-https.conf）
 │   ├── 设计文档/                      # 设计方案
 │   │   ├── 博客系统设计方案.md
-│   │   └── 防重放攻击方案设计.md
-│   ├── changelogs/                    # 版本变更记录（v2.0.0 → v2.7.0）
-│   ├── 接口契约审计报告.md            # API 契约 100% 一致性审计
-│   └── 部署方案.md              # 生产部署方案（VPS 1C2G，无 docker）
-├── AGENTS.md                          # 项目级 agent 上下文（v2.7.0 同步）
+│   │   ├── IP限流封禁方案设计.md       # v4.0.0 IP 限流封禁方案
+│   │   └── 服务日志体系设计.md         # v4.0.0 日志体系需求 + 设计
+│   ├── changelogs/                    # 版本变更记录（v2.0.0 → v4.0.0）
+│   ├── 接口契约审计报告.md            # API 契约 100% 一致性审计（v4.0.0 快照：13 Controller / 60 端点）
+│   └── 项目部署解决方案.md            # 生产部署方案（VPS 1C2G，无 docker）
+├── AGENTS.md                          # 项目级 agent 上下文（v4.0.0 同步）
 └── README.md                          # 本文件
 ```
 
@@ -79,17 +81,20 @@ backend/
 ├── blog-auth/                         # 用户认证 & JWT
 │   └── src/main/java/com/blog/auth/
 │       ├── controller/
-│       │   ├── AuthController.java        # 登录 / 个人信息
-│       │   ├── DeviceController.java      # admin 设备管理（列表/审批/吊销）
-│       │   └── PublicDeviceController.java # 公开设备状态查询 /public/device/check
+│       │   ├── AuthController.java        # 登录 / 个人信息 / 改密
+│       │   ├── DeviceController.java      # admin 设备管理（列表/审批/吊销/物理删除）
+│       │   ├── PublicDeviceController.java # 公开设备状态查询 /public/device/check
+│       │   └── IpBanController.java       # IP 封禁查看与手动解封（v4.0.0）
 │       ├── entity/
 │       │   ├── User.java              # 用户实体（BCrypt 密码）
 │       │   ├── AdminDevice.java      # 设备白名单（pending/approved/revoked）
-│       │   └── ApiWhitelist.java     # API 路由白名单（path_prefix/type）
+│       │   ├── ApiWhitelist.java     # API 路由白名单（path_prefix/type）
+│       │   └── IpBan.java             # IP 封禁记录（v4.0.0，ip/ip_key/expires_at/unbanned）
 │       ├── mapper/
 │       │   ├── UserMapper.java       # MyBatis-Plus BaseMapper
 │       │   ├── AdminDeviceMapper.java
-│       │   └── ApiWhitelistMapper.java
+│       │   ├── ApiWhitelistMapper.java
+│       │   └── IpBanMapper.java
 │       ├── service/
 │       │   ├── DeviceService.java     # 设备注册/审批/校验逻辑
 │       │   └── ApiWhitelistService.java # 白名单最长前缀匹配 + 缓存刷新
@@ -125,11 +130,12 @@ backend/
 ├── blog-settings/                      # 站点设置 & 文件上传
 │   └── src/main/java/com/blog/settings/
 │       ├── controller/
-│       │   ├── SettingsController.java           # admin 读写（7 tab）+ 文件上传
+│   │   ├── SettingsController.java           # admin 读写（8 tab）+ 文件上传
+│   │   ├── UploadController.java             # /admin/uploads 单文件上传（前端实际使用）
 │       │   ├── PublicSettingsController.java    # 公开读端点 /public/settings/{section}（匿名可看）
 │       │   └── PublicProfileController.java     # 公开个人资料 /public/profile（前台关于页用）
 │       ├── entity/
-│       │   └── SiteSettings.java                 # 站点设置（5 section）
+│       │   └── SiteSettings.java                 # 站点设置（8 section：blog/social/preferences/theme/advanced + techstack/experience v2.3 新增 + admin profile）
 │       ├── mapper/
 │       │   └── SiteSettingsMapper.java
 │       └── service/
@@ -200,8 +206,9 @@ frontend/
 │       ├── comments.vue               # 评论管理
 │       ├── categories.vue             # 分类管理
 │       ├── tags.vue                   # 标签管理
-│       ├── settings.vue               # 个人设置（7 tab）
-│       └── devices.vue                # 设备管理
+│       ├── settings.vue               # 个人设置（8 tab：profile/social/preferences/blog/theme/advanced/techstack/experience）
+│       ├── devices.vue                # 设备管理
+│       └── ip-bans.vue                # IP 封禁查看与手动解封（v4.0.0）
 │
 ├── scripts/
 │   └── fetch-routes.js                # build 前拉后端所有公开页 slug，生成 .routes.json
@@ -249,7 +256,8 @@ frontend/
 │   - HTTPS (Let's Encrypt 证书)                          │
 │   - 静态文件 /uploads/ 直接 serve                       │
 │   - /api/* 反代到 backend:8080                          │
-│   - 限流（登录 5req/min，API 20req/s）                  │
+│   - nginx 层限流（登录 5req/min，API 20req/s）          │
+│   - **应用层 IP 限流封禁（v4.0.0，10 次/秒 + 30 分钟封禁）**
 │   - 前端静态目录 /var/www/blog/（v2.7.0 配套）         │
 └────────────────────────┬────────────────────────────────┘
           ┌──────────────┴──────────────┐
@@ -258,18 +266,34 @@ frontend/
 │ nginx:alpine (3000)  │   │   Spring Boot (8080)         │
 │ 静态文件 serve       │   │   后端 REST API              │
 │ .output/public/      │   │   (v2.7.0 后只剩后端 JVM)    │
-│ v2.7.0 预渲染 HTML   │   └──────────────┬──────────────┘
-└──────────────────────┘                  │ JDBC / Lettuce
-                               ┌──────────┴──────────┐
-                               ▼                     ▼
-                        ┌────────────┐         ┌──────────────┐
-                        │  SQLite    │         │    Redis     │
-                        │  blog.db   │         │  7.x         │
-                        │ (v2.6 默认)│         │  :6379       │
-                        └────────────┘         └──────────────┘
+│ v2.7.0 预渲染 HTML   │   │   - TraceIdFilter (HIGHEST)  │
+└──────────────────────┘   │   - IpRateLimitFilter (+1)   │
+                          │   - AdminAuthFilter          │
+                          └──────────────┬──────────────┘
+                                ┌──────────┴──────────┐
+                                ▼                     ▼
+                         ┌────────────┐         ┌──────────────┐
+                         │  SQLite    │         │    Redis     │
+                         │  blog.db   │         │  7.x         │
+                         │ (v2.6 默认)│         │  :6379       │
+                         │ 12 张表   │         │ (login限流/IP)│
+                         └────────────┘         └──────────────┘
+                                                       │
+                                              ┌────────┴────────┐
+                                              ▼                 ▼
+                                       ┌──────────────┐  ┌─────────────┐
+                                       │ /opt/myblog/  │  │ Logback 日志│
+                                       │   logs/       │  │ 滚动 30天  │
+                                       │ (3GB 上限)    │  │ traceId 串联│
+                                       └──────────────┘  └─────────────┘
 ```
 
 **v2.7.0 关键变化**：前端进程从 "node + Nitro server" 改成 "nginx:alpine 静态服务"，**省 150-250MB 内存**（1C2G 服务器上 JVM heap 可从 256MB 提到 384MB）。
+
+**v4.0.0 关键变化**：
+- **Filter 链**：TraceIdFilter（`@Order(HIGHEST_PRECEDENCE)`）→ IpRateLimitFilter（`HIGHEST_PRECEDENCE + 1`）→ AdminAuthFilter → 业务 Controller，确保任何被拦截的请求都带 traceId 日志。
+- **日志落盘**：所有请求带 traceId 进 Logback 文件，30 天滚动 3GB 上限，prod 关 CONSOLE 防 systemd 双写绕过预算。
+- **IP 封禁**：触发后写 Redis 标记 + DB 持久化 + 30 分钟自动解封，admin 可手动 `PUT /admin/ip-bans/{id}/unban` 提前解封。
 
 ### 3.3 后端模块依赖关系
 
@@ -307,7 +331,7 @@ blog-app（启动类，唯一可执行 jar）
 
 详见 `docs/接口契约审计报告.md`。
 
-### 3.5 数据库设计（11 张表）
+### 3.5 数据库设计（12 张表）
 
 | 表名 | 说明 | 关键字段 |
 |------|------|----------|
@@ -318,14 +342,15 @@ blog-app（启动类，唯一可执行 jar）
 | `article_tag` | 文章-标签关联 | article_id / tag_id |
 | `comment` | 评论 | content / article_id / parent_id / nickname / email / website / ip / user_agent / status (0待审/1通过/2屏蔽) |
 | `article_view_log` | 历史表（v2.5.0 之前的访问日志，0 数据保留 schema 兼容） | article_id / view_date / view_count |
-| `site_settings` | 站点设置（按 section 存整段 JSON，v2.1 新增） | section (blog/social/preferences/theme/advanced) / data (JSON) |
+| `site_settings` | 站点设置（按 section 存整段 JSON，v2.1 新增，v2.3 扩到 8 section） | section (blog/social/preferences/theme/advanced + techstack/experience) / data (JSON) |
 | `admin_device` | 设备白名单（v2.2 新增） | device_id / status (pending/approved/revoked) |
 | `api_whitelist` | API 路由白名单（AdminAuthFilter 用，v2.2 新增） | path_prefix / type (public/admin) / enabled / description |
 | `page_view` | 访问统计（v2.5.0 新增，v2.6.0 业务层去重） | visitor / url / visit_date / ua / ip |
+| `ip_ban` | IP 封禁记录（v4.0.0 新增，限流超阈值时落库 + 手动解封） | ip / expires_at / unbanned / created_at |
 
-**SQL 文件**（v2.6.0 整合后，2 个 schema 替代 8 个散文件）：
-- `docs/sql/schema-sqlite.sql` — **dev/prod 默认**，11 张表 + seed data
-- `docs/sql/schema-mysql.sql` — MySQL 可选 profile，11 张表 + seed data（按月分区）
+**SQL 文件**（v2.6.0 整合后，2 个 schema 替代 8 个散文件；v4.0.0 起 12 张表）：
+- `docs/sql/schema-sqlite.sql` — **dev/prod 默认**，12 张表 + seed data
+- `docs/sql/schema-mysql.sql` — MySQL 可选 profile，12 张表 + seed data（按月分区）
 
 ### 3.6 配色契约
 
@@ -438,7 +463,7 @@ docker stop blog-redis blog-mysql   # 启了 docker 的才需要
 
 ## 五、生产环境部署
 
-> 详细方案见 [`docs/阿里云部署方案.md`](docs/阿里云部署方案.md)。**v2.6.0 起部署架构简化**：1C2G 无 docker + SQLite + 全静态前端。
+> 详细方案见 [`docs/项目部署解决方案.md`](docs/项目部署解决方案.md) + [`docs/项目部署操作手册.md`](docs/项目部署操作手册.md)。**v2.6.0 起部署架构简化**：1C2G 无 docker + SQLite + 全静态前端。
 
 ### 5.1 部署架构
 
@@ -477,7 +502,7 @@ Nginx (:80 → 443)         ← apt 装 nginx（系统服务）
 | 域名       | `coreyai.com`                | ¥55/年  |
 | SSL 证书   | Let's Encrypt (certbot 自动续期) | ¥0     |
 
-> v2.7.0 释放前端 150-250MB 内存后，JVM heap 可从 256MB 提到 384MB（详见 `docs/scripts/deploy-sqlite.sh`）。
+> v2.7.0 释放前端 150-250MB 内存后，JVM heap 可从 256MB 提到 384MB（详见 `docs/scripts/deploy-server.sh`）。
 
 ### 5.3 部署流程（v2.6.0 起）
 
@@ -508,19 +533,19 @@ scp docs/sql/schema-sqlite.sql myblog@<ecs-ip>:/tmp/
 scp -r frontend/.output/public myblog@<ecs-ip>:/tmp/
 
 # 上传 deploy 脚本
-scp docs/scripts/deploy-sqlite.sh myblog@<ecs-ip>:/tmp/
+scp docs/scripts/deploy-server.sh myblog@<ecs-ip>:/tmp/
 
 # ============ Day 3：ECS 上一键部署 ============
 ssh myblog@<ecs-ip>
 sudo mv /tmp/blog-app.jar /opt/myblog/
 sudo mv /tmp/schema-sqlite.sql /opt/myblog/
 sudo mv /tmp/public /opt/myblog/frontend-static
-sudo mv /tmp/deploy-sqlite.sh /opt/myblog/scripts/
-sudo chmod +x /opt/myblog/scripts/deploy-sqlite.sh
-sudo bash /opt/myblog/scripts/deploy-sqlite.sh
+sudo mv /tmp/deploy-server.sh /opt/myblog/scripts/
+sudo chmod +x /opt/myblog/scripts/deploy-server.sh
+sudo bash /opt/myblog/scripts/deploy-server.sh
 ```
 
-`deploy-sqlite.sh` 自动完成：
+`deploy-server.sh` 自动完成：
 1. 权限检查（需 root）
 2. 系统依赖检查（java / redis-server / sqlite3）
 3. 创建 `myblog` 系统用户
@@ -583,7 +608,7 @@ chmod 600 .env.prod
 # 填入实际值：DB_PASSWORD / REDIS_PASSWORD / JWT_SECRET / CORS_ORIGINS 等
 ```
 
-关键生产改造（`docs/阿里云部署方案.md` §七）：
+关键生产改造（`docs/项目部署解决方案.md` §七）：
 
 | 改造项 | 说明 |
 |--------|------|
@@ -599,7 +624,7 @@ chmod 600 .env.prod
 ### 5.7 上线前 CheckList
 
 - [ ] **安全**：BCrypt 密码 / JWT secret 强随机 / Swagger 关闭 / CORS 收紧 / SSH 密钥登录
-- [ ] **配置**：`application-prod.yml` / `docs/scripts/deploy-sqlite.sh` / `nginx.conf` 就绪
+- [ ] **配置**：`application-prod.yml` / `docs/scripts/deploy-server.sh` / `nginx.conf` 就绪
 - [ ] **数据**：`schema-sqlite.sql` 自动导入 / 默认 admin 密码修改 / 删除测试数据
 - [ ] **HTTPS**：证书部署 / 80 → 443 强制跳转
 - [ ] **静态化**：`nuxt generate` 产物已上传 `/var/www/blog/` / `rebuild-static.sh` cron 已配
@@ -634,18 +659,24 @@ docker stop blog-redis blog-mysql
 # ============ 端到端验证 ============
 bash docs/scripts/verify-sqlite.sh
 
-# ============ MySQL → SQLite 数据迁移 ============
-# 需要先有 MySQL 数据 + 新的空 SQLite db
-python3 docs/scripts/migrate-mysql-to-sqlite-direct.py
+# ============ Dev → Prod 加密数据迁移（v4.0.0 起）============
+# 1. dev 导出加密 dump（交互式输两次密码，产出 .sql.gz.enc）
+bash docs/scripts/sqlite-export.sh --exclude page_view -o /tmp/migration.sql.gz.enc
+
+# 2. 上传到 ECS
+scp /tmp/migration.sql.gz.enc myblog@<ecs-ip>:/tmp/
+
+# 3. 生产端解密 + 导入（交互式输一次密码；错密码不碰目标 db）
+ssh myblog@<ecs-ip> "sudo bash /opt/myblog/scripts/sqlite-import.sh /opt/myblog/db/blog.db /tmp/migration.sql.gz.enc"
 
 # ============ 生产部署（v2.6.0 起）============
 # 上传 jar + schema + 脚本到 ECS
 scp backend/blog-app/target/blog-app.jar myblog@<ecs-ip>:/tmp/
 scp docs/sql/schema-sqlite.sql myblog@<ecs-ip>:/tmp/
-scp docs/scripts/deploy-sqlite.sh myblog@<ecs-ip>:/tmp/
+scp docs/scripts/deploy-server.sh myblog@<ecs-ip>:/tmp/
 
 # ECS 上一键部署
-sudo bash /opt/myblog/scripts/deploy-sqlite.sh
+sudo bash /opt/myblog/scripts/deploy-server.sh
 
 # 每日 cron rebuild（v2.7.0 配套）
 0 3 * * * bash /opt/myblog/scripts/rebuild-static.sh
@@ -671,12 +702,14 @@ sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%
 
 | 文档 | 说明                                         |
 |------|--------------------------------------------|
-| [`docs/设计文档/博客系统设计方案.md`](docs/设计文档/博客系统设计方案.md) | 完整需求与架构设计（v0.3，含 v2.6.0/v2.7.0 变更记录）       |
-| [`docs/阿里云部署方案.md`](docs/阿里云部署方案.md) | 生产部署方案（VPS 1C2G，无 docker，v2.6.0/v2.7.0 配套） |
-| [`docs/接口契约审计报告.md`](docs/接口契约审计报告.md) | API 契约 100% 一致性审计                          |
-| [`docs/设计文档/防重放攻击方案设计.md`](docs/设计文档/防重放攻击方案设计.md) | 防重放攻击方案                                    |
-| [`docs/changelogs/`](docs/changelogs/) | 版本变更记录（v2.0.0 → v2.7.0，每个版本独立 md）          |
-| [`AGENTS.md`](AGENTS.md) | 项目级 agent 上下文（v2.7.0 同步更新）                 |
+| [`docs/设计文档/博客系统设计方案.md`](docs/设计文档/博客系统设计方案.md) | 完整需求与架构设计（v3.1，含 v2.6.0/v2.7.0 变更记录）       |
+| [`docs/项目部署解决方案.md`](docs/项目部署解决方案.md) | 部署解决方案（VPS 1C2G，无 docker，v4.0.0 配套） |
+| [`docs/项目部署操作手册.md`](docs/项目部署操作手册.md) | 部署操作手册（v4.0.0+ 一步步操作）              |
+| [`docs/接口契约审计报告.md`](docs/接口契约审计报告.md) | API 契约 100% 一致性审计（v4.0.0 快照：13 Controller / 60 端点） |
+| [`docs/设计文档/IP限流封禁方案设计.md`](docs/设计文档/IP限流封禁方案设计.md) | IP 限流封禁方案（v4.0.0 已实现）                |
+| [`docs/设计文档/服务日志体系设计.md`](docs/设计文档/服务日志体系设计.md) | 服务日志体系设计（v4.0.0 已实现）               |
+| [`docs/changelogs/`](docs/changelogs/) | 版本变更记录（v2.0.0 → v4.0.0，每个版本独立 md）          |
+| [`AGENTS.md`](AGENTS.md) | 项目级 agent 上下文（v4.0.0 同步更新）                 |
 | [`docs/changelogs/2026-06-17-v2.6.0-sqlite-migration.md`](docs/changelogs/2026-06-17-v2.6.0-sqlite-migration.md) | v2.6.0 SQLite 改造完整 changelog               |
 | [`docs/changelogs/2026-06-17-v2.7.0-nuxt-static.md`](docs/changelogs/2026-06-17-v2.7.0-nuxt-static.md) | v2.7.0 全静态化完整 changelog                    |
 
@@ -686,7 +719,7 @@ sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%
 
 ### 7.1 已完成（v2.6.0 / v2.7.0 落地）
 
-- ✅ **数据导入/导出**（v2.6.0 `migrate-mysql-to-sqlite-direct.py` 落地 MySQL → SQLite 工具）
+- ✅ **数据导入/导出**（v2.6.0 落地 MySQL → SQLite 工具；v4.0.0 替换为 `sqlite-export.sh` / `sqlite-import.sh` 加密链路，AES-256-CBC + PBKDF2 100k）
 - ✅ **自动化单元测试**（v2.6.0 `verify-sqlite.sh` 端到端 29 端点验证脚本）
 - ✅ **Flyway / Liquibase 数据库迁移**（v2.6.0 整合到 2 个 schema 文件，等价于"单文件 migration"）
 
