@@ -4,7 +4,7 @@
 # 跑法(root 或 sudo):
 #   curl -L https://raw.githubusercontent.com/OWNER/REPO/main/scripts/deploy-server.sh -o deploy-server.sh
 #   chmod +x deploy-server.sh
-#   sudo ./deploy-server.sh v4.0.0
+#   sudo ./deploy-server.sh v4.0.1
 #
 # 自定义参数(环境变量):
 #   GITHUB_REPO=owner/repo       必填
@@ -23,10 +23,10 @@
 #                                 产物:dev-blog-dump.sql.gz.enc (publish-release.sh 加 EXPORT_DB=1 才有)
 #
 # 部署模式组合示例:
-#   默认发版:           ./deploy-server.sh v4.0.0
-#   只装代码(保留 db):  DEPLOY_MODE=code ./deploy-server.sh v4.0.0
-#   只导入数据:          DEPLOY_MODE=data IMPORT_DB=1 ./deploy-server.sh v4.0.0
-#   代码+数据全装:      IMPORT_DB=1 ./deploy-server.sh v4.0.0
+#   默认发版:           ./deploy-server.sh v4.0.1
+#   只装代码(保留 db):  DEPLOY_MODE=code ./deploy-server.sh v4.0.1
+#   只导入数据:          DEPLOY_MODE=data IMPORT_DB=1 ./deploy-server.sh v4.0.1
+#   代码+数据全装:      IMPORT_DB=1 ./deploy-server.sh v4.0.1
 # 语义约束:
 #   DEPLOY_MODE=data + IMPORT_DB=0  →  报错退出(语义矛盾)
 
@@ -51,8 +51,8 @@ err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # 校验
 if [ -z "$TAG" ]; then
-    err "Usage: $0 <tag>  e.g. $0 v4.0.0"
-    err "Or:RELEASE_TAG=v4.0.0 $0"
+    err "Usage: $0 <tag>  e.g. $0 v4.0.1"
+    err "Or:RELEASE_TAG=v4.0.1 $0"
     exit 1
 fi
 if [ -z "$GITHUB_REPO" ]; then
@@ -638,5 +638,5 @@ info "  Default account:    admin / 123456  (change password in production)"
 info "  View logs:    journalctl -u myblog -f"
 info "                  tail -f $INSTALL_DIR/logs/app.log"
 info "  Restart service:    systemctl restart myblog"
-info "  Version rollback:    $0 v4.0.0   (specify old tag)"
+info "  Version rollback:    $0 v4.0.1   (specify old tag)"
 info "=========================================="
