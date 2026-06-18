@@ -3,14 +3,19 @@
 spring:
   datasource:
     # SQLite（dev 默认）
-    # 2026-06-17 v2.6.0-fix：用 ${SQLITE_PATH} 绝对路径（避免 ${user.dir} 在 spring-boot:run 下指向 blog-app/ 而非 backend/）
+    # 2026-06-17 v2.6.0-fix：用 ${SQLITE_PATH} 绝对路径（避免 ${user.dir} 在 spring-boot:run / Idea 下指向不同位置）
+    # 2026-06-18：默认直接指 backend/blog.db 绝对路径。Idea Run / mvn spring-boot:run / jar 启动 都能命中同一个文件。
+    #   之前试过 ${user.home}/myblog/... 和 ${user.dir}/../blog.db，在不同启动方式下指向不同位置，反而更乱。
+    #   想用别处 db：export SQLITE_PATH=/your/path/blog.db 覆盖。
     driver-class-name: org.sqlite.JDBC
-#    url: jdbc:sqlite:${SQLITE_PATH:${user.dir}/../blog.db}
-    url: jdbc:sqlite:/Users/yuanyi/MyProject/vibeP/my-blog/backend/blog.db
+    url: jdbc:sqlite:${SQLITE_PATH:/Users/yuanyi/MyProject/vibeP/my-blog/backend/blog.db}?journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL
+    # 2026-06-18 性能：WAL + busy_timeout，多连接安全（与 prod 一致）
+    # 备选：相对路径 / 容器内绝对路径
+    # url: jdbc:sqlite:/data/blog.db?journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL
     hikari:
-      # SQLite 单写者锁：必须 1 个连接，否则并发写 SQLITE_BUSY
-      maximum-pool-size: 1
-      minimum-idle: 1
+      # 2026-06-18 性能：WAL 下放开单连接限制，允许并发读
+      maximum-pool-size: 8
+      minimum-idle: 2
       connection-timeout: 30000
       pool-name: blog-sqlite-pool
 

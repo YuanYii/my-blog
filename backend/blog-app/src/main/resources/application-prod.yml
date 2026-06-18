@@ -16,11 +16,15 @@ spring:
   # ---------- SQLite（生产默认，无 docker） ----------
   datasource:
     driver-class-name: org.sqlite.JDBC
-    url: jdbc:sqlite:${SQLITE_PATH:/data/blog.db}
+    # 2026-06-18 性能：开 WAL 让「多读 + 单写」可并发（读不再被写阻塞），
+    #   busy_timeout=10000 让偶发写竞争等待而非立刻抛 SQLITE_BUSY，
+    #   synchronous=NORMAL 在 WAL 下兼顾安全与吞吐。
+    #   有了 WAL + busy_timeout 后连接池才可安全 >1。
+    url: jdbc:sqlite:${SQLITE_PATH:/data/blog.db}?journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL
     hikari:
-      # SQLite 单写者锁：必须 1 个连接
-      maximum-pool-size: 1
-      minimum-idle: 1
+      # 2026-06-18 性能：WAL 下放开单连接限制，允许并发读（首页 7 个接口不再串行排队）
+      maximum-pool-size: 8
+      minimum-idle: 2
       connection-timeout: 30000
       pool-name: blog-sqlite-pool
 
@@ -66,7 +70,7 @@ blog:
   # JWT
   jwt:
     secret: ${JWT_SECRET}              # 32+ 位强随机（部署时必须设）
-    expiration-ms: 86400000            # 24h
+    expiration: 7200000               # 24h（2026-06-18：原 expiration-ms 与 JwtUtil @Value("blog.jwt.expiration") 不匹配，改 yml 永远不生效）
 
   # 文件上传配置（**本地存储**，容器/jar 内路径 /data/uploads）
   upload:
@@ -84,7 +88,7 @@ blog:
 
   # CORS（**生产环境收紧**，只允许你自己的域名）
   cors:
-    allowed-origins: ${CORS_ORIGINS:https://yourname.com,https://www.yourname.com}
+    allowed-origins: ${CORS_ORIGINS:https://blog.croeyai.cn}
 
   # Swagger（**生产关闭**）
   swagger:
