@@ -1,6 +1,7 @@
 package com.blog.article.security;
 
 import com.blog.article.service.PageViewService;
+import com.blog.common.TrustedProxyUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,6 +57,10 @@ public class PageViewFilter extends OncePerRequestFilter {
     /** 文章详情 slug → articleId 缓存（用 ConcurrentHashMap 简易缓存，避免每个详情请求都查 DB） */
     private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Long>> SLUG_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 5 * 60 * 1000L;
+    /** 负缓存 TTL：slug 不存在时缓存 1 分钟（防爬虫狂打随机 slug 导致 DB 反复查 + map 膨胀） */
+    private static final long NEG_CACHE_TTL_MS = 60 * 1000L;
+    /** 负缓存哨兵值（ConcurrentHashMap 不允许 null value，用 -1 标识"slug 不存在"） */
+    private static final long NEG_CACHE_SENTINEL = -1L;
 
     private static final Pattern ARTICLE_DETAIL = Pattern.compile("/articles/([^/]+)$");
 
@@ -109,10 +114,12 @@ public class PageViewFilter extends OncePerRequestFilter {
 
             String visitor = request.getHeader("X-Visitor-Id");
 
-            int rows = pageViewService.recordVisit(sub, articleId, visitor, request);
-            if (rows == 0 && visitor != null && !visitor.isEmpty()) {
-                log.debug("[PageView] 业务层去重命中: visitor={}, path={}", visitor, sub);
-            }
+            // 2026-06-18 性能：改异步写库（见 PageViewService.recordVisitAsync）。
+            // ip/ua/referer 必须在请求线程内同步取出——异步执行时 request 可能已被容器回收。
+            String ip = TrustedProxyUtil.resolveClientIp(request);
+            String userAgent = request.getHeader("User-Agent");
+            String referer = request.getHeader("Referer");
+            pageViewService.recordVisitAsync(sub, articleId, visitor, ip, userAgent, referer);
         } catch (Exception e) {
             // 统计失败绝不能影响业务响应
             log.warn("[PageView] 记录失败：{}", e.getMessage(), e);
@@ -124,6 +131,13 @@ public class PageViewFilter extends OncePerRequestFilter {
     /**
      * 用本地缓存避免每个详情请求都查 DB
      * 缓存 key = slug，value = { articleId, expireAt }
+     *
+     * 2026-06-18 修复：
+     *  - 原写法对不存在的 slug（findArticleIdBySlug 返回 null）会执行
+     *    ConcurrentHashMap.put("id", null) → 抛 NPE，被外层 try/catch 吞，
+     *    缓存形同虚设，且 SLUG_CACHE 里残留的负缓存空 bucket 永不清理。
+     *  - 改用 -1L 哨兵值表示"slug 不存在"，TTL 缩到 1 分钟（正缓存仍 5 分钟）。
+     *  - 防爬虫狂打随机 slug 导致 SLUG_CACHE map 无界增长 + DB 反复查。
      */
     private Long resolveArticleId(String slug) {
         long now = System.currentTimeMillis();
@@ -131,13 +145,22 @@ public class PageViewFilter extends OncePerRequestFilter {
                 SLUG_CACHE.computeIfAbsent(slug, k -> new java.util.concurrent.ConcurrentHashMap<>());
         Long cached = bucket.get("id");
         Long expire = bucket.get("exp");
-        if (cached != null && expire != null && expire > now) return cached;
+        if (cached != null && expire != null && expire > now) {
+            // 命中负缓存：直接返回 null（调用方 articleId=null，page_view 仍会写一行，但无 articleId）
+            return cached == NEG_CACHE_SENTINEL ? null : cached;
+        }
 
         // miss 或过期：查 DB
         try {
             Long id = pageViewService.findArticleIdBySlug(slug);
-            bucket.put("id", id);
-            bucket.put("exp", now + CACHE_TTL_MS);
+            if (id != null) {
+                bucket.put("id", id);
+                bucket.put("exp", now + CACHE_TTL_MS);
+            } else {
+                // slug 不存在：负缓存 1 分钟（避开 CHM null value 限制 + 抑制爬虫刷 slug）
+                bucket.put("id", NEG_CACHE_SENTINEL);
+                bucket.put("exp", now + NEG_CACHE_TTL_MS);
+            }
             return id;
         } catch (Exception e) {
             return null;
