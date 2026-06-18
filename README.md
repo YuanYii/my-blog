@@ -38,14 +38,14 @@
 my-blog/
 ├── backend/                           # Spring Boot 多模块后端
 ├── frontend/                          # Nuxt 3 前端（v2.7.0 全静态）
-├── scripts/                           # 部署 / 验证 / 迁移 / rebuild 脚本
-│   ├── deploy-sqlite.sh              # 1C2G 无 docker 一键部署
-│   ├── rebuild-static.sh             # 每日 cron 重建前端静态文件
-│   ├── verify-sqlite.sh              # 端到端 29 端点验证
-│   ├── migrate-mysql-to-sqlite-direct.py  # MySQL → SQLite 数据迁移
-│   ├── dev-frontend.sh / restart-*.sh     # 本地开发辅助
-│   └── ...
 ├── docs/                              # 设计文档与审计报告
+│   ├── scripts/                       # 部署 / 验证 / 迁移 / rebuild 脚本（2026-06-18 由 scripts/ 迁移至此）
+│   │   ├── deploy-sqlite.sh          # 1C2G 无 docker 一键部署
+│   │   ├── rebuild-static.sh         # 每日 cron 重建前端静态文件
+│   │   ├── verify-sqlite.sh          # 端到端 29 端点验证
+│   │   ├── migrate-mysql-to-sqlite-direct.py  # MySQL → SQLite 数据迁移
+│   │   ├── dev-frontend.sh / restart-*.sh     # 本地开发辅助
+│   │   └── ...
 │   ├── sql/                           # 数据库脚本（v2.6.0 整合后只剩 2 个 schema）
 │   │   ├── schema-mysql.sql           # MySQL 完整 schema + seed data（11 张表）
 │   │   └── schema-sqlite.sql          # SQLite 完整 schema + seed data（dev/prod 默认）
@@ -432,7 +432,7 @@ docker stop blog-redis blog-mysql   # 启了 docker 的才需要
 2. **MySQL 中文 SQL 导入**：用 `--default-character-set=utf8mb4`，不要用 docker exec pipe 写含中文的 SQL 数据（会双重编码，**SQLite 无此问题**）
 3. **SQLite 单写者锁**：Hikari `maximum-pool-size: 1` 必须保持，否则并发写会 SQLITE_BUSY
 4. **admin SSR 鉴权**：`frontend/middleware/admin-auth.ts` 已修复 SSR 阶段跳过 localStorage，直接访问 `/admin/*` 不会误踢已登录用户（v2.7.0 全静态化后 `import.meta.server` 恒为 `false`，SSR 判断代码已删）
-5. **端到端验证**：`scripts/verify-sqlite.sh` 跑 29 个端点（含 page_view 业务层去重验证），全过后才算 dev 完成
+5. **端到端验证**：`docs/scripts/verify-sqlite.sh` 跑 29 个端点（含 page_view 业务层去重验证），全过后才算 dev 完成
 
 ---
 
@@ -477,7 +477,7 @@ Nginx (:80 → 443)         ← apt 装 nginx（系统服务）
 | 域名       | `coreyai.com`                | ¥55/年  |
 | SSL 证书   | Let's Encrypt (certbot 自动续期) | ¥0     |
 
-> v2.7.0 释放前端 150-250MB 内存后，JVM heap 可从 256MB 提到 384MB（详见 `scripts/deploy-sqlite.sh`）。
+> v2.7.0 释放前端 150-250MB 内存后，JVM heap 可从 256MB 提到 384MB（详见 `docs/scripts/deploy-sqlite.sh`）。
 
 ### 5.3 部署流程（v2.6.0 起）
 
@@ -508,7 +508,7 @@ scp docs/sql/schema-sqlite.sql myblog@<ecs-ip>:/tmp/
 scp -r frontend/.output/public myblog@<ecs-ip>:/tmp/
 
 # 上传 deploy 脚本
-scp scripts/deploy-sqlite.sh myblog@<ecs-ip>:/tmp/
+scp docs/scripts/deploy-sqlite.sh myblog@<ecs-ip>:/tmp/
 
 # ============ Day 3：ECS 上一键部署 ============
 ssh myblog@<ecs-ip>
@@ -538,7 +538,7 @@ sudo bash /opt/myblog/scripts/deploy-sqlite.sh
 
 ```bash
 # 上传 rebuild 脚本
-scp scripts/rebuild-static.sh myblog@<ecs-ip>:/opt/myblog/scripts/
+scp docs/scripts/rebuild-static.sh myblog@<ecs-ip>:/opt/myblog/scripts/
 
 # 配置 cron（myblog 用户视角）
 ssh myblog@<ecs-ip>
@@ -561,7 +561,7 @@ crontab -e
 
 ```bash
 # 在本地（dev 环境）跑 29 端点验证
-bash scripts/verify-sqlite.sh
+bash docs/scripts/verify-sqlite.sh
 
 # 期望输出："✅ 全部 29 个端点通过"
 # 包含：
@@ -599,7 +599,7 @@ chmod 600 .env.prod
 ### 5.7 上线前 CheckList
 
 - [ ] **安全**：BCrypt 密码 / JWT secret 强随机 / Swagger 关闭 / CORS 收紧 / SSH 密钥登录
-- [ ] **配置**：`application-prod.yml` / `scripts/deploy-sqlite.sh` / `nginx.conf` 就绪
+- [ ] **配置**：`application-prod.yml` / `docs/scripts/deploy-sqlite.sh` / `nginx.conf` 就绪
 - [ ] **数据**：`schema-sqlite.sql` 自动导入 / 默认 admin 密码修改 / 删除测试数据
 - [ ] **HTTPS**：证书部署 / 80 → 443 强制跳转
 - [ ] **静态化**：`nuxt generate` 产物已上传 `/var/www/blog/` / `rebuild-static.sh` cron 已配
@@ -632,17 +632,17 @@ curl http://localhost:8080/api/v1/health
 docker stop blog-redis blog-mysql
 
 # ============ 端到端验证 ============
-bash scripts/verify-sqlite.sh
+bash docs/scripts/verify-sqlite.sh
 
 # ============ MySQL → SQLite 数据迁移 ============
 # 需要先有 MySQL 数据 + 新的空 SQLite db
-python3 scripts/migrate-mysql-to-sqlite-direct.py
+python3 docs/scripts/migrate-mysql-to-sqlite-direct.py
 
 # ============ 生产部署（v2.6.0 起）============
 # 上传 jar + schema + 脚本到 ECS
 scp backend/blog-app/target/blog-app.jar myblog@<ecs-ip>:/tmp/
 scp docs/sql/schema-sqlite.sql myblog@<ecs-ip>:/tmp/
-scp scripts/deploy-sqlite.sh myblog@<ecs-ip>:/tmp/
+scp docs/scripts/deploy-sqlite.sh myblog@<ecs-ip>:/tmp/
 
 # ECS 上一键部署
 sudo bash /opt/myblog/scripts/deploy-sqlite.sh
@@ -671,10 +671,10 @@ sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%
 
 | 文档 | 说明                                         |
 |------|--------------------------------------------|
-| [`docs/设计文档/博客系统设计方案.md`](docs/需求文档/博客系统设计方案.md) | 完整需求与架构设计（v0.3，含 v2.6.0/v2.7.0 变更记录）       |
+| [`docs/设计文档/博客系统设计方案.md`](docs/设计文档/博客系统设计方案.md) | 完整需求与架构设计（v0.3，含 v2.6.0/v2.7.0 变更记录）       |
 | [`docs/阿里云部署方案.md`](docs/阿里云部署方案.md) | 生产部署方案（VPS 1C2G，无 docker，v2.6.0/v2.7.0 配套） |
 | [`docs/接口契约审计报告.md`](docs/接口契约审计报告.md) | API 契约 100% 一致性审计                          |
-| [`docs/设计文档/防重放攻击方案设计.md`](docs/需求文档/防重放攻击方案设计.md) | 防重放攻击方案                                    |
+| [`docs/设计文档/防重放攻击方案设计.md`](docs/设计文档/防重放攻击方案设计.md) | 防重放攻击方案                                    |
 | [`docs/changelogs/`](docs/changelogs/) | 版本变更记录（v2.0.0 → v2.7.0，每个版本独立 md）          |
 | [`AGENTS.md`](AGENTS.md) | 项目级 agent 上下文（v2.7.0 同步更新）                 |
 | [`docs/changelogs/2026-06-17-v2.6.0-sqlite-migration.md`](docs/changelogs/2026-06-17-v2.6.0-sqlite-migration.md) | v2.6.0 SQLite 改造完整 changelog               |

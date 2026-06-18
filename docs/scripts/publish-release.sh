@@ -25,8 +25,8 @@
 # 用法：
 #   export GITHUB_TOKEN=ghp_xxxxx
 #   export GITHUB_REPO=yourname/your-repo
-#   ./scripts/publish-release.sh                          # 仅代码发版
-#   EXPORT_DB=1 ./scripts/publish-release.sh             # 代码 + 加密数据一起发版
+#   ./docs/scripts/publish-release.sh                          # 仅代码发版
+#   EXPORT_DB=1 ./docs/scripts/publish-release.sh             # 代码 + 加密数据一起发版
 #
 # 行为：
 #   - 不接受传参指定 tag（自动）
@@ -37,8 +37,9 @@
 set -euo pipefail
 
 # ============= 0. 准备 =============
+# 2026-06-18：脚本搬到 docs/scripts/ 后比原 scripts/ 多一层目录，项目根要往上跳两级
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT_DIR"
 
 # 颜色
@@ -47,7 +48,7 @@ info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
-# 尝试加载 scripts/deploy.env（本地运维用，gitignored）
+# 尝试加载 docs/scripts/deploy.env（本地运维用，gitignored）
 # 使用 set -a 让变量自动 export
 if [ -f "$SCRIPT_DIR/deploy.env" ]; then
     info "加载 $SCRIPT_DIR/deploy.env"
@@ -60,14 +61,14 @@ fi
 # 校验环境变量
 if [ -z "${GITHUB_TOKEN:-}" ]; then
     err "GITHUB_TOKEN 未设置。3 种配置方式（任选一种）："
-    err "  1. cp scripts/deploy.env.example scripts/deploy.env，编辑后重跑"
+    err "  1. cp docs/scripts/deploy.env.example docs/scripts/deploy.env，编辑后重跑"
     err "  2. export GITHUB_TOKEN=ghp_xxx 后重跑"
-    err "  3. 临时一次性：GITHUB_TOKEN=ghp_xxx ./scripts/publish-release.sh"
+    err "  3. 临时一次性：GITHUB_TOKEN=ghp_xxx ./docs/scripts/publish-release.sh"
     exit 1
 fi
 if [ -z "${GITHUB_REPO:-}" ]; then
     err "GITHUB_REPO 未设置。export GITHUB_REPO=owner/repo 后重试"
-    err "  （参考 scripts/deploy.env.example）"
+    err "  （参考 docs/scripts/deploy.env.example）"
     exit 1
 fi
 
@@ -196,20 +197,20 @@ tar -czf "$STAGE_DIR/assets/frontend-static.tar.gz" -C "$STATIC_DIR" .
 cp "$ROOT_DIR/docs/sql/schema-sqlite.sql"      "$STAGE_DIR/assets/schema-sqlite.sql"
 
 # deploy-server.sh 是服务器端唯一能拉到的脚本，缺失就强制失败
-if [ ! -f "$ROOT_DIR/scripts/deploy-server.sh" ]; then
-    err "$ROOT_DIR/scripts/deploy-server.sh 不存在，无法发布"
+if [ ! -f "$ROOT_DIR/docs/scripts/deploy-server.sh" ]; then
+    err "$ROOT_DIR/docs/scripts/deploy-server.sh 不存在，无法发布"
     err "  （这是服务器端一键部署脚本，发布包里必须带）"
     exit 1
 fi
-cp "$ROOT_DIR/scripts/deploy-server.sh"        "$STAGE_DIR/assets/deploy-server.sh"
+cp "$ROOT_DIR/docs/scripts/deploy-server.sh"   "$STAGE_DIR/assets/deploy-server.sh"
 
 # sqlite-import.sh 也是服务器端要的(IMPORT_DB=1 时 deploy-server 会调它解密导入)
-if [ ! -f "$ROOT_DIR/scripts/sqlite-import.sh" ]; then
-    err "$ROOT_DIR/scripts/sqlite-import.sh 不存在，无法发布"
+if [ ! -f "$ROOT_DIR/docs/scripts/sqlite-import.sh" ]; then
+    err "$ROOT_DIR/docs/scripts/sqlite-import.sh 不存在，无法发布"
     err "  （deploy-server.sh 在 IMPORT_DB=1 时会调它解密 .enc 导入，发布包里必须带）"
     exit 1
 fi
-cp "$ROOT_DIR/scripts/sqlite-import.sh"        "$STAGE_DIR/assets/sqlite-import.sh"
+cp "$ROOT_DIR/docs/scripts/sqlite-import.sh"   "$STAGE_DIR/assets/sqlite-import.sh"
 chmod +x "$STAGE_DIR/assets/sqlite-import.sh"
 
 # ============= 4.6 数据导出(可选,EXPORT_DB=1 触发)=============
@@ -226,7 +227,7 @@ if [ "${EXPORT_DB:-0}" = "1" ]; then
         # ⚠️ 必须用 process substitution 而不是 `| sed`,否则 pipe 会偷走 export 的 stdin,
         #    read -rs 拿空值 → 两次空值"不一致"循环死锁(屏幕看着像卡住)
         #    FORCE_EXPORT=1 让 export 跳过"非交互拒绝"门,密码必须操作员手输
-        FORCE_EXPORT=1 bash "$ROOT_DIR/scripts/sqlite-export.sh" \
+        FORCE_EXPORT=1 bash "$ROOT_DIR/docs/scripts/sqlite-export.sh" \
             "$ROOT_DIR/backend/blog.db" \
             -o "$DUMP_FILE" \
             --exclude page_view 2> >(sed 's/^/    /' >&2)

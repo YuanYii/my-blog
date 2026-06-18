@@ -6,17 +6,17 @@
 # 用途:跨环境数据迁移(防止传输过程中泄露)
 #
 # 用法:
-#   bash scripts/sqlite-export.sh                           # 默认导出 backend/blog.db
-#   bash scripts/sqlite-export.sh /path/to/blog.db          # 指定源 db
-#   bash scripts/sqlite-export.sh --exclude page_view       # 排除指定表(逗号分隔)
-#   bash scripts/sqlite-export.sh -o /tmp/blog-2026.sql.gz.enc  # 指定输出文件
-#   bash scripts/sqlite-export.sh --no-data                 # 只导 schema 不导数据(仍加密)
+#   bash docs/scripts/sqlite-export.sh                           # 默认导出 backend/blog.db
+#   bash docs/scripts/sqlite-export.sh /path/to/blog.db          # 指定源 db
+#   bash docs/scripts/sqlite-export.sh --exclude page_view       # 排除指定表(逗号分隔)
+#   bash docs/scripts/sqlite-export.sh -o /tmp/blog-2026.sql.gz.enc  # 指定输出文件
+#   bash docs/scripts/sqlite-export.sh --no-data                 # 只导 schema 不导数据(仍加密)
 #
 # 算法:openssl AES-256-CBC + PBKDF2 100k 迭代 + salt
 # 跨平台:macOS LibreSSL / Linux OpenSSL 3.x / Alpine busybox openssl 都支持
 #
 # 输出: ./backups/blog-YYYYMMDD-HHMMSS.sql.gz.enc(默认)
-# 导入: bash scripts/sqlite-import.sh /path/to/blog.db ./backups/blog-*.sql.gz.enc
+# 导入: bash docs/scripts/sqlite-import.sh /path/to/blog.db ./backups/blog-*.sql.gz.enc
 # ============================================================
 
 set -e
@@ -103,6 +103,11 @@ EXCLUDE_TABLES=""
 DATA_ONLY=false
 SCHEMA_ONLY=false
 
+# ---- 强制清空的表(保留 schema,但不导出数据)----
+# admin_device 是设备授权白名单表,含设备指纹/IP 等敏感信息,
+# 导出/迁移时一律清空数据,避免随备份文件泄露。
+CLEAR_DATA_TABLES=("admin_device")
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --exclude)
@@ -147,8 +152,9 @@ command -v sqlite3 >/dev/null 2>&1 || error "sqlite3 not installed, install: bre
 command -v openssl >/dev/null 2>&1 || error "openssl not installed"
 
 # 解析 db 路径(支持相对路径,相对项目根)
+# 2026-06-18:脚本搬到 docs/scripts/ 后比原 scripts/ 多一层目录,项目根要往上跳两级
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 if [[ ! "$DB_PATH" = /* ]]; then
     DB_PATH="$PROJECT_ROOT/$DB_PATH"
@@ -211,6 +217,15 @@ done
 EXPORT_COUNT=${#EXPORT_TABLES[@]}
 info "Will export: $EXPORT_COUNT / $TOTAL_COUNT tables"
 
+for ctbl in "${CLEAR_DATA_TABLES[@]}"; do
+    for tbl in "${EXPORT_TABLES[@]}"; do
+        if [[ "$tbl" == "$ctbl" ]]; then
+            warn "Table $ctbl contains device authorization data, data will be cleared (schema only)"
+            break
+        fi
+    done
+done
+
 # ---- 临时文件(用 trap 保证清理)----
 TMP_SQL=$(mktemp -t blog-export-sql-XXXXXX.sql)
 TMP_GZ=$(mktemp -t blog-export-gz-XXXXXX.sql.gz)
@@ -245,12 +260,21 @@ if [[ "$SCHEMA_ONLY" != "true" ]]; then
     EXCLUDE_PY=$(printf "'%s'," "${EXPORT_TABLES[@]}")
     EXCLUDE_PY="[${EXCLUDE_PY%,}]"
 
-    python3 - "$DB_PATH" "$EXCLUDE_PY" >> "$TMP_SQL" <<'PYEOF'
+    # 强制清空数据的表(只留 schema,不导出 INSERT)→ 数组给 Python
+    CLEAR_PY=$(printf "'%s'," "${CLEAR_DATA_TABLES[@]}")
+    CLEAR_PY="[${CLEAR_PY%,}]"
+
+    python3 - "$DB_PATH" "$EXCLUDE_PY" "$CLEAR_PY" >> "$TMP_SQL" <<'PYEOF'
 import sqlite3, sys
 db_path = sys.argv[1]
 tables = eval(sys.argv[2])
+clear_tables = set(eval(sys.argv[3]))
 con = sqlite3.connect(db_path)
 for tbl in tables:
+    if tbl in clear_tables:
+        print(f'-- === data: {tbl} (cleared: device authorization table, data excluded from export) ===')
+        print()
+        continue
     print(f'-- === data: {tbl} ===')
     cur = con.execute(f'SELECT * FROM {tbl}')
     cols = [d[0] for d in cur.description]
@@ -345,12 +369,13 @@ info "Encrypted export complete"
 echo "  File:    $OUTPUT"
 echo "  Size:    $FILE_SIZE"
 echo "  Tables:  $EXPORT_COUNT"
+echo "  Cleared: ${CLEAR_DATA_TABLES[*]} (schema only, data excluded)"
 
 echo -e "${YELLOW}[KEY] REMEMBER THIS PASSWORD! You will need the same password to import on production.${NC}"
 echo -e "${YELLOW}   Lost password = unrecoverable data (that's the point of encryption)${NC}"
 echo
 echo "Next steps:"
 echo "  # Local import (test)"
-echo "  bash scripts/sqlite-import.sh /tmp/test.db $OUTPUT"
+echo "  bash docs/scripts/sqlite-import.sh /tmp/test.db $OUTPUT"
 echo "  # Publish to GitHub Release (publish-release.sh with EXPORT_DB=1)"
 echo "  # Remote import on production (deploy-server.sh with IMPORT_DB=1)"

@@ -5,9 +5,9 @@
 # 把 sqlite-export.sh 产出的 .sql.gz.enc 解密 → gunzip → 导入到目标 db
 #
 # 用法:
-#   bash scripts/sqlite-import.sh /path/to/target.db /path/to/dump.sql.gz.enc
-#   bash scripts/sqlite-import.sh /opt/myblog/blog.db /tmp/blog-20260618.sql.gz.enc
-#   bash scripts/sqlite-import.sh --remote myblog@1.2.3.4 /opt/myblog/blog.db /tmp/blog.sql.gz.enc
+#   bash docs/scripts/sqlite-import.sh /path/to/target.db /path/to/dump.sql.gz.enc
+#   bash docs/scripts/sqlite-import.sh /opt/myblog/blog.db /tmp/blog-20260618.sql.gz.enc
+#   bash docs/scripts/sqlite-import.sh --remote myblog@1.2.3.4 /opt/myblog/blog.db /tmp/blog.sql.gz.enc
 #
 # 算法:AES-256-CBC + PBKDF2 100k 迭代 + salt(与 export 配对)
 #
@@ -162,11 +162,12 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 解析相对路径
+# 2026-06-18:脚本搬到 docs/scripts/ 后比原 scripts/ 多一层目录,项目根要往上跳两级
 if [[ ! "$TARGET_DB" = /* ]]; then
-    TARGET_DB="$SCRIPT_DIR/../$TARGET_DB"
+    TARGET_DB="$SCRIPT_DIR/../../$TARGET_DB"
 fi
 if [[ ! "$DUMP_FILE" = /* ]]; then
-    DUMP_FILE="$SCRIPT_DIR/../$DUMP_FILE"
+    DUMP_FILE="$SCRIPT_DIR/../../$DUMP_FILE"
 fi
 
 command -v sqlite3 >/dev/null 2>&1 || error "sqlite3 not installed"
@@ -281,4 +282,4 @@ echo "  Size:       $FILE_SIZE"
 echo
 echo "Next steps:"
 echo "  # Start backend:cd backend && java -jar blog-app.jar --spring.profiles.active=prod"
-echo "  # Verify:bash scripts/verify-sqlite.sh"
+echo "  # Verify:bash docs/scripts/verify-sqlite.sh"

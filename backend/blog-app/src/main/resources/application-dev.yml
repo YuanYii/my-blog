@@ -5,7 +5,8 @@ spring:
     # SQLite（dev 默认）
     # 2026-06-17 v2.6.0-fix：用 ${SQLITE_PATH} 绝对路径（避免 ${user.dir} 在 spring-boot:run 下指向 blog-app/ 而非 backend/）
     driver-class-name: org.sqlite.JDBC
-    url: jdbc:sqlite:${SQLITE_PATH:${user.dir}/../blog.db}
+#    url: jdbc:sqlite:${SQLITE_PATH:${user.dir}/../blog.db}
+    url: jdbc:sqlite:/Users/yuanyi/MyProject/vibeP/my-blog/backend/blog.db
     hikari:
       # SQLite 单写者锁：必须 1 个连接，否则并发写 SQLITE_BUSY
       maximum-pool-size: 1
