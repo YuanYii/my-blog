@@ -59,14 +59,12 @@ export default defineNuxtConfig({
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         { name: 'description', content: '' }
       ],
-      link: [
-        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
-        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Serif+SC:wght@500;700&display=swap' }
-      ],
-      script: [
-        { src: 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js', defer: true }
-      ]
+      // 2026-06-18：去掉 Google Fonts 外网依赖（dev 国内访问慢/挂掉导致首屏空白）
+      // 字体走 main.css 的 system-ui / Noto Sans SC 等本地/系统字体栈
+      link: [],
+      // 2026-06-18：删 jsdelivr CDN 的 chart.js —— dev 国内慢，且 chart.js 已走 npm 包
+      // dashboard.vue 用 await import('chart.js/auto') 按需加载
+      script: []
     }
   },
   runtimeConfig: {

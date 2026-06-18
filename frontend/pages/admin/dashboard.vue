@@ -283,8 +283,10 @@ const statusLabel = (s: number) => ({ 0: '草稿', 1: '已发布', 2: '已归档
 onMounted(async () => {
   await loadAll()
   await loadRecent()
-  // 等待 Chart.js 加载完成
-  setTimeout(renderCharts, 300)
+  // 2026-06-18：从 npm 包按需加载（Vite 自动 code-split，仅 admin 路由打包）
+  const { default: Chart } = await import('chart.js/auto')
+  ;(window as any).Chart = Chart  // 兼容现有 renderCharts() 用 window.Chart
+  renderCharts()
 })
 
 watch(activeTab, () => {

@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@types/dompurify": "^3.0.5",
+    "chart.js": "^4.5.1",
     "dompurify": "^3.4.8",
     "nuxt": "^3.13.2",
     "vue": "^3.4.38",
