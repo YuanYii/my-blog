@@ -30,9 +30,10 @@
 #
 # 行为：
 #   - 不接受传参指定 tag（自动）
-#   - 完全以 GitHub 上现有 release 为准：找最大 vMAJOR.MINOR.PATCH，patch +1
-#   - 仓库无 release 时首发 v0.0.1
-#   - 与 pom.xml 的 <version> 无关（pom 仅作开发期标记，不影响发布号）
+#   - 前两位 MAJOR.MINOR 由开发者自己维护（写进 pom.xml 的 <revision> 前两位）
+#   - 第三位 PATCH 由脚本自动算：看 GitHub 上 vMAJOR.MINOR.* 最大的 patch，+1
+#   - 该前缀无 release 时首发 vMAJOR.MINOR.1
+#   - pom.xml 的 <revision> 第三位仅作开发期标记，不参与发布号计算（脚本也不回写）
 
 set -euo pipefail
 
@@ -72,74 +73,76 @@ if [ -z "${GITHUB_REPO:-}" ]; then
     exit 1
 fi
 
-# 决定 tag：完全以 GitHub 上现有 release 为准，patch +1
+# 决定 tag：前两位从 pom.xml 的 <revision> 读，第三位按 GitHub release 自动 +1
 # 规则：
-#   1. 拉 GitHub 上所有 release 的 tag_name
-#   2. 找出"语义化版本"中最大的那个（按 major.minor.patch 数字比较）
-#   3. 它的 patch +1 就是新 tag
-#   4. 如果仓库一个 release 都没有（首发），从 v0.0.1 开始
-# pom.xml 的 <version> 不参与决定（开发期标记，发布期由 GitHub 状态定）
-# 这样：v3.1.0 存在 → 下次必发 v3.1.1；无论你 pom 写什么
+#   1. MAJOR.MINOR 从 backend/pom.xml 的 <revision> 读（如 4.0.0 → 4.0）
+#   2. 拉 GitHub 上所有 release 的 tag_name，过滤出 vMAJOR.MINOR.* 的
+#   3. 找该前缀下最大的 patch，+1 = 新 tag
+#   4. 该前缀无 release 时首发 vMAJOR.MINOR.1
+#   5. 脚本不回写 pom（第三位仅作开发期标记，发版记录由开发者手动维护）
+# 例：pom=4.0.5，GitHub 上 v4.0.* 最大是 4.0.9 → 发 v4.0.10
+#     pom=4.0.0，GitHub 上 v4.0.* 最大是 4.0.5 → 发 v4.0.6
+#     pom=5.0.0，GitHub 上无 v5.0.*           → 发 v5.0.1
 if [ -n "${1:-}" ]; then
-    err "本脚本版本号完全自动（以 GitHub release 状态为准），不接受手动指定"
+    err "本脚本版本号完全自动（前两位从 pom 读，第三位从 GitHub 算），不接受手动指定"
     err "  传参 '$1' 被忽略"
-    err "  如果想强制某版本，请先到 GitHub Releases 删掉对应 tag 后重跑"
+    err "  升级 MAJOR.MINOR 请直接改 backend/pom.xml 的 <revision> 前两位"
+    err "  强制某 PATCH 请先到 GitHub Releases 删掉对应 tag 后重跑"
     exit 1
 fi
 
-info "=== 0. 解析目标 tag（以 GitHub 上最大 release patch+1 为准）==="
+info "=== 0. 解析目标 tag（pom 前两位 + GitHub 同前缀最大 patch +1）==="
+
+# 0.1 从 pom.xml 读 <revision>，取前两位
+POM_REVISION=$(grep -oE '<revision>[0-9]+\.[0-9]+(\.[0-9]+)?</revision>' \
+    "$ROOT_DIR/backend/pom.xml" | head -1 | sed -E 's@</?revision>@@g')
+if [ -z "$POM_REVISION" ]; then
+    err "backend/pom.xml 里读不到 <revision>X.Y.Z</revision>，无法决定 MAJOR.MINOR"
+    err "  请在 <properties> 段维护 <revision>4.1.0</revision> 这样的版本号"
+    exit 1
+fi
+POM_MAJOR=$(echo "$POM_REVISION" | cut -d. -f1)
+POM_MINOR=$(echo "$POM_REVISION" | cut -d. -f2)
+info "pom <revision>: $POM_REVISION → 前两位 v${POM_MAJOR}.${POM_MINOR}"
+
+# 0.2 拉 GitHub 上所有 release，找 vPOM_MAJOR.POM_MINOR.* 的最大 patch
 ALL_RELEASES=$(curl -s -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/$GITHUB_REPO/releases?per_page=100" 2>/dev/null || echo "[]")
 
-# 用 Python 做语义化版本比较（shell 数组比较坑多）
-read LATEST_MAJOR LATEST_MINOR LATEST_PATCH < <(echo "$ALL_RELEASES" | python3 -c "
+MAX_PATCH=$(echo "$ALL_RELEASES" | python3 -c "
 import sys, json, re
 try:
     rels = json.load(sys.stdin)
 except Exception:
     rels = []
-candidates = []
+patches = []
 for r in rels:
-    t = r.get('tag_name','') or ''
+    t = (r.get('tag_name') or '')
     m = re.match(r'^v(\d+)\.(\d+)\.(\d+)$', t)
-    if m:
-        candidates.append(tuple(int(x) for x in m.groups()))
-if not candidates:
-    # 首发：v0.0.1
-    print('0 0 0')
+    if not m:
+        continue
+    major, minor, patch = (int(x) for x in m.groups())
+    if major == ${POM_MAJOR} and minor == ${POM_MINOR}:
+        patches.append(patch)
+if not patches:
+    print('0')
 else:
-    # 取最大（按 major, minor, patch 字典序）
-    best = max(candidates)
-    print(best[0], best[1], best[2])
-" 2>/dev/null || echo "0 0 0")
+    print(max(patches))
+" 2>/dev/null)
 
-# 兜底：如果上面 python 失败给的是 "0 0 0"，且仓库真没 release，那就从 v0.0.1 起
-# 如果 python 失败但有 release，那 LATEST 可能是空，要兜住
-if [ -z "$LATEST_MAJOR" ]; then LATEST_MAJOR=0; fi
-if [ -z "$LATEST_MINOR" ]; then LATEST_MINOR=0; fi
-if [ -z "$LATEST_PATCH" ]; then LATEST_PATCH=0; fi
+# 0.3 算新 tag
+if [ -z "$MAX_PATCH" ]; then
+    err "GitHub release 列表拉取/解析失败（python 输出空）"
+    err "  请检查 \$GITHUB_TOKEN / \$GITHUB_REPO 是否正确，网络是否可达 api.github.com"
+    exit 1
+fi
+NEW_PATCH=$((MAX_PATCH + 1))
+TAG="v${POM_MAJOR}.${POM_MINOR}.${NEW_PATCH}"
 
-# 如果三个都是 0 且仓库真有 release，python 解析失败——fallback 报清楚
-if [ "$LATEST_MAJOR" = "0" ] && [ "$LATEST_MINOR" = "0" ] && [ "$LATEST_PATCH" = "0" ]; then
-    HAS_RELEASE=$(echo "$ALL_RELEASES" | python3 -c "
-import sys, json
-try:
-    rels = json.load(sys.stdin)
-    print('yes' if isinstance(rels, list) and rels else 'no')
-except Exception:
-    print('err')
-" 2>/dev/null || echo "err")
-    if [ "$HAS_RELEASE" = "yes" ]; then
-        err "GitHub 上有 release 但版本号都解析失败（不是 vMAJOR.MINOR.PATCH 格式）"
-        err "  请检查现有 release tag 是否合规（GitHub → Releases 页面）"
-        exit 1
-    fi
-    info "GitHub 上无 release，首发 v0.0.1"
-    TAG="v0.0.1"
+if [ "$MAX_PATCH" = "0" ]; then
+    info "GitHub 上无 v${POM_MAJOR}.${POM_MINOR}.* release → 首发 $TAG"
 else
-    NEW_PATCH=$((LATEST_PATCH + 1))
-    TAG="v${LATEST_MAJOR}.${LATEST_MINOR}.${NEW_PATCH}"
-    info "GitHub 最大 release: v${LATEST_MAJOR}.${LATEST_MINOR}.${LATEST_PATCH} → 自动 +1 → $TAG"
+    info "GitHub 上 v${POM_MAJOR}.${POM_MINOR}.* 最大 patch: $MAX_PATCH → +1 → $TAG"
 fi
 
 info "目标 tag: $TAG"
@@ -277,7 +280,7 @@ if [ "$README_EXISTS" != "200" ]; then
     # ⚠️ base64 必须去换行！Linux 的 GNU base64 默认按 76 列折行（macOS 不折），
     # 折行产生的 \n 进了 JSON 字符串字面量就是非法 JSON，GitHub Contents API 400/422。
     # 通用兜底：base64 后 | tr -d '\n'，单行输出。
-    README_CONTENT=$(printf '# my-blog-prov\n\nmy-blog 部署专用仓库。\n\n本仓只放 GitHub Release assets（jar / static / sql / 部署脚本），代码仓在 [YuanYii/my-blog](https://github.com/YuanYii/my-blog)。\n\n## 部署方式\n\n参见每个 release 的 assets：\n- `deploy-bundle-vX.Y.Z.zip` 冷部署包（推荐，1 个文件拉完）\n- `blog-app.jar` Spring Boot fat jar\n- `frontend-static.tar.gz` Nuxt 生成的静态文件\n- `schema-sqlite.sql` SQLite 初始化\n- `deploy-server.sh` 服务器端一键部署脚本\n- `SHA256SUMS` 校验文件\n\n服务器端：\n```bash\nexport GITHUB_REPO=YuanYii/my-blog-prov\nsudo ./deploy-server.sh v4.0.1\n```\n' | base64 | tr -d '\n')
+    README_CONTENT=$(printf '# my-blog-prov\n\nmy-blog 部署专用仓库。\n\n本仓只放 GitHub Release assets（jar / static / sql / 部署脚本），代码仓在 [YuanYii/my-blog](https://github.com/YuanYii/my-blog)。\n\n## 部署方式\n\n参见每个 release 的 assets：\n- `deploy-bundle-vX.Y.Z.zip` 冷部署包（推荐，1 个文件拉完）\n- `blog-app.jar` Spring Boot fat jar\n- `frontend-static.tar.gz` Nuxt 生成的静态文件\n- `schema-sqlite.sql` SQLite 初始化\n- `deploy-server.sh` 服务器端一键部署脚本\n- `SHA256SUMS` 校验文件\n\n服务器端：\n```bash\nexport GITHUB_REPO=YuanYii/my-blog-prov\nsudo ./deploy-server.sh v4.1.0\n```\n' | base64 | tr -d '\n')
     # 用 Contents API 创建 README.md（base64 编码 + commit message）
     INITIAL_PAYLOAD=$(printf '{"message":"chore: initial README (unlock release for empty repo)","content":"%s"}' "$README_CONTENT")
     HTTP_CODE=$(curl -s -o "$STAGE_DIR/init.json" -w "%{http_code}" -X PUT \

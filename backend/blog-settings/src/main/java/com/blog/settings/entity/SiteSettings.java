@@ -1,6 +1,8 @@
 package com.blog.settings.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -28,6 +30,8 @@ public class SiteSettings {
     /** JSON 字符串（service 层用 ObjectMapper 解析为 Map） */
     private String data;
 
+    @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
+    @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 }

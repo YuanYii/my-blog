@@ -29,7 +29,8 @@
 
     <properties>
         <!-- CI-friendly 版本号:所有子模块用 ${revision} 引用父 POM,升级只改这一行 -->
-        <revision>4.0.1</revision>
+        <!-- 2026-06-19: 4.0.1 → 4.1.0,核心增量见 docs/changelogs/2026-06-19-v4.1.0-timezone-local-sim.md -->
+        <revision>4.1.0</revision>
 
         <java.version>1.8</java.version>
         <maven.compiler.source>1.8</maven.compiler.source>

@@ -27,8 +27,9 @@ CREATE TABLE IF NOT EXISTS user (
   bio             TEXT,
   location        VARCHAR(100),
   role            VARCHAR(20)   NOT NULL DEFAULT 'ADMIN',
-  created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+  -- 2026-06-19：时间由 Java（北京时间）填充，不用 DEFAULT CURRENT_TIMESTAMP（SQLite 写 UTC）。
+  created_at      DATETIME      NOT NULL,
+  updated_at      DATETIME      NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_user_username ON user(username);
 
@@ -43,8 +44,10 @@ CREATE TABLE IF NOT EXISTS category (
   description   VARCHAR(200),
   visible       TINYINT      NOT NULL DEFAULT 1,
   sort          INT          NOT NULL DEFAULT 0,
-  created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+  -- 2026-06-19：时间字段统一由 Java（MyBatis-Plus MetaObjectHandler，北京时间）填充，
+  -- 不用 DEFAULT CURRENT_TIMESTAMP（SQLite 该默认值永远写 UTC）。
+  created_at    DATETIME     NOT NULL,
+  updated_at    DATETIME     NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_category_slug ON category(slug);
 
@@ -55,7 +58,8 @@ CREATE TABLE IF NOT EXISTS tag (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          VARCHAR(50)  NOT NULL,
   slug          VARCHAR(50)  NOT NULL,
-  created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+  -- 2026-06-19：时间由 Java（北京时间）填充，不用 DEFAULT CURRENT_TIMESTAMP（SQLite 写 UTC）。
+  created_at    DATETIME     NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_tag_slug ON tag(slug);
 
@@ -73,8 +77,9 @@ CREATE TABLE IF NOT EXISTS article (
   view_count      INT           NOT NULL DEFAULT 0,
   category_id     BIGINT,                    -- 业务层保证对应 category.id
   published_at    DATETIME,
-  created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- 2026-06-19：时间由 Java（北京时间）填充，不用 DEFAULT CURRENT_TIMESTAMP（SQLite 写 UTC）。
+  created_at      DATETIME      NOT NULL,
+  updated_at      DATETIME      NOT NULL,
   deleted         TINYINT       NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_article_slug ON article(slug);
@@ -109,7 +114,9 @@ CREATE TABLE IF NOT EXISTS comment (
   ip              VARCHAR(45),
   user_agent      VARCHAR(500),
   status          TINYINT      NOT NULL DEFAULT 0,
-  created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+  -- 2026-06-19：时间由 Java（北京时间）填充——CommentController 走 JdbcTemplate 显式传
+  -- 'yyyy-MM-dd HH:mm:ss' 字符串，不用 DEFAULT CURRENT_TIMESTAMP（SQLite 写 UTC）。
+  created_at      DATETIME     NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_comment_article ON comment(article_id);
 CREATE INDEX IF NOT EXISTS idx_comment_parent ON comment(parent_id);
@@ -129,8 +136,9 @@ CREATE TABLE IF NOT EXISTS admin_device (
   last_seen_at    DATETIME,
   approved_at     DATETIME,
   approved_by     VARCHAR(64)   NOT NULL DEFAULT '',
-  created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+  -- 2026-06-19：时间由 Java（北京时间）填充，不用 DEFAULT CURRENT_TIMESTAMP（SQLite 写 UTC）。
+  created_at      DATETIME      NOT NULL,
+  updated_at      DATETIME      NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_admin_device_device_id ON admin_device(device_id);
 CREATE INDEX IF NOT EXISTS idx_admin_device_status ON admin_device(status);
@@ -145,8 +153,9 @@ CREATE TABLE IF NOT EXISTS api_whitelist (
   type            VARCHAR(20)  NOT NULL,
   enabled         TINYINT      NOT NULL DEFAULT 1,
   description     VARCHAR(200),
-  created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+  -- 2026-06-19：时间由 Java（北京时间）填充，不用 DEFAULT CURRENT_TIMESTAMP（SQLite 写 UTC）。
+  created_at      DATETIME     NOT NULL,
+  updated_at      DATETIME     NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_api_whitelist_path_type ON api_whitelist(path_prefix, type);
 CREATE INDEX IF NOT EXISTS idx_api_whitelist_type ON api_whitelist(type);
@@ -160,8 +169,9 @@ CREATE TABLE IF NOT EXISTS site_settings (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   section         VARCHAR(32)  NOT NULL,
   data            TEXT         NOT NULL,
-  created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+  -- 2026-06-19：时间由 Java（北京时间）填充，不用 DEFAULT CURRENT_TIMESTAMP（SQLite 写 UTC）。
+  created_at      DATETIME     NOT NULL,
+  updated_at      DATETIME     NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_site_settings_section ON site_settings(section);
 
@@ -178,6 +188,11 @@ CREATE TABLE IF NOT EXISTS page_view (
   ip              VARCHAR(45),
   user_agent      VARCHAR(200),
   referer         VARCHAR(500),
+  -- ⚠️ 2026-06-19：此处 DEFAULT CURRENT_TIMESTAMP **有意保留，请勿清理**。
+  --   PageViewService.recordVisitAsync 始终显式传 dayStart（北京当天 00:00）作 created_at，
+  --   DEFAULT 实际永不触发；但 UK (visitor, path, visit_date, created_at) 的按天去重依赖
+  --   "created_at = visit_date 北京 00:00"。保留 DEFAULT 不影响现有逻辑，删了亦无害，
+  --   但与其他表统一删除会让人误以为此列也该由 fill 托管——本列不走 MyBatis-Plus，故标注。
   created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   visit_date      DATE         NOT NULL
 );
@@ -197,7 +212,9 @@ CREATE TABLE IF NOT EXISTS article_view_log (
   article_id      BIGINT   NOT NULL,
   view_date       DATE     NOT NULL,
   view_count      INT      NOT NULL DEFAULT 1,
-  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  -- 2026-06-19：时间由 Java（北京时间）填充，不用 DEFAULT CURRENT_TIMESTAMP（SQLite 写 UTC）。
+  -- 注：本表为历史死表（v2.5.0 起 0 数据，无任何 insert/select），仅保留 schema 兼容。
+  created_at      DATETIME NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_article_view_log_article_date
   ON article_view_log(article_id, view_date);
@@ -213,12 +230,14 @@ CREATE TABLE IF NOT EXISTS ip_ban (
   ip              VARCHAR(45)   NOT NULL,
   request_count   INT           NOT NULL DEFAULT 0,
   reason          VARCHAR(255)  NOT NULL DEFAULT '',
-  banned_at       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- 2026-06-19：时间由 Java（北京时间）填充，不用 DEFAULT CURRENT_TIMESTAMP（SQLite 写 UTC）。
+  -- banned_at 由 IpBanService 显式 set，created_at/updated_at 由 MetaObjectHandler 自动填充。
+  banned_at       DATETIME      NOT NULL,
   expire_at       DATETIME      NOT NULL,
   unbanned        TINYINT       NOT NULL DEFAULT 0,
   unbanned_at     DATETIME,
-  created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at      DATETIME      NOT NULL,
+  updated_at      DATETIME      NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_ip_ban_ip ON ip_ban(ip);
 CREATE INDEX IF NOT EXISTS idx_ip_ban_expire ON ip_ban(expire_at);

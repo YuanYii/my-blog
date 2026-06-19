@@ -154,6 +154,8 @@ public class SettingsController {
         // ——只允许改以上 5 个白名单字段。这是这一轮 password_hash 被覆盖的根本防御。
 
         if (!changed) return Result.success();  // 没东西可改直接返回 200
+        // UpdateWrapper + update(null, uw)（实体为 null）不触发 MetaObjectHandler 自动填充，手动刷新
+        uw.set("updated_at", LocalDateTime.now());
         userMapper.update(null, uw);
         logSettingChange("profile");
         return Result.success();

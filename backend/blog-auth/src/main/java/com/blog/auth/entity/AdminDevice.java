@@ -1,6 +1,8 @@
 package com.blog.auth.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -42,6 +44,8 @@ public class AdminDevice {
     /** 授权来源 device_id（首次系统自动迁移为 "system"） */
     private String approvedBy;
 
+    @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
+    @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 }

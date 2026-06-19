@@ -1,5 +1,6 @@
 package com.blog.article.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -32,7 +33,9 @@ public class Article {
     private Integer viewCount;
     private Long categoryId;
     private LocalDateTime publishedAt;
+    @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
+    @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
     @TableLogic

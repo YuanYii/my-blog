@@ -4,7 +4,14 @@
 # 跑法(root 或 sudo):
 #   curl -L https://raw.githubusercontent.com/OWNER/REPO/main/scripts/deploy-server.sh -o deploy-server.sh
 #   chmod +x deploy-server.sh
-#   sudo ./deploy-server.sh v4.0.1
+#   sudo ./deploy-server.sh v4.1.0
+#
+# ----- LOCAL_SIM 模式（2026-06-19 本地模拟容器用，docs/docker/local-sim）-----
+# 当 LOCAL_SIM=1 时，自动跳过 systemd/apt/防火墙等生产专属步骤，
+# 改用 supervisord 管理 redis/nginx/myblog 三个进程。
+# 自动检测：容器内 /.dockerenv 文件存在 → 自动 LOCAL_SIM=1。
+# 手动覆盖：LOCAL_SIM=1 ./deploy-server.sh 显式开启；LOCAL_SIM=0 强制关闭（即便在容器内）。
+# 详见 docs/docker/local-sim/deploy-server-local.patch.txt
 #
 # 自定义参数(环境变量):
 #   GITHUB_REPO=owner/repo       必填
@@ -23,14 +30,20 @@
 #                                 产物:dev-blog-dump.sql.gz.enc (publish-release.sh 加 EXPORT_DB=1 才有)
 #
 # 部署模式组合示例:
-#   默认发版:           ./deploy-server.sh v4.0.1
-#   只装代码(保留 db):  DEPLOY_MODE=code ./deploy-server.sh v4.0.1
-#   只导入数据:          DEPLOY_MODE=data IMPORT_DB=1 ./deploy-server.sh v4.0.1
-#   代码+数据全装:      IMPORT_DB=1 ./deploy-server.sh v4.0.1
+#   默认发版:           ./deploy-server.sh v4.1.0
+#   只装代码(保留 db):  DEPLOY_MODE=code ./deploy-server.sh v4.1.0
+#   只导入数据:          DEPLOY_MODE=data IMPORT_DB=1 ./deploy-server.sh v4.1.0
+#   代码+数据全装:      IMPORT_DB=1 ./deploy-server.sh v4.1.0
 # 语义约束:
 #   DEPLOY_MODE=data + IMPORT_DB=0  →  报错退出(语义矛盾)
 
 set -euo pipefail
+
+# LOCAL_SIM 自动检测（容器内 /.dockerenv 存在 → 自动 1）
+if [ -z "${LOCAL_SIM:-}" ] && [ -f /.dockerenv ]; then
+    export LOCAL_SIM=1
+    echo "[LOCAL_SIM] /.dockerenv detected, enabling LOCAL_SIM=1 (supervisor mode)"
+fi
 
 # ============= 0. 参数解析 =============
 TAG="${1:-${RELEASE_TAG:-}}"
@@ -43,6 +56,7 @@ SKIP_DEPS="${SKIP_DEPS:-0}"
 OPEN_FIREWALL="${OPEN_FIREWALL:-1}"
 DEPLOY_MODE="${DEPLOY_MODE:-full}"      # full | code | data
 IMPORT_DB="${IMPORT_DB:-0}"             # 0/1
+LOCAL_SIM="${LOCAL_SIM:-0}"             # 0=生产模式  1=本地模拟容器模式
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
@@ -51,17 +65,17 @@ err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # 校验
 if [ -z "$TAG" ]; then
-    err "Usage: $0 <tag>  e.g. $0 v4.0.1"
-    err "Or:RELEASE_TAG=v4.0.1 $0"
+    err "Usage: $0 <tag>  e.g. $0 v4.1.0"
+    err "Or:RELEASE_TAG=v4.1.0 $0"
     exit 1
 fi
-if [ -z "$GITHUB_REPO" ]; then
+if [ -z "$GITHUB_REPO" ] && [ "$LOCAL_SIM" != "1" ]; then
     err "GITHUB_REPO not set. export GITHUB_REPO=owner/repo and retry"
     exit 1
 fi
 
-# 必须 root
-if [ "$EUID" -ne 0 ]; then
+# 必须 root（容器内 LOCAL_SIM=1 默认就是 root，跳过这个校验）
+if [ "$EUID" -ne 0 ] && [ "$LOCAL_SIM" != "1" ]; then
     err "Please run as root or with sudo"
     exit 1
 fi
@@ -154,6 +168,8 @@ install_deps() {
 
 if [ "$SKIP_DEPS" = "1" ]; then
     info "SKIP_DEPS=1, skipping dependency install"
+elif [ "$LOCAL_SIM" = "1" ]; then
+    info "LOCAL_SIM=1, skipping §2 install_deps (Dockerfile already installs JDK 8/redis/nginx/sqlite3/supervisor)"
 else
     install_deps
 fi
@@ -161,12 +177,16 @@ fi
 # ============= 3. 创建部署目录 + 用户 =============
 info "=== 3. Preparing directory structure ==="
 mkdir -p "$INSTALL_DIR"/{logs,frontend,db,uploads} "$INSTALL_DIR/db/backups"
-# app 用户
-if ! id -u myblog >/dev/null 2>&1; then
-    useradd -r -s /bin/false myblog
-    info "Creating user myblog"
+if [ "$LOCAL_SIM" = "1" ]; then
+    info "LOCAL_SIM=1, skipping myblog user creation (running as root in container)"
+else
+    # app 用户
+    if ! id -u myblog >/dev/null 2>&1; then
+        useradd -r -s /bin/false myblog
+        info "Creating user myblog"
+    fi
+    chown -R myblog:myblog "$INSTALL_DIR"
 fi
-chown -R myblog:myblog "$INSTALL_DIR"
 
 # ============= 4. 下载资源 =============
 info "=== 4. Downloading deployment package ==="
@@ -229,7 +249,10 @@ if [ "$DEPLOY_MODE" = "data" ]; then
 else
     info "=== 5. Deploying backend jar ==="
 stop_app() {
-    if systemctl is-active --quiet myblog 2>/dev/null; then
+    if [ "$LOCAL_SIM" = "1" ]; then
+        # 容器内：supervisord 管 myblog，stop 由 supervisorctl 负责（§8 后做）
+        info "LOCAL_SIM=1, stop_app skipped (supervisord will restart myblog in §8)"
+    elif systemctl is-active --quiet myblog 2>/dev/null; then
         info "Stopping existing myblog service..."
         systemctl stop myblog || true
     fi
@@ -245,7 +268,9 @@ stop_app() {
 stop_app
 
 cp "$TMP_DIR/blog-app.jar" "$INSTALL_DIR/blog-app.jar"
-chown myblog:myblog "$INSTALL_DIR/blog-app.jar"
+if [ "$LOCAL_SIM" != "1" ]; then
+    chown myblog:myblog "$INSTALL_DIR/blog-app.jar"
+fi
 
 # 第一次跑:seed 数据
 # 判据:"DB 不存在" OR "DB 是空的(一张表都没有)"——后者是 2026-06-18 真实踩过的坑
@@ -263,10 +288,14 @@ if [ ! -f "$DB_FILE" ] || [ "${DB_HAS_TABLES:-0}" = "0" ]; then
         cp "$DB_FILE" "$INSTALL_DIR/db/backups/blog-empty-$(date +%Y%m%d-%H%M%S).db"
     fi
     cp "$TMP_DIR/schema-sqlite.sql" "$INSTALL_DIR/schema-sqlite.sql"
-    chown myblog:myblog "$INSTALL_DIR/schema-sqlite.sql"
+    if [ "$LOCAL_SIM" != "1" ]; then
+        chown myblog:myblog "$INSTALL_DIR/schema-sqlite.sql"
+    fi
     # schema-sqlite.sql 里本身就有 INSERT 语句, 直接用 sqlite3 灌入
     sqlite3 "$DB_FILE" < "$INSTALL_DIR/schema-sqlite.sql"
-    chown myblog:myblog "$DB_FILE"
+    if [ "$LOCAL_SIM" != "1" ]; then
+        chown myblog:myblog "$DB_FILE"
+    fi
     info "[OK] SQLite initialized (admin/123456)"
 else
     info "DB exists with $DB_HAS_TABLES tables ($DB_FILE), skipping schema import"
@@ -279,7 +308,9 @@ fi
 info "=== 6. Deploying frontend static files ==="
 rm -rf "$INSTALL_DIR/frontend"/*
 tar -xzf "$TMP_DIR/frontend-static.tar.gz" -C "$INSTALL_DIR/frontend/"
-chown -R myblog:myblog "$INSTALL_DIR/frontend"
+if [ "$LOCAL_SIM" != "1" ]; then
+    chown -R myblog:myblog "$INSTALL_DIR/frontend"
+fi
 info "[OK] Static files deployed to $INSTALL_DIR/frontend"
 
 # ============= 7. 写 application 配置 =============
@@ -318,7 +349,9 @@ spring:
 server:
   port: $SERVER_PORT
 EOF
-chown myblog:myblog "$APP_YML"
+if [ "$LOCAL_SIM" != "1" ]; then
+    chown myblog:myblog "$APP_YML"
+fi
 info "[OK] $APP_YML generated (overlay only)"
 
 # ============= 7.5 写 /etc/myblog/myblog.env =============
@@ -327,9 +360,15 @@ info "[OK] $APP_YML generated (overlay only)"
 # 规则:
 #   - 首次部署(/etc/myblog/myblog.env 不存在)→ 自动生成, JWT_SECRET 32+ 位强随机
 #   - 升级部署(/etc/myblog/myblog.env 已存在)→ **保留不动**(避免重启后 JWT secret 变化踢所有用户下线)
-info "=== 7.5 Writing /etc/myblog/myblog.env ==="
-mkdir -p /etc/myblog
-ENV_FILE="/etc/myblog/myblog.env"
+info "=== 7.5 Writing env file ==="
+if [ "$LOCAL_SIM" = "1" ]; then
+    # 容器内：env 文件放在 $INSTALL_DIR 下（更符合容器习惯，避免污染 /etc）
+    mkdir -p "$INSTALL_DIR"
+    ENV_FILE="$INSTALL_DIR/myblog.env"
+else
+    mkdir -p /etc/myblog
+    ENV_FILE="/etc/myblog/myblog.env"
+fi
 if [ -f "$ENV_FILE" ]; then
     info "Detected existing $ENV_FILE, keeping existing config (no overwrite, to preserve JWT secret)"
     info "  To rotate: stop service -> edit $ENV_FILE -> restart"
@@ -369,15 +408,77 @@ REDIS_PASSWORD=
 REDIS_DB=0
 EOF
     chmod 600 "$ENV_FILE"
-    chown myblog:myblog "$ENV_FILE"
+    if [ "$LOCAL_SIM" != "1" ]; then
+        chown myblog:myblog "$ENV_FILE"
+    fi
     info "[OK] $ENV_FILE generated (JWT_SECRET=$(echo "$JWT_SECRET_GENERATED" | cut -c1-8)..., chmod 600 done)"
     warn "[WARN]  After deploy, please edit $ENV_FILE, and change CORS_ORIGINS to your real domain!"
 fi
 
-# ============= 8. systemd 服务 =============
-info "=== 8. Writing systemd service ==="
-SERVICE_FILE="/etc/systemd/system/myblog.service"
-cat > "$SERVICE_FILE" <<EOF
+# ============= 8. 服务管理（systemd / supervisord 二选一）=============
+# LOCAL_SIM=1 → supervisord（容器内）
+# LOCAL_SIM=0 → systemd（生产 ECS，原样保留）
+info "=== 8. Writing service config (LOCAL_SIM=$LOCAL_SIM) ==="
+if [ "$LOCAL_SIM" = "1" ]; then
+    # ---------- LOCAL_SIM: supervisord ----------
+    # 关键设计（修复 #2 + #3）：
+    #   1. 生成 run-myblog.sh（被 supervisord.conf [program:myblog] 调用）
+    #   2. run-myblog.sh 内 set -a; source env 文件; set +a → exec java
+    #      （替代 systemd EnvironmentFile，env 变量全部注入）
+    #   3. 写到 /etc/supervisor/conf.d/myblog.conf（注意：supervisord.conf 必须 [include] conf.d）
+    #   4. supervisorctl reread/update/restart myblog
+    info "LOCAL_SIM=1, writing supervisord program + run-myblog.sh"
+    
+    # 1) 生成 run-myblog.sh —— supervisord 的 [program:myblog] command 指向这个文件
+    cat > "$INSTALL_DIR/scripts/run-myblog.sh" <<EOF
+#!/bin/bash
+# 由 deploy-server.sh §8 LOCAL_SIM 模式自动生成，请勿手动改
+set -e
+cd $INSTALL_DIR
+# 关键：source env 文件注入 JWT_SECRET / UPLOAD_DIR / REDIS_* / CORS_ORIGINS / SQLITE_PATH
+# 替代生产 systemd 的 EnvironmentFile 机制（supervisord 不支持 EnvironmentFile）
+set -a
+. $ENV_FILE
+set +a
+# -Duser.timezone=Asia/Shanghai: 容器/生产时区统一（logs 时间戳稳定）
+exec /usr/bin/java -Xms256m -Xmx512m -Duser.timezone=Asia/Shanghai \\
+    -jar $INSTALL_DIR/blog-app.jar \\
+    --spring.config.additional-location=$APP_YML
+EOF
+    chmod +x "$INSTALL_DIR/scripts/run-myblog.sh"
+    info "  generated: $INSTALL_DIR/scripts/run-myblog.sh"
+    
+    # 2) 写 supervisord 程序配置（被 supervisord.conf 的 [include] 读取）
+    SUPERVISOR_CONF="/etc/supervisor/conf.d/myblog.conf"
+    cat > "$SUPERVISOR_CONF" <<EOF
+; 由 deploy-server.sh §8 LOCAL_SIM 模式自动生成，请勿手动改
+[program:myblog]
+command=$INSTALL_DIR/scripts/run-myblog.sh
+directory=$INSTALL_DIR
+autostart=false
+autorestart=true
+startsecs=10
+startretries=3
+environment=SPRING_PROFILES_ACTIVE="prod",TZ="Asia/Shanghai"
+stdout_logfile=$INSTALL_DIR/logs/app.log
+stderr_logfile=$INSTALL_DIR/logs/app-error.log
+stdout_logfile_maxbytes=50MB
+stderr_logfile_maxbytes=50MB
+stdout_logfile_backups=3
+stderr_logfile_backups=3
+EOF
+    info "  generated: $SUPERVISOR_CONF"
+    
+    # 3) 让 supervisord 重新读取配置 + 拉起 myblog
+    supervisorctl reread
+    supervisorctl update myblog
+    supervisorctl restart myblog
+    info "[OK] supervisord program configured and started (LOCAL_SIM)"
+else
+    # ---------- 生产：systemd unit（原样保留）----------
+    info "=== 8. Writing systemd service ==="
+    SERVICE_FILE="/etc/systemd/system/myblog.service"
+    cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=my-blog backend (Spring Boot)
 After=network.target redis-server.service
@@ -389,7 +490,8 @@ Group=myblog
 WorkingDirectory=$INSTALL_DIR
 # 关键:用 --spring.config.additional-location(**叠加**)而不是 --spring.config.location(**替换**)
 # 这样 jar 里的 application.yml + application-prod.yml 都会保留, 脚本生成的 application.yml 只补差异
-ExecStart=/usr/bin/java -Xms256m -Xmx512m -jar $INSTALL_DIR/blog-app.jar --spring.config.additional-location=$APP_YML
+# -Duser.timezone=Asia/Shanghai: 生产 ECS 在洛杉矶, 固定 JVM 时区为北京, 否则 Java 端取时间偏 15-16h
+ExecStart=/usr/bin/java -Xms256m -Xmx512m -Duser.timezone=Asia/Shanghai -jar $INSTALL_DIR/blog-app.jar --spring.config.additional-location=$APP_YML
 # 运行时环境变量(JWT_SECRET / CORS_ORIGINS / SQLITE_PATH / UPLOAD_DIR / REDIS_*)
 EnvironmentFile=-$ENV_FILE
 Restart=always
@@ -401,10 +503,11 @@ LimitNOFILE=65536
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl daemon-reload
-systemctl enable myblog
-systemctl restart myblog
-info "[OK] systemd service configured and started"
+    systemctl daemon-reload
+    systemctl enable myblog
+    systemctl restart myblog
+    info "[OK] systemd service configured and started"
+fi
 
 # ============= 8.6 logrotate 配置(REQ-LOG-2026-06-18)=============
 # 覆盖两类日志:
@@ -413,7 +516,9 @@ info "[OK] systemd service configured and started"
 #   ② systemd 重定向的 app.log / app-error.log —— Logback 管不到,必须单独配
 # 周期按天,保留 7 天(日志在 prod 仅供 owner 单人排查,7 天足够)
 LOGROTATE_FILE="/etc/logrotate.d/myblog"
-if [ -w /etc/logrotate.d ] || command -v sudo >/dev/null 2>&1; then
+if [ "$LOCAL_SIM" = "1" ]; then
+    info "LOCAL_SIM=1, skipping logrotate (supervisord has stdout_logfile_maxbytes rotation built-in)"
+elif [ -w /etc/logrotate.d ] || command -v sudo >/dev/null 2>&1; then
     cat > "$LOGROTATE_FILE" <<'LOGROTATE_EOF'
 /opt/myblog/logs/blog-*.log /opt/myblog/logs/blog-warn-*.log {
     daily
@@ -569,15 +674,23 @@ if [ -f /etc/nginx/nginx.conf ]; then
 fi
 
 nginx -t
-systemctl enable nginx
-systemctl restart nginx
+if [ "$LOCAL_SIM" = "1" ]; then
+    supervisorctl restart nginx
+else
+    systemctl enable nginx
+    systemctl restart nginx
+fi
 info "[OK] nginx configured and started"
 fi  # DEPLOY_MODE != "data" (close step 9 nginx block)
 
 # ============= 10. Redis 启动 =============
 info "=== 10. Starting Redis ==="
-systemctl enable redis-server 2>/dev/null || systemctl enable redis 2>/dev/null || true
-systemctl restart redis-server 2>/dev/null || systemctl restart redis 2>/dev/null || true
+if [ "$LOCAL_SIM" = "1" ]; then
+    supervisorctl restart redis
+else
+    systemctl enable redis-server 2>/dev/null || systemctl enable redis 2>/dev/null || true
+    systemctl restart redis-server 2>/dev/null || systemctl restart redis 2>/dev/null || true
+fi
 
 # ============= 11. 等待服务起来 =============
 info "=== 11. Waiting for my-blog to start ==="
@@ -586,7 +699,11 @@ until curl -fsS "http://127.0.0.1:$SERVER_PORT/api/v1/health" >/dev/null 2>&1; d
     RETRIES=$((RETRIES-1))
     if [ $RETRIES -le 0 ]; then
         err "my-blog startup timeout, see logs:"
-        err "  journalctl -u myblog -n 100"
+        if [ "$LOCAL_SIM" = "1" ]; then
+            err "  supervisorctl tail myblog"
+        else
+            err "  journalctl -u myblog -n 100"
+        fi
         err "  tail -n 100 $INSTALL_DIR/logs/app-error.log"
         exit 1
     fi
@@ -602,7 +719,9 @@ info "[OK] my-blog is ready"
 # - 失败:warn 一行 + 给出可手动执行的命令
 # - 不想自动放行:OPEN_FIREWALL=0
 info "=== 12. Firewall rules ==="
-if [ "$OPEN_FIREWALL" = "0" ]; then
+if [ "$LOCAL_SIM" = "1" ]; then
+    info "LOCAL_SIM=1, skipping firewall (container has no iptables; expose ports via -p when running container)"
+elif [ "$OPEN_FIREWALL" = "0" ]; then
     info "OPEN_FIREWALL=0, skipping auto-open (please manually open $PUBLIC_PORT/tcp)"
 elif command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then
     info "firewalld detected, auto-opening $PUBLIC_PORT/tcp..."
@@ -635,8 +754,14 @@ info "=========================================="
 info "  Access:        http://<server-ip>:$PUBLIC_PORT"
 info "  Admin:        http://<server-ip>:$PUBLIC_PORT/admin/login"
 info "  Default account:    admin / 123456  (change password in production)"
-info "  View logs:    journalctl -u myblog -f"
-info "                  tail -f $INSTALL_DIR/logs/app.log"
-info "  Restart service:    systemctl restart myblog"
-info "  Version rollback:    $0 v4.0.1   (specify old tag)"
+if [ "$LOCAL_SIM" = "1" ]; then
+    info "  View logs:    supervisorctl tail -f myblog"
+    info "                  tail -f $INSTALL_DIR/logs/app.log"
+    info "  Restart service:    supervisorctl restart myblog"
+else
+    info "  View logs:    journalctl -u myblog -f"
+    info "                  tail -f $INSTALL_DIR/logs/app.log"
+    info "  Restart service:    systemctl restart myblog"
+fi
+info "  Version rollback:    $0 v4.1.0   (specify old tag)"
 info "=========================================="
