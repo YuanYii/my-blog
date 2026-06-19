@@ -90,8 +90,18 @@ const formatDate = (d: string) => d ? d.substring(0, 10) : ''
 // 2026-06-13 修复（BUG-068）：后端返的 publishedAt 是 LocalDateTime 序列化（无 'Z'），
 // 直接 new Date("2026-06-13T03:45:00") 会按本地时区解析，与服务端 Asia/Shanghai 差 8h。
 // 统一加 'Z' 表明 UTC，Date 内部按 UTC 解析，getXxx() 自动转本地时区。
-const formatDateTime = (d: string) => {
-  if (!d) return ''
+ // 2026-06-19 修复（BUG-XXX 配套）：兼容 number（Unix ms）和 string 两种 createdAt 形态。
+ // 之前 d.endsWith('Z') 在 number 上会抛 "endsWith is not a function"。
+ const formatDateTime = (d: any) => {
+  if (d == null || d === '') return ''
+  // number：Unix 毫秒
+  if (typeof d === 'number') {
+    const date = new Date(d)
+    if (isNaN(date.getTime())) return ''
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+  }
+  // string：尝试 ISO 解析，失败再走 replace 兜底
   const utc = d.endsWith('Z') || d.includes('+') || d.includes('-', 10) ? d : d + 'Z'
   const date = new Date(utc)
   if (isNaN(date.getTime())) return d.replace('T', ' ').substring(0, 16)

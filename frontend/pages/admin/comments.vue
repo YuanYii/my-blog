@@ -78,7 +78,24 @@ const handleDelete = async (c: any) => {
   }
 }
 
-const formatDateTime = (s: string) => s ? s.replace('T', ' ').substring(0, 16) : ''
+// 2026-06-19 修复（BUG-XXX）：原签名 `(s: string)` 假设 createdAt 永远是字符串。
+// 后端 CommentController.create 之前用 Timestamp + setTimestamp 写 SQLite，
+// JDBC 驱动把 java.sql.Timestamp 序列化为 Unix 毫秒 long（INTEGER）落库，
+// 跟 MyBatis-Plus 默认输出的 'yyyy-MM-dd HH:mm:ss' text 混在同一列。
+// 当某条评论 createdAt 是 number 时，`s.replace is not a function` 抛错，
+// 整个 render 失败 → loading.value 永远为 true → "加载中"卡死。
+// 修：兼容 string（ISO / 'yyyy-MM-dd HH:mm:ss'）和 number（Unix ms）两种格式。
+const formatDateTime = (s: any) => {
+  if (s == null) return ''
+  if (typeof s === 'number') {
+    // Unix 毫秒 → 'yyyy-MM-dd HH:mm'
+    const d = new Date(s)
+    if (isNaN(d.getTime())) return ''
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+  return s.replace('T', ' ').substring(0, 16)
+}
 
 onMounted(async () => {
   await loadArticles()

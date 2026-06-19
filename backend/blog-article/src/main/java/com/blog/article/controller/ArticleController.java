@@ -108,6 +108,8 @@ public class ArticleController {
     public Result<Map<String, Object>> detailById(@PathVariable Long id) {
         Article article = articleMapper.selectById(id);
         if (article == null) return Result.error(1001, "文章不存在");
+        jdbc.update("UPDATE article SET view_count = view_count + 1, updated_at = updated_at WHERE id = ?", id);
+        article.setViewCount(article.getViewCount() == null ? 1 : article.getViewCount() + 1);
         Map<String, Object> m = toMap(article, true);
         // 补 tagIds
         List<Map<String, Object>> tagRows = jdbc.queryForList(

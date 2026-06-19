@@ -16,9 +16,9 @@ import org.springframework.web.bind.annotation.*;
 import javax.servlet.http.HttpServletRequest;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -132,7 +132,14 @@ public class CommentController {
         final String fEmail = email;
         final String fWebsite = website;
         final String fContent = content;
-        final Timestamp now = Timestamp.valueOf(LocalDateTime.now());
+        // 2026-06-19 修复（BUG-XXX）：之前用 `Timestamp.valueOf(LocalDateTime.now())` + ps.setTimestamp(7, now)
+        // ——SQLite JDBC 驱动会把 java.sql.Timestamp 序列化为 Unix 毫秒 long（INTEGER）存进 DATETIME 列。
+        // 这跟 MyBatis-Plus 默认的 LocalDateTimeTypeHandler 输出格式（'yyyy-MM-dd HH:mm:ss' text）不一致，
+        // 导致同表 comment.created_at 出现两种类型（id 8/31/33 = text 老数据，id 34 = long 新数据）。
+        // 前端 formatDateTime 在 long 上 `s.replace is not a function` 抛错，整个 comments 页 render 失败，
+        // loading.value 永远为 true → "加载中"卡死。
+        // 修复：显式格式化为 'yyyy-MM-dd HH:mm:ss' text，跟 MyBatis-Plus 对齐，跨 SQLite/MySQL 一致。
+        final String now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbc.update((PreparedStatementCreator) connection -> {
             PreparedStatement ps = connection.prepareStatement(
@@ -145,7 +152,7 @@ public class CommentController {
             ps.setString(4, fEmail);
             ps.setString(5, fWebsite);
             ps.setString(6, fContent);
-            ps.setTimestamp(7, now);
+            ps.setString(7, now);
             return ps;
         }, keyHolder);
         Number key = keyHolder.getKey();
