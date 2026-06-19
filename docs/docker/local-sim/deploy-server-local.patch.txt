@@ -1,0 +1,191 @@
+# deploy-server.sh 的 LOCAL_SIM 改动记录
+
+> 本文件**不参与 docker 构建**，仅作审查参考 —— 让 reviewer 一眼看清本地模拟模式改了什么。
+>
+> 改动的目标：`docs/scripts/deploy-server.sh`（生产脚本本体），B 方案 —— 不分裂、不复制。
+>
+> 触发条件：容器内 `/.dockerenv` 文件存在 → 自动 `LOCAL_SIM=1`。
+> 宿主机上 `/.dockerenv` 不存在 → 走生产模式，**生产路径零修改**（所有改动都在 `if [ "$LOCAL_SIM" != "1" ]` 分支里）。
+>
+> **本文件 v3（2026-06-19 第三次审查后修订）**：v2 留了 2 个阻断级遗漏（6 处 chown + Dockerfile dash brace），本版全部修复。详见末尾"问题与修复对照"。
+
+---
+
+## 1. 改动汇总（13 处脚本 + 1 处 Dockerfile + 1 处 supervisord.conf）
+
+| # | 位置 | 改动类型 | 一句话 | 修复的问题 |
+|---|---|---|---|---|
+| 1 | §0 头部 | 头部加 `LOCAL_SIM` 默认值 + `/.dockerenv` 自动检测 + 跳过 GITHUB_REPO/EUID 校验 | 加 11 行新代码 | — |
+| 2 | §2 install_deps | `elif [ "$LOCAL_SIM" = "1" ]; then info skip` | +2 行 | v1-#5 |
+| 3 | §3 创建用户 | 套 if 包住 useradd + chown | +4 行 | v1-#5 |
+| 4 | §5 chown blog-app.jar | if 守卫 chown | +2 行 | **v3-#8** |
+| 5 | §5 chown schema | if 守卫 chown | +4 行（chown schema + chown DB_FILE 各 2 行） | **v3-#8** |
+| 6 | §5 chown DB_FILE | if 守卫 chown | （同上合并）| **v3-#8** |
+| 7 | §5 stop_app() | if 分支跳过 systemctl stop | +3 行 | v2-#7 |
+| 8 | §6 chown -R frontend | if 守卫 chown | +2 行 | **v3-#8** |
+| 9 | §7 chown APP_YML | if 守卫 chown | +2 行 | **v3-#8** |
+| 10 | §7.5 ENV 文件路径 | `ENV_FILE` 三元：`/etc/myblog/myblog.env` (生产) / `$INSTALL_DIR/myblog.env` (容器) | +5 行 | — |
+| 11 | §7.5 chown ENV_FILE | if 守卫 chown（**chmod 600 永远保留**） | +2 行 | **v3-#8** |
+| 12 | §8 服务管理 | **核心**：生产分支保留 systemd unit（零修改），容器分支生成 run-myblog.sh + conf.d/myblog.conf + supervisorctl | +60 行（生产路径零修改） | v2-#1, v2-#2, v2-#3, v2-#4 |
+| 13 | §8.6 logrotate | 套 if 跳过 | +2 行 | — |
+| 14 | §9 nginx 启动 | `supervisorctl restart nginx` 替代 systemctl | +3 行 | v2-#1 |
+| 15 | §10 redis 启动 | `supervisorctl restart redis` 替代 systemctl | +3 行 | v2-#1 |
+| 16 | §11 探活错误 | 错误提示文案 if 分支 | +3 行 | — |
+| 17 | §12 防火墙 | 套 if 跳过 + 加 LOCAL_SIM 优先判断 | +2 行 | — |
+| 18 | §13 收尾提示 | if 分支输出不同命令 | +6 行 | — |
+
+**+ supervisord.conf**：删内联 `[program:myblog]` + 加 `[include]`（v2-#4）
+**+ Dockerfile**：拆花括号为多目录（**v3-#9**）
+
+**总计**：~116 行新增/改动（脚本）+ Dockerfile 1 行调整（写法变）+ supervisord.conf 14 行调整。
+**生产路径分支**：完全不变。所有 `chown myblog:myblog`、`systemctl daemon-reload/enable/restart myblog` 仍在原位置，**仅在 LOCAL_SIM=0 时执行**。
+
+---
+
+## 2. 关键改动详解
+
+### 2.1 §8 服务管理（生产 + 容器双分支，修复 v2-#1/#2/#3）
+
+**生产分支**（零修改，原 systemd unit 完全保留）。
+**容器分支**（关键修复）：
+- 生成 `run-myblog.sh` heredoc，包含 `set -a; . $ENV_FILE; set +a; exec java ...`（env 注入 + 替代 systemd EnvironmentFile）
+- 写 `/etc/supervisor/conf.d/myblog.conf`
+- `supervisorctl reread/update/restart myblog`
+
+### 2.2 §7.5 ENV 文件路径三元 + chown 守卫
+
+```bash
+if [ "$LOCAL_SIM" = "1" ]; then
+    mkdir -p "$INSTALL_DIR"
+    ENV_FILE="$INSTALL_DIR/myblog.env"           # 容器内
+else
+    mkdir -p /etc/myblog
+    ENV_FILE="/etc/myblog/myblog.env"            # 生产
+fi
+...
+chmod 600 "$ENV_FILE"                            # 永远保留（含 JWT_SECRET 必须 600）
+if [ "$LOCAL_SIM" != "1" ]; then
+    chown myblog:myblog "$ENV_FILE"              # 仅生产模式（容器内没 myblog 用户）
+fi
+```
+
+**设计取舍**：chmod 600 永远跑，chown 仅生产模式——env 文件在容器里也是 600（只有 root 可读，安全等价于生产模式的"只有 myblog 可读"）。
+
+### 2.3 §5/§6/§7 chown 守卫统一模式
+
+```bash
+cp .../blog-app.jar .../blog-app.jar
+if [ "$LOCAL_SIM" != "1" ]; then
+    chown myblog:myblog .../blog-app.jar
+fi
+```
+
+6 处 chown 全部用同样模式：`if not sim then chown`。**关键风险**：原版 set -e 下，§5 第一个 chown 执行（用户不存在）就会 exit 1，连 §7.5 写 env 都到不了——意味着 JWT_SECRET 没生成、即使绕过 chown，run-myblog.sh 也会因 env 文件缺失失败。
+
+### 2.4 §2 / §3 / §8.6 / §12 守卫模式
+
+```bash
+if [ "$LOCAL_SIM" = "1" ]; then
+    info "LOCAL_SIM=1, skipping §X (reason)"
+elif <原条件>; then
+    <原代码>
+fi
+```
+
+### 2.5 §9 / §10 systemd → supervisorctl
+
+```bash
+if [ "$LOCAL_SIM" = "1" ]; then
+    supervisorctl restart nginx        # §9
+    supervisorctl restart redis        # §10
+else
+    systemctl enable nginx && systemctl restart nginx
+    systemctl enable redis-server ...
+fi
+```
+
+### 2.6 Dockerfile 拆花括号（修复 v3-#9）
+
+```dockerfile
+# 原版（dash 不展开花括号）：
+# RUN mkdir -p /opt/myblog/{logs,frontend,db,db/backups,uploads,scripts,releases}
+# 
+# 修复：拆成显式多目录
+RUN mkdir -p \
+    /opt/myblog/logs \
+    /opt/myblog/frontend \
+    /opt/myblog/db \
+    /opt/myblog/db/backups \
+    /opt/myblog/uploads \
+    /opt/myblog/scripts \
+    /opt/myblog/releases
+```
+
+**根因**：Dockerfile 的 `RUN <cmd>` 走 `/bin/sh -c`，ubuntu:22.04 的 `/bin/sh` 是 dash，不支持 brace expansion。原版会创建一个名字字面 `{...}` 的目录，导致 supervisord 的 `stdout_logfile=/opt/myblog/logs/*.log` 写不出来 → redis/nginx FATAL 起不来。
+
+**为什么 deploy-server.sh §3 那行同样的 `{...}` 没问题**：脚本 shebang 是 `#!/bin/bash`，走 bash 展开。问题只在 Dockerfile 这一层 RUN。
+
+### 2.7 supervisord.conf 配套改动（修复 v2-#4）
+
+```diff
++[include]
++files = /etc/supervisor/conf.d/*.conf
++
+ [program:redis]
+ [program:nginx]
+-[program:myblog]    ← 删除（避免和 §8 写的 conf.d 重复 + 失效）
+```
+
+---
+
+## 3. 问题与修复对照
+
+### 🔴 阻断级（不修就跑不起来）
+
+| 代号 | 问题 | 修复位置 | 修复方式 |
+|---|---|---|---|
+| v1-#1 | §8/§9/§10 systemctl 容器内必崩 | §8/§9/§10 | if/else 分支 + supervisorctl |
+| v1-#2 | run-myblog.sh 未生成 | §8 heredoc | `cat > run-myblog.sh <<EOF` |
+| v1-#3 | JWT_SECRET 没注入 | §8 heredoc 内 `set -a; . $ENV_FILE; set +a` | env 文件 source |
+| **v3-#8** | **6 处 chown myblog:myblog 无守卫（§5 拷 jar 后 chown 第一个崩）** | **§5/§6/§7/§7.5** | **每处加 if [ "$LOCAL_SIM" != "1" ]; then chown ...; fi** |
+| **v3-#9** | **Dockerfile RUN 用 dash 不展开花括号** | **Dockerfile:43** | **拆成显式多目录** |
+
+### 🟡 设计缺陷（行为不符预期）
+
+| 代号 | 问题 | 修复位置 | 修复方式 |
+|---|---|---|---|
+| v2-#4 | conf.d 不被读取（无 [include]） | supervisord.conf | 加 `[include]` + 删内联 program |
+| v2-#5 | §2/§3 未跳过 | §2/§3 | elif + 套 if |
+| v2-#6 | UPLOAD_DIR 不持久 | （随 v1-#3 修复，env 注入后路径生效）| — |
+| v2-#7 | §5 stop_app() systemctl | §5 stop_app() | LOCAL_SIM 守卫 |
+
+### 🟢 次要项（已评估，不改）
+
+- **必须有真实 GitHub Release**：§4/§5 从 release 拉 jar/schema/前端，本地模拟也走这条线。README §2 已说明前提（"先 publish-release 再 docker build"）。属设计预期，**不动**。
+- **首次 `docker ps` 显示 unhealthy**：HEALTHCHECK 打 8080，但 myblog `autostart=false` + 未部署，部署完成前一直 unhealthy。属设计预期（跟生产"systemd unit 没写前不知道 myblog" 一致），**不动**。
+- **README "CORS 放宽" 表述**：实际 env 生成的是占位域名 `yourname.com` 不是 `*`。已修文档（v3 §4 变更）。
+
+---
+
+## 4. 已知限制
+
+1. **`run-myblog.sh` 时序依赖**：必须在 §8 之前生成 `myblog.env`（§7.5）。已验证 deploy-server.sh 执行顺序：§5 部署 jar → §7 写 application.yml → §7.5 写 env 文件 → §8 写 unit/run-myblog.sh → §8.5 数据导入（可选）→ §9-§13。顺序正确。
+
+2. **supervisord 不支持 `EnvironmentFile=`**：本质差异，必须用 `run-myblog.sh` 中转。已在 heredoc 里加注释说明此设计。
+
+3. **supervisord 不支持 `After=` 依赖**：靠 priority 隐式表达。当前 baked redis=10, nginx=20，conf.d myblog=30，启动顺序正确。
+
+4. **`User=myblog` 没了**：容器内用 root 跑 jar，生产安全模型本地不模拟。
+
+5. **`LimitNOFILE=65536` 没了**：容器内默认 65536，不需要设。
+
+6. **`Stop_app()` 在 §5 调用 supervisorctl 不可行**：supervisord 此时还没读到 myblog 配置（§8 才写），stop 不到。已改为容器内 §5 跳过 stop（§8 restart 会自然重启）。
+
+---
+
+## 5. 同步策略
+
+- 本地模式代码在 `deploy-server.sh` 里，生产脚本更新时本地模式自动 sync
+- **有 1 处需要手动同步**：如果生产 §8 的 systemd unit 内容改了（比如加 JVM 参数），本地模式 `run-myblog.sh` heredoc 也要同步改
+- **Dockerfile 是容器专属**，与生产无关
+- 建议：每次改 §8 后跑 `bash docs/scripts/verify-sqlite.sh` + `docker exec myblog-sim bash -c "deploy-server.sh --dry-run"` 验证（dry-run 后续可加）

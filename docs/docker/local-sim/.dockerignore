@@ -1,0 +1,31 @@
+# 构建上下文排除 —— 避免把整个 my-blog 仓塞进 docker build context
+# （Dockerfile 在 docs/docker/local-sim/ 下，docker build . 时会把父目录全拷进来）
+
+# 仓根目录的东西
+../
+../*/
+*.md
+.git
+.gitignore
+.idea
+.DS_Store
+.env*
+!.env.example
+
+# 不需要的源码
+backend/target/
+backend/.mvn/
+frontend/.output/
+frontend/node_modules/
+frontend/.nuxt/
+frontend/dist/
+frontend/.env
+docs/scripts/
+docs/sql/
+docs/部署脚本/
+
+# 本目录只保留构建需要的文件
+!Dockerfile
+!supervisord.conf
+!entrypoint-helper.sh
+!deploy-server-local.patch.txt
