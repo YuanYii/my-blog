@@ -69,7 +69,9 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080/api/v1'
+      // 2026-06-19：默认值改成同源 /api/v1（prod 由 nginx 反代到 8080；dev 由 vite proxy 转 8080）
+      // 之前 'http://localhost:8080/api/v1' 在 prod 部署后会让浏览器请求打到用户本机的 8080 → ERR_CONNECTION_REFUSED
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api/v1'
     }
   }
 })
