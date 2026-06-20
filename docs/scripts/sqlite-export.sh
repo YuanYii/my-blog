@@ -37,11 +37,28 @@ error() { echo -e "${RED}[ERR]${NC} $*"; exit 1; }
 #    read -rs 拿空值 → 两次空值"不一致"循环死锁(屏幕看着像卡住)
 # 重要:所有提示文字走 stderr(>&2),echo 密码到 stdout(老 API,保留)
 prompt_password_twice() {
+    # 2026-06-20 v4.2.0 新增:env 密码模式(非交互自动化场景,如 blog-backup.sh)
+    # 当 BACKUP_ENCRYPTION_PASSWORD 或 DB_EXPORT_PASSWORD 环境变量已设置,
+    # 直接复用,不再交互式输入两次。优先级 BACKUP_ENCRYPTION_PASSWORD > DB_EXPORT_PASSWORD。
+    if [[ -n "${BACKUP_ENCRYPTION_PASSWORD:-}" || -n "${DB_EXPORT_PASSWORD:-}" ]]; then
+        local env_pw="${BACKUP_ENCRYPTION_PASSWORD:-${DB_EXPORT_PASSWORD}}"
+        if [[ -z "$env_pw" ]]; then
+            echo "[ERR] BACKUP_ENCRYPTION_PASSWORD is set but empty" >&2
+            return 5
+        fi
+        if [[ ${#env_pw} -lt 8 ]]; then
+            warn "Password from env < 8 chars, weak (continuing)"
+        fi
+        PROMPT_PASSWORD="$env_pw"
+        echo "$env_pw"  # 老 API 兼容
+        return 0
+    fi
     # 非交互场景预防性检查(只用于明确错误的快速失败)
     if [[ ! -t 0 ]] && [[ "${FORCE_EXPORT:-0}" != "1" ]]; then
         echo "[ERR] Non-interactive stdin detected and FORCE_EXPORT=1 not set" >&2
         echo "    (publish-release.sh auto-passes FORCE_EXPORT=1 when piping)" >&2
         echo "    (set it manually too if running with non-tty stdin)" >&2
+        echo "    (or set BACKUP_ENCRYPTION_PASSWORD / DB_EXPORT_PASSWORD to skip prompt)" >&2
         return 3
     fi
     # 显式备份 stdin 到 fd 3,然后用 fd 3 读密码

@@ -32,7 +32,11 @@ public enum ResultCode {
     DEVICE_PENDING(2001, "设备未授权，请联系管理员"),
     DEVICE_REVOKED(2002, "当前设备已被禁止登录"),
     // 2026-06-16 修订：消息文本同时覆盖"吊销/删除"两种自我解绑场景——见 DeviceService.revoke / delete
-    DEVICE_SELF_REVOKE_FORBIDDEN(2003, "不能吊销/删除当前登录设备");
+    DEVICE_SELF_REVOKE_FORBIDDEN(2003, "不能吊销/删除当前登录设备"),
+
+    // 数据备份（3xxx，REQ-BACKUP-2026-06-20）
+    // 3001: 已有 RUNNING 任务,触发新备份被拒
+    BACKUP_CONFLICT(3001, "已有正在执行的备份任务,请等待完成后再试");
 
     private final int code;
     private final String message;

@@ -230,6 +230,30 @@ CREATE TABLE IF NOT EXISTS `article_view_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章访问日志（v2.5.0 之前的旧表，新版用 page_view）';
 
 -- ----------------------------------------------------
+-- 11. backup_record 数据备份记录（v4.2.0，REQ-BACKUP-2026-06-20）
+-- ----------------------------------------------------
+-- 状态机：PENDING → RUNNING → SUCCESS / FAILED
+CREATE TABLE IF NOT EXISTS `backup_record` (
+  `id`            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `tag`           VARCHAR(64)  DEFAULT NULL              COMMENT 'GitHub Release tag（SUCCESS 才有）',
+  `status`        VARCHAR(16)  NOT NULL                  COMMENT 'PENDING/RUNNING/SUCCESS/FAILED',
+  `started_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '触发时间',
+  `finished_at`   DATETIME     DEFAULT NULL              COMMENT '结束时间（成功或失败）',
+  `db_size`       BIGINT       NOT NULL DEFAULT 0        COMMENT 'db dump 加密后大小',
+  `uploads_size`  BIGINT       NOT NULL DEFAULT 0        COMMENT 'uploads tar 加密后大小',
+  `asset_count`   INT          NOT NULL DEFAULT 0        COMMENT 'asset 总数',
+  `asset_urls`    TEXT                                  COMMENT 'JSON 数组（GitHub asset URL）',
+  `manifest_json` TEXT                                  COMMENT '备份清单原文',
+  `error_stage`   VARCHAR(16)  DEFAULT NULL              COMMENT '失败阶段 DUMP/PACK/UPLOAD/SCRIPT',
+  `error_message` TEXT                                  COMMENT '失败信息（不含密码/secret）',
+  `operator_id`   BIGINT       DEFAULT NULL              COMMENT '触发人 uid',
+  `operator_name` VARCHAR(64)  DEFAULT NULL              COMMENT '触发人 username',
+  PRIMARY KEY (`id`),
+  KEY `idx_backup_record_started_at` (`started_at` DESC),
+  KEY `idx_backup_record_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='数据备份记录（v4.2.0）';
+
+-- ----------------------------------------------------
 -- 12. ip_ban 全站请求频率封禁（2026-06-18 新增）
 -- 触发：IpRateLimitFilter 检测到同一 IP 1 秒内请求数超过阈值
 -- ----------------------------------------------------

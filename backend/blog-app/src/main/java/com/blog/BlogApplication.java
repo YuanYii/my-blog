@@ -3,6 +3,7 @@ package com.blog;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.util.TimeZone;
@@ -12,10 +13,12 @@ import java.util.TimeZone;
  * 多模块聚合：扫描所有 com.blog.* 下的组件
  *
  * @EnableScheduling：2026-06-08 启用——给 ApiWhitelistService 定时刷新用
+ * @EnableAsync：2026-06-20 v4.2.0 启用——给 BackupService.triggerBackup 异步执行脚本用
  */
 @SpringBootApplication(scanBasePackages = "com.blog")
 @MapperScan("com.blog.**.mapper")
 @EnableScheduling
+@EnableAsync
 public class BlogApplication {
 
     public static void main(String[] args) {

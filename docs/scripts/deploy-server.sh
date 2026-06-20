@@ -226,6 +226,8 @@ else
     download "schema-sqlite.sql"
     download "deploy-server.sh"
     download "sqlite-import.sh" || warn "sqlite-import.sh download failed (needed when IMPORT_DB=1)"
+    # v4.2.0 数据备份脚本：admin 后台「数据备份」菜单由后端 ProcessBuilder 调它
+    download "blog-backup.sh" || warn "blog-backup.sh download failed (v4.2.0+ data backup feature will not work)"
     # IMPORT_DB=1 才尝试下 .enc(可选,不存在说明纯代码发版)
     if [ "$IMPORT_DB" = "1" ]; then
         download "dev-blog-dump.sql.gz.enc" || warn "dev-blog-dump.sql.gz.enc download failed (required when IMPORT_DB=1)"
@@ -240,6 +242,16 @@ if [ -f "$TMP_DIR/sqlite-import.sh" ]; then
     info "[OK] sqlite-import.sh installed to $INSTALL_DIR/scripts/"
 else
     warn "sqlite-import.sh not in release (cannot decrypt .enc when IMPORT_DB=1)"
+fi
+
+# v4.2.0 数据备份脚本：deploy-server.sh 部署到 $INSTALL_DIR/scripts/blog-backup.sh
+# 路径固定（BackupService 写死 /opt/myblog/scripts/blog-backup.sh）
+if [ -f "$TMP_DIR/blog-backup.sh" ]; then
+    cp "$TMP_DIR/blog-backup.sh" "$INSTALL_DIR/scripts/blog-backup.sh"
+    chmod +x "$INSTALL_DIR/scripts/blog-backup.sh"
+    info "[OK] blog-backup.sh installed to $INSTALL_DIR/scripts/"
+else
+    warn "blog-backup.sh not in release (v4.2.0+ data backup feature will not work)"
 fi
 
 # ============= 5. 部署 jar / schema / 应用配置 =============
@@ -406,6 +418,17 @@ REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 REDIS_PASSWORD=
 REDIS_DB=0
+
+# --- 数据备份（v4.2.0，REQ-BACKUP-2026-06-20）---
+# [WARN] 首次部署 **必须** ssh 上来手填以下 3 个值, 默认 REPLACE_ME 占位会让 admin 后台
+#   "数据备份"按钮触发时报"BACKUP_ENCRYPTION_PASSWORD 未配置"。改成真实值后:
+#     sudo systemctl restart myblog
+# 生成密码: openssl rand -base64 24
+BACKUP_ENCRYPTION_PASSWORD=REPLACE_ME_WITH_STRONG_RANDOM
+# GitHub 备份仓库(**独立**于发布仓库, 建议私有), 例 yourname/my-blog-backup
+GITHUB_BACKUP_REPO=REPLACE_ME_WITH_GITHUB_BACKUP_REPO
+# GitHub PAT(repo 权限) — 与 GITHUB_TOKEN 复用也可, 但建议分开便于轮换
+GITHUB_TOKEN=REPLACE_ME_WITH_GITHUB_PAT
 EOF
     chmod 600 "$ENV_FILE"
     if [ "$LOCAL_SIM" != "1" ]; then

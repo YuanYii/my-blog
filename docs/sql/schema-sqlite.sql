@@ -202,6 +202,30 @@ CREATE INDEX IF NOT EXISTS idx_page_view_path ON page_view(path);
 CREATE INDEX IF NOT EXISTS idx_page_view_article ON page_view(article_id);
 CREATE INDEX IF NOT EXISTS idx_page_view_created ON page_view(created_at);
 CREATE INDEX IF NOT EXISTS idx_page_view_visitor ON page_view(visitor);
+
+-- ----------------------------------------------------
+-- 11. backup_record 数据备份记录（v4.2.0，REQ-BACKUP-2026-06-20）
+-- ----------------------------------------------------
+-- 状态机：PENDING → RUNNING → SUCCESS / FAILED
+-- 配套：BackupRecord / BackupRecordMapper / BackupService / BackupController
+CREATE TABLE IF NOT EXISTS backup_record (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  tag             VARCHAR(64),                            -- GitHub Release tag（SUCCESS 才有）
+  status          VARCHAR(16) NOT NULL,                   -- PENDING/RUNNING/SUCCESS/FAILED
+  started_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at     DATETIME,
+  db_size         BIGINT       DEFAULT 0,                 -- db dump 加密后大小
+  uploads_size    BIGINT       DEFAULT 0,                 -- uploads tar 加密后大小
+  asset_count     INTEGER      DEFAULT 0,
+  asset_urls      TEXT,                                  -- JSON 数组（GitHub asset URL）
+  manifest_json   TEXT,                                  -- 备份清单原文
+  error_stage     VARCHAR(16),                           -- 失败阶段 DUMP/PACK/UPLOAD/SCRIPT
+  error_message   TEXT,                                  -- 失败信息（不含密码/secret）
+  operator_id     BIGINT,                                -- 触发人 uid
+  operator_name   VARCHAR(64)                            -- 触发人 username
+);
+CREATE INDEX IF NOT EXISTS idx_backup_record_started_at ON backup_record(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_backup_record_status ON backup_record(status);
 CREATE INDEX IF NOT EXISTS idx_page_view_visit_date ON page_view(visit_date);
 
 -- ----------------------------------------------------

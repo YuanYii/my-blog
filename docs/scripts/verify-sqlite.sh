@@ -80,6 +80,20 @@ echo "=== 写操作端点（需鉴权）==="
 # 更新 dashboard 的 view_count 自增
 test_endpoint "文章详情（admin 模式）"  GET  "/articles/id/1" yes
 
+# v4.2.0 数据备份管理（REQ-BACKUP-2026-06-20）
+# 只测查询类端点（list / get）；run 端点会真的启脚本+上传 GitHub,不在 verify 里跑
+# 拿最新一条 record id 给 get 端点用(如果有),否则测一个不存在的 id 走 404 路径
+test_endpoint "备份历史列表"   GET  "/admin/backup/list?page=1&size=10" yes
+LATEST_ID=$(curl -s -H "Authorization: Bearer $TOKEN" -H "X-Device-Id: $DEVICE" \
+    "$BASE/admin/backup/list?page=1&size=1" | \
+    python3 -c "import sys,json;d=json.load(sys.stdin).get('data',{});recs=d.get('records') or [];print(recs[0]['id'] if recs else '')" 2>/dev/null)
+if [ -n "$LATEST_ID" ]; then
+    test_endpoint "备份详情"    GET  "/admin/backup/$LATEST_ID" yes
+else
+    # 库空,测 404 路径(后端 code=404 也算"接口活着")
+    test_endpoint "备份详情(空记录)"  GET  "/admin/backup/999999" yes
+fi
+
 # 修改个人资料（PUT 用 UpdateWrapper 替代 updateById）
 echo "  ... PUT /admin/settings/profile (直接 curl 测试)"
 PUT_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT $BASE/admin/settings/profile \
