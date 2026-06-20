@@ -38,6 +38,17 @@ blog:
       # dev 用项目内 tmp/ 目录（Git ignore）
       dir: ${UPLOAD_DIR:${user.dir}/tmp/blog-uploads}
 
+# 2026-06-20 v4.2.0：dev 暴露 BACKUP_* 环境变量入口
+#   - dev profile 之前不引用这些变量 → 启动时 Spring 不会读 shell 里 export 的值
+#   - 加上空默认值 ${VAR:} 后, dev 启动时如果 shell 里 export 了这些变量就能读到;
+#     没 export 也不会报错（triggerBackup 时再做业务校验）
+#   - 真要测备份:export BACKUP_ENCRYPTION_PASSWORD=xxx BACKUP_GITHUB_TOKEN=ghp_xxx GITHUB_BACKUP_REPO=xxx/my-blog-backup && mvn spring-boot:run
+#   - 2026-06-20 重命名: 备份 token 叫 BACKUP_GITHUB_TOKEN (不叫 GITHUB_TOKEN),
+#     跟发布用的 GITHUB_TOKEN 物理隔离, dev shell 里两个能共存不冲突
+BACKUP_ENCRYPTION_PASSWORD: ${BACKUP_ENCRYPTION_PASSWORD:}
+BACKUP_GITHUB_TOKEN: ${BACKUP_GITHUB_TOKEN:}
+GITHUB_BACKUP_REPO: ${GITHUB_BACKUP_REPO:}
+
 # 日志体系（REQ-LOG-2026-06-18）：appender / 级别 / 滚动 / 路径全部由
 # logback-spring.xml 统一管理（dev 落 /tmp/blog-dev-logs，CONSOLE+FILE 双写）。
 # 这里不再配 logging.level / logging.pattern，避免与 logback-spring.xml 冲突。

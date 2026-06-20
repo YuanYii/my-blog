@@ -17,7 +17,7 @@
 #
 #   # 手动应急(密码走 stdin / 交互式)
 #   BACKUP_ENCRYPTION_PASSWORD=xxx \
-#   GITHUB_TOKEN=ghp_xxx \
+#   BACKUP_GITHUB_TOKEN=ghp_xxx \
 #   GITHUB_BACKUP_REPO=owner/my-blog-backup \
 #   bash blog-backup.sh
 #
@@ -26,8 +26,14 @@
 #
 # 必读环境变量(全部由 /etc/myblog/myblog.env 提供,后端 ProcessBuilder 已 export):
 #   BACKUP_ENCRYPTION_PASSWORD   加密密码(8+ 位,绝不打日志)
-#   GITHUB_TOKEN                 GitHub PAT(repo 权限)
+#   BACKUP_GITHUB_TOKEN          GitHub PAT(repo 权限, **只**给 my-blog-backup 仓库用)
 #   GITHUB_BACKUP_REPO           备份仓库(私有,owner/my-blog-backup)
+#
+# 为什么叫 BACKUP_GITHUB_TOKEN 而不是 GITHUB_TOKEN:
+#   - 发布/部署链路也用 GITHUB_TOKEN(指向 my-blog-prov),命名分开:
+#     1) 两个 repo 可用两个 Fine-grained PAT, **互不交叉授权**
+#     2) 轮换备份 token 不影响发布 token
+#     3) 排查时一眼能看出"这是给备份的"还是"这是给发布的"
 #
 # 可选环境变量:
 #   BACKUP_STAGE_DIR             明文中转目录(默认 /tmp/blog-backup-stage)
@@ -97,8 +103,8 @@ if [[ ${#BACKUP_ENCRYPTION_PASSWORD} -lt 8 ]]; then
     warn "BACKUP_ENCRYPTION_PASSWORD 长度 < 8,弱密码(继续)"
 fi
 if [[ "${DRY_RUN:-0}" != "1" ]]; then
-    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
-        err "GITHUB_TOKEN 未设置(非 DRY_RUN 模式必须)"
+    if [[ -z "${BACKUP_GITHUB_TOKEN:-}" ]]; then
+        err "BACKUP_GITHUB_TOKEN 未设置(非 DRY_RUN 模式必须,在 /etc/myblog/myblog.env 配置,需要 my-blog-backup 仓库的 repo 权限)"
         exit 10
     fi
     if [[ -z "${GITHUB_BACKUP_REPO:-}" ]]; then
@@ -464,7 +470,7 @@ else
     CREATE_RESP=$(mktemp)
     HTTP_CODE=$(curl -s -o "$CREATE_RESP" -w "%{http_code}" \
         -X POST "https://api.github.com/repos/$GITHUB_BACKUP_REPO/releases" \
-        -H "Authorization: token $GITHUB_TOKEN" \
+        -H "Authorization: token $BACKUP_GITHUB_TOKEN" \
         -H "Accept: application/vnd.github+json" \
         -d "$(jq -n --arg tag "$TAG" --arg notes "$RELEASE_NOTE" \
             '{tag_name:$tag,name:("Data Backup "+$tag),body:$notes,target_commitish:"main"}')")
@@ -484,7 +490,7 @@ else
         info "  upload $bn"
         UP_CODE=$(curl -s -o "$STAGE_DIR/upload-$bn.json" -w "%{http_code}" \
             -X POST "${UPLOAD_URL}?name=$bn" \
-            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Authorization: token $BACKUP_GITHUB_TOKEN" \
             -H "Content-Type: application/octet-stream" \
             --data-binary "@$asset")
         if [[ "$UP_CODE" != "201" ]]; then

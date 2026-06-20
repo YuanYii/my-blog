@@ -102,8 +102,13 @@ public class BackupService {
     @Value("${BACKUP_ENCRYPTION_PASSWORD:}")
     private String backupPassword;
 
-    /** GitHub token（从 env 读） */
-    @Value("${GITHUB_TOKEN:}")
+    /**
+     * 备份专用 GitHub token（从 env 读，**与发布用的 GITHUB_TOKEN 物理隔离**）
+     * 2026-06-20 v4.2.0 重命名：原 GITHUB_TOKEN → BACKUP_GITHUB_TOKEN
+     * 理由：发布链路的 GITHUB_TOKEN 指向 my-blog-prov，备份指向 my-blog-backup
+     *       命名分开后两个 token 可以独立轮换、用 Fine-grained PAT 精确授权
+     */
+    @Value("${BACKUP_GITHUB_TOKEN:}")
     private String githubToken;
 
     /** 备份仓库 */
@@ -132,8 +137,8 @@ public class BackupService {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "BACKUP_ENCRYPTION_PASSWORD 未配置,请先在 /etc/myblog/myblog.env 设置");
         }
         if (githubToken == null || githubToken.isEmpty()) {
-            log.warn("备份触发拒绝: GITHUB_TOKEN 未配置");
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "GITHUB_TOKEN 未配置,请先在 /etc/myblog/myblog.env 设置");
+            log.warn("备份触发拒绝: BACKUP_GITHUB_TOKEN 未配置");
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "BACKUP_GITHUB_TOKEN 未配置,请先在 /etc/myblog/myblog.env 设置（注意是 BACKUP_GITHUB_TOKEN,不是发布用的 GITHUB_TOKEN）");
         }
         if (githubBackupRepo == null || githubBackupRepo.isEmpty()) {
             log.warn("备份触发拒绝: GITHUB_BACKUP_REPO 未配置");
@@ -197,7 +202,9 @@ public class BackupService {
         pb.directory(new File(installDir));
         // 透传 env（密码/token 走 env,不进命令行 → 不进 ps）
         pb.environment().put("BACKUP_ENCRYPTION_PASSWORD", backupPassword);
-        pb.environment().put("GITHUB_TOKEN", githubToken);
+        // 2026-06-20 v4.2.0: 改名 GITHUB_TOKEN → BACKUP_GITHUB_TOKEN
+        // 与发布链路的 GITHUB_TOKEN (指向 my-blog-prov) 物理隔离
+        pb.environment().put("BACKUP_GITHUB_TOKEN", githubToken);
         pb.environment().put("GITHUB_BACKUP_REPO", githubBackupRepo);
         pb.environment().put("SQLITE_PATH", sqlitePath);
         pb.environment().put("UPLOAD_DIR", uploadDir);
@@ -408,6 +415,8 @@ public class BackupService {
             return false;
         }
         // 1) 优先 gh CLI
+        // 2026-06-20 v4.2.0: gh CLI 强制读 GH_TOKEN env(我们自己的 BACKUP_GITHUB_TOKEN 它不认),
+        //   透传时把值塞给 GH_TOKEN(只影响这个子进程的 gh 调用,不会泄漏到 Spring 主进程)
         try {
             ProcessBuilder pb = new ProcessBuilder("bash", "-c",
                 "gh release delete '" + tag.replace("'", "'\\''") + "' --repo '" +

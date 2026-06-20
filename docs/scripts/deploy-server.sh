@@ -427,8 +427,11 @@ REDIS_DB=0
 BACKUP_ENCRYPTION_PASSWORD=REPLACE_ME_WITH_STRONG_RANDOM
 # GitHub 备份仓库(**独立**于发布仓库, 建议私有), 例 yourname/my-blog-backup
 GITHUB_BACKUP_REPO=REPLACE_ME_WITH_GITHUB_BACKUP_REPO
-# GitHub PAT(repo 权限) — 与 GITHUB_TOKEN 复用也可, 但建议分开便于轮换
-GITHUB_TOKEN=REPLACE_ME_WITH_GITHUB_PAT
+# GitHub PAT(repo 权限, **只**给 my-blog-backup 用)
+#   2026-06-20 重命名: GITHUB_TOKEN → BACKUP_GITHUB_TOKEN
+#   发布链路的 GITHUB_TOKEN 走 deploy.env / CI 临时注入, **不**进这个 env
+#   强烈建议用 Fine-grained PAT, 只勾 my-blog-backup 仓库的 Contents: Read and write
+BACKUP_GITHUB_TOKEN=REPLACE_ME_WITH_GITHUB_PAT
 EOF
     chmod 600 "$ENV_FILE"
     if [ "$LOCAL_SIM" != "1" ]; then
