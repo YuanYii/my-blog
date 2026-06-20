@@ -30,23 +30,36 @@ ENV DEBIAN_FRONTEND=noninteractive
 # 国内访问极慢且常 502 Bad Gateway，导致 apt-get install 中途连接失败、build 退出码 100。
 # 换成清华源解决：arm64 走 ubuntu-ports，amd64 走 ubuntu，三条都替换以兼容两种架构。
 RUN sed -i \
-        -e 's@http://archive.ubuntu.com/ubuntu/@https://mirrors.tuna.tsinghua.edu.cn/ubuntu/@g' \
-        -e 's@http://security.ubuntu.com/ubuntu/@https://mirrors.tuna.tsinghua.edu.cn/ubuntu/@g' \
-        -e 's@http://ports.ubuntu.com/ubuntu-ports/@https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/@g' \
+        -e 's@http://archive.ubuntu.com/ubuntu/@http://mirrors.ustc.edu.cn/ubuntu/@g' \
+        -e 's@http://security.ubuntu.com/ubuntu/@http://mirrors.ustc.edu.cn/ubuntu/@g' \
+        -e 's@http://ports.ubuntu.com/ubuntu-ports/@http://mirrors.ustc.edu.cn/ubuntu-ports/@g' \
         /etc/apt/sources.list
 
 # ---------- 1. 装生产同款二进制 ----------
 # 与生产 deploy-server.sh §2 的"apt 列表"完全一致
-# （除 wget/unzip/python3 本地可省，但保留以防用户后续想用 publish-release 类似的发布链路在容器内做实验）
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# （wget/python3 本地可省；unzip 必须装——deploy-server.sh §4 优先走
+#   deploy-bundle-vX.Y.Z.zip 冷部署包，靠 unzip 解压，缺了直接 build 不出来）
+#
+# 国内镜像源经 Docker NAT 访问抖动严重：大文件（openjdk-8-jre-headless ~37MB）
+# 传输中途断连，InRelease 偶发 502 Bad Gateway。单纯 Acquire::Retries 不够，
+# 这里把 update / install 整段套 shell 重试循环：任一步失败就 sleep 重来，
+# 已下好的 .deb 走 /var/cache/apt 缓存不重复下载，直到整段成功。
+ENV APT_OPTS="-o Acquire::Retries=20 -o Acquire::http::Timeout=120 -o Acquire::http::No-Cache=true"
+RUN set -eux; \
+    for i in $(seq 1 12); do apt-get update $APT_OPTS && break || { echo "[apt-update retry $i]"; sleep 5; }; done; \
+    for i in $(seq 1 12); do apt-get install -y --no-install-recommends $APT_OPTS \
+        ca-certificates \
         openjdk-8-jdk-headless \
         redis-server \
         nginx \
         sqlite3 \
         supervisor \
         curl \
-        ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+        unzip \
+        && break || { echo "[apt-install retry $i]"; apt-get update $APT_OPTS || true; sleep 5; }; \
+    done; \
+    java -version; \
+    rm -rf /var/lib/apt/lists/*
 
 # ---------- 2. 容器内目录布局（照搬生产 /opt/myblog）----------
 # 注意:不能用 {a,b,c} 花括号展开——ubuntu:22.04 的 /bin/sh 是 dash,

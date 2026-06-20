@@ -83,7 +83,7 @@ docker exec -i blog-mysql mysql -uroot -proot --default-character-set=utf8mb4 bl
 ### 4.5 数据库双 profile（v2.6.0，**不要回退**）
 dev/prod 默认 **SQLite**（一文件 0 内存占用）；MySQL 8.0 降级为可选 profile。
 - 切回 MySQL：`spring.profiles.active=dev,mysql` 或 `prod,mysql`
-- **SQLite 单写者锁**：Hikari `maximum-pool-size: 1` **必须保持**，否则并发写 `SQLITE_BUSY`
+- **SQLite 写并发（2026-06-18 起开 WAL）**：prod 用 `journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL`，Hikari `maximum-pool-size` 已由 1 放开到 **8**（WAL 下「多读+单写」可并发，`busy_timeout` 让偶发写竞争等待而非立刻 `SQLITE_BUSY`）。**未开 WAL 时不要把 pool-size 设 >1**
 - 业务 SQL 跨方言已统一（38 处）——`PageViewService` / `ArticleController` / `DashboardController` 用 `LocalDate` / `LocalDateTime` 传参替代 MySQL 特有函数（`CURDATE()` / `DATE_SUB` / `NOW()` / `INSERT IGNORE` → 业务层去重）
 - 旧 8 个散 SQL 文件（`blog.sql` + 5 migrations + 2 migration-*.sql）已整合删除；v2.6.0 时代用 `docs/scripts/migrate-mysql-to-sqlite-direct.py` 做 MySQL → SQLite 数据迁移（pymysql 直连版，123/123 行导入）。**2026-06-18 v4.0.0 起该脚本已被 `sqlite-export.sh` / `sqlite-import.sh` 加密链路取代；原 `migrate-mysql-to-sqlite-direct.py` 文件已删除**（如需 MySQL → SQLite 一次性迁移，重新生成脚本或改用 `mysqldump` → `sqlite3` 手工链路）
 - MyBatis-Plus 3.4.3.4 `IdType.AUTO` 自动适配 MySQL / SQLite，9 个 `@TableName` 实体各有 1 处 `@TableId(type = IdType.AUTO)`，合计 **9 处注解**（不要把 Service 类注释里出现的 `IdType.AUTO` 字符串误算成第 10 处注解）**不动**

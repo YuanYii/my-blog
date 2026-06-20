@@ -230,10 +230,12 @@ if [ "${EXPORT_DB:-0}" = "1" ]; then
         # ⚠️ 必须用 process substitution 而不是 `| sed`,否则 pipe 会偷走 export 的 stdin,
         #    read -rs 拿空值 → 两次空值"不一致"循环死锁(屏幕看着像卡住)
         #    FORCE_EXPORT=1 让 export 跳过"非交互拒绝"门,密码必须操作员手输
+        # page_view 不再用 --exclude 整表剔除（那会连 CREATE TABLE 一起丢，IMPORT_DB=1
+        # 销毁式重建后应用读 page_view 的后台仪表盘 no such table 500）。
+        # 改由 sqlite-export.sh 的 CLEAR_DATA_TABLES 处理：保留表结构、只清数据(同 admin_device)。
         FORCE_EXPORT=1 bash "$ROOT_DIR/docs/scripts/sqlite-export.sh" \
             "$ROOT_DIR/backend/blog.db" \
-            -o "$DUMP_FILE" \
-            --exclude page_view 2> >(sed 's/^/    /' >&2)
+            -o "$DUMP_FILE" 2> >(sed 's/^/    /' >&2)
         EXPORT_RC=$?
 
         if [ "$EXPORT_RC" -ne 0 ]; then

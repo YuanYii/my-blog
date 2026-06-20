@@ -106,7 +106,11 @@ SCHEMA_ONLY=false
 # ---- 强制清空的表(保留 schema,但不导出数据)----
 # admin_device 是设备授权白名单表,含设备指纹/IP 等敏感信息,
 # 导出/迁移时一律清空数据,避免随备份文件泄露。
-CLEAR_DATA_TABLES=("admin_device")
+# page_view 是公开页访问统计日志:写入量最大、纯环境本地数据,且含 ip/user_agent/referer 等 PII。
+# 必须用 CLEAR_DATA_TABLES(保留建表语句、只清数据)而非 --exclude(连 CREATE TABLE 一起剔除)——
+# 应用的 PageViewFilter 写库、DashboardController(今日 PV/UV、趋势、热门 TOP10)读库都依赖此表存在,
+# 表结构必须随 dump 发布,否则 IMPORT_DB=1 重建后后台仪表盘 no such table: page_view 直接 500。
+CLEAR_DATA_TABLES=("admin_device" "page_view")
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -253,8 +257,9 @@ done
 #    对非 ASCII 字符(中文/换行)会自动包成 unistr('...\u000a...'),但生产 ECS 的系统
 #    sqlite3 是 3.22/3.31/3.37(< 3.50),没有 unistr() 函数 → import 时报
 #    "no such function: unistr" 一连串错.
-# 改用 Python 直接生成 SQL,字符串里所有换行/制表符/单引号都手工转义成 SQL 标准
-# (新行 → '\n' 字面两字符,单引号 → '')—— 任意 sqlite 版本都能 import.
+# 改用 Python 直接生成 SQL:只把单引号转义成 ''(SQL 标准),换行/制表符等空白原样内嵌进
+# 字符串字面量(SQLite 字面量允许多行,等同官方 .dump)——任意 sqlite 版本都能正确 import。
+# (历史坑:曾把换行 escape 成字面 '\n' 两字符,SQLite 不解析反斜杠转义 → 导入后正文换行全坏)
 if [[ "$SCHEMA_ONLY" != "true" ]]; then
     # 排除表清单 → 数组给 Python(逗号分隔字符串)
     EXCLUDE_PY=$(printf "'%s'," "${EXPORT_TABLES[@]}")
@@ -289,8 +294,13 @@ for tbl in tables:
             elif isinstance(v, bytes):
                 vals.append("X'" + v.hex() + "'")
             else:
-                # SQL 字符串字面量:换行→\n,回车→\r,Tab→\t,单引号→''(SQL 标准转义)
-                s = str(v).replace("'", "''").replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+                # SQL 字符串字面量:只转义单引号('' ),换行/回车/Tab 等空白**保持原样**。
+                # ⚠️ 绝不能把换行 escape 成字面 \n —— SQLite 字符串字面量不解析反斜杠转义,
+                #    `'...\n...'` 会被原样存成「反斜杠+n」两个字符,导入后 markdown 正文换行全坏
+                #    (前端按真换行解析 → 标题/表格/代码块不渲染, \n 当文字显示)。
+                #    SQLite 字面量允许直接内嵌真换行(多行字面量是合法 SQL,等同官方 .dump 行为),
+                #    sqlite3 CLI 读到闭合单引号+分号才结束语句,多行 INSERT 导入完全正确。
+                s = str(v).replace("'", "''")
                 vals.append(f"'{s}'")
         print(f'INSERT INTO {tbl} ({col_list}) VALUES ({",".join(vals)});')
     print()
