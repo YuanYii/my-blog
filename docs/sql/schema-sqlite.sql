@@ -248,9 +248,8 @@ CREATE INDEX IF NOT EXISTS idx_ip_ban_unbanned ON ip_ban(unbanned);
 -- =====================================================
 
 -- 默认 admin（密码 123456）
--- 2026-06-17 v2.6.0：password_hash 用实际改过的 hash（不是默认占位）
 INSERT OR IGNORE INTO user (id, username, password_hash, nickname, role)
-VALUES (1, 'admin', '$2a$10$0YSdd8Tf7xcsmAk.05Kn4uEDSUAIT7ukAZqLnUMLrE5Gnd4wj5jEa', 'Corey', 'ADMIN');
+VALUES (1, 'admin', '$2a$10$RiTjk3eJcUBN2xKUE4FAQ.4xzURKOSUrpbgvou1uGjEV7tQ70fpJW', 'Corey', 'ADMIN');
 
 -- API 白名单
 INSERT OR IGNORE INTO api_whitelist (path_prefix, type, enabled, description) VALUES

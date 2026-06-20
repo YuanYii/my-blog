@@ -218,7 +218,7 @@ if curl -fsSL -o "$BUNDLE" "$BASE_URL/$BUNDLE" 2>/dev/null; then
         fi
     fi
     info "Extracting $BUNDLE ..."
-    unzip -q "$BUNDLE"
+    unzip -qo "$BUNDLE"
 else
     warn "No cold-deployment package, downloading files individually"
     download "blog-app.jar"

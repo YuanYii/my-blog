@@ -38,6 +38,11 @@ error() { echo -e "${RED}[ERR]${NC} $*"; exit 1; }
 # 否则 $() 捕获会把提示污染进 PASSWORD 变量
 prompt_password_once() {
     local pw
+    # 优先读环境变量（deploy-server.sh 非交互场景传入）
+    if [[ -n "${DB_DECRYPT_PASSWORD:-}" ]]; then
+        echo "$DB_DECRYPT_PASSWORD"
+        return 0
+    fi
     # 非交互场景(stdin 不是终端)且没设 FORCE_IMPORT:直接拒绝,避免"假成功"
     if [[ ! -t 0 ]] && [[ "${FORCE_IMPORT:-0}" != "1" ]]; then
         echo "[ERR] Non-interactive stdin detected and FORCE_IMPORT=1 not set" >&2

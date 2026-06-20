@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * 安全修复（2026-06-07）：
  * - 密码用 BCrypt 校验（user.passwordHash 字段是 BCrypt hash，不再明文比对）
- * - SQL 默认值 password_hash=$2a$10$0YSdd8Tf7xcsmAk.05Kn4uEDSUAIT7ukAZqLnUMLrE5Gnd4wj5jEa
+ * - SQL 默认值 password_hash=$2a$10$RiTjk3eJcUBN2xKUE4FAQ.4xzURKOSUrpbgvou1uGjEV7tQ70fpJW
  *   对应密码 "123456"——部署后必须立即在 admin 后台改密码（改 passwordHash 字段）
  * - 登录限流：同一 IP 5 次/分钟失败后锁定 1 分钟（in-memory 计数器，**多实例部署需换 Redis**）
  * - 设备白名单集成：login 时校验 X-Device-Id，未授权设备返回 DEVICE_PENDING
