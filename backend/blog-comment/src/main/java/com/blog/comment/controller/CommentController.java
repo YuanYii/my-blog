@@ -39,7 +39,8 @@ public class CommentController {
     /**
      * 公开评论限流：同 IP 10 次/分钟（防垃圾评论刷）
      * 2026-06-12 新增：原接口无任何限流，实测 10 并发全入库
-     * 与 AuthController.login 限流是 in-memory 实现（多实例需换 Redis，但单机够用）
+     * 与 AuthController.login 限流同为 in-memory 实现（单进程单实例够用；如启用 MySQL
+     * 多实例部署需迁 Redis，基础设施已具备——参考 IpRateLimitFilter 的 Redis 计数方案）
      */
     private static final int COMMENT_LIMIT = 10;
     private static final int COMMENT_WINDOW_SECONDS = 60;

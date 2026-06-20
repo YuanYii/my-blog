@@ -58,7 +58,8 @@ public class ArticleController {
         // tagId 过滤：2026-06-12 修复——原 SQL 不分页拉全量 article_id 进 IN 子句（1 万行 article_tag 就炸）
         // 修复：用 EXISTS 子查询让 MySQL 自己 join article_tag 拿分页后的 article
         if (tagId != null) {
-            qw.exists("SELECT 1 FROM article_tag at WHERE at.article_id = article.id AND at.tag_id = " + tagId);
+            // A1（2026-06-20）：占位符参数化，不再把 tagId 拼进 SQL 字面量
+            qw.exists(true, "SELECT 1 FROM article_tag at WHERE at.article_id = article.id AND at.tag_id = {0}", tagId);
         }
         qw.orderByDesc("published_at");
 
@@ -176,9 +177,11 @@ public class ArticleController {
         List<Long> articleIds = records.stream()
             .map(r -> ((Number) r.get("id")).longValue())
             .collect(Collectors.toList());
-        String inClause = articleIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+        // A1（2026-06-20）：占位符参数化，不再手拼 IN 字面量
+        String placeholders = articleIds.stream().map(x -> "?").collect(Collectors.joining(","));
         List<Map<String, Object>> rows = jdbc.queryForList(
-            "SELECT article_id, tag_id FROM article_tag WHERE article_id IN (" + inClause + ")");
+            "SELECT article_id, tag_id FROM article_tag WHERE article_id IN (" + placeholders + ")",
+            articleIds.toArray());
         Map<Long, List<Long>> byArticle = new HashMap<>();
         for (Map<String, Object> row : rows) {
             Long aid = ((Number) row.get("article_id")).longValue();
@@ -484,15 +487,23 @@ public class ArticleController {
     @GetMapping("/tags")
     public Result<List<Map<String, Object>>> tags() {
         List<Tag> tags = tagMapper.selectList(null);
+        // A3（2026-06-20）：消除 N+1——一次 GROUP BY 拿全量计数，内存 join，
+        // 替代原来「每个标签各跑一次 SELECT COUNT(*)」。
+        Map<Long, Long> countByTag = new HashMap<>();
+        List<Map<String, Object>> countRows = jdbc.queryForList(
+            "SELECT tag_id AS tid, COUNT(*) AS cnt FROM article_tag GROUP BY tag_id");
+        for (Map<String, Object> row : countRows) {
+            Object tid = row.get("tid");
+            if (tid == null) continue;
+            countByTag.put(((Number) tid).longValue(), ((Number) row.get("cnt")).longValue());
+        }
         List<Map<String, Object>> result = tags.stream().map(t -> {
             Map<String, Object> m = new HashMap<>();
             m.put("id", t.getId());
             m.put("name", t.getName());
             m.put("slug", t.getSlug());
             m.put("createdAt", t.getCreatedAt());
-            Long cnt = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM article_tag WHERE tag_id = ?", Long.class, t.getId());
-            m.put("articleCount", cnt != null ? cnt : 0);
+            m.put("articleCount", countByTag.getOrDefault(t.getId(), 0L));
             return m;
         }).collect(Collectors.toList());
         return Result.success(result);
@@ -538,10 +549,6 @@ public class ArticleController {
         // 2026-06-12 修复：删 tag 同步清 article_tag，否则遗留垃圾关联
         jdbc.update("DELETE FROM article_tag WHERE tag_id = ?", id);
         return Result.success();
-    }
-
-    private Map<String, Object> toMap(Article a) {
-        return toMap(a, false);
     }
 
     private Map<String, Object> toMap(Article a, boolean withContent) {

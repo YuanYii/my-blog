@@ -70,7 +70,7 @@ blog:
   # JWT
   jwt:
     secret: ${JWT_SECRET}              # 32+ 位强随机（部署时必须设）
-    expiration: 7200000               # 24h（2026-06-18：原 expiration-ms 与 JwtUtil @Value("blog.jwt.expiration") 不匹配，改 yml 永远不生效）
+    expiration: 7200000               # 2h（2026-06-20 订正：7200000ms=2h，原注释误写 24h；值不变。2026-06-18：原 expiration-ms 与 JwtUtil @Value("blog.jwt.expiration") 不匹配，改 yml 永远不生效）
 
   # 文件上传配置（**本地存储**，容器/jar 内路径 /data/uploads）
   upload:
