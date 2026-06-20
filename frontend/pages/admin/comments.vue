@@ -5,6 +5,7 @@ definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 // ReferenceError: del is not defined → catch 弹"删除失败：del is not defined"。
 // 物理删除后端 DELETE /comments/{id} 早就实现了，缺的是前端 del 解构。
 const { get, put, del } = useAdminApi()
+const route = useRoute()
 const $toast = useToast()
 const $dialog = useDialog()
 const filter = ref<number>(0)
@@ -98,6 +99,9 @@ const formatDateTime = (s: any) => {
 }
 
 onMounted(async () => {
+  // 支持从仪表盘带 ?status=0 跳转直达「待审核」（0 待审/1 已通过/2 已拒绝）
+  const q = route.query.status
+  if (q !== undefined && q !== '' && statusMap[Number(q)]) filter.value = Number(q)
   await loadArticles()
   await load()
 })

@@ -2,6 +2,7 @@
 definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
 const router = useRouter()
+const route = useRoute()
 const { get, del, put } = useAdminApi()
 const $toast = useToast()
 const $dialog = useDialog()
@@ -43,16 +44,6 @@ const loadStats = async () => {
   } catch { /* ignore */ }
 }
 
-// 2026-06-12 修复：tabs 元素 value 字段 TS 推断为 `string | number` 联合，
-// 而 filterStatus 是 `number | ''`，模板里 `filterStatus = t.value` 类型不兼容。
-// 显式声明 value 类型为 `number | ''`，与 filterStatus 对齐。
-const tabs = computed<Array<{ label: string; count: number; value: number | '' }>>(() => [
-  { label: '全部',   count: stats.value.total,     value: '' },
-  { label: '已发布', count: stats.value.published, value: 1 },
-  { label: '草稿',   count: stats.value.draft,     value: 0 },
-  { label: '已归档', count: stats.value.archived,  value: 2 }
-])
-
 const load = async () => {
   loading.value = true
   try {
@@ -76,6 +67,12 @@ const load = async () => {
 
 const handleSearch = () => { page.value = 1; load() }
 const handleStatusFilter = () => { page.value = 1; load() }
+// 点击统计卡筛选：'' = 全部，1 = 已发布，0 = 草稿。再点已选中的卡 → 取消回全部。
+const setFilter = (status: number | '') => {
+  filterStatus.value = filterStatus.value === status ? '' : status
+  page.value = 1
+  load()
+}
 // 2026-06-13 修复（BUG-048）：三个 handler 补 try/catch，token 过期/设备吊销/网络瞬断
 // 时能给用户看到错误提示，而不是静默失败。
 // 2026-06-16 改造：confirm → $dialog.confirm，alert → $toast
@@ -162,6 +159,9 @@ const totalPages = computed(() => Math.max(1, Math.ceil(total.value / size.value
 onMounted(async () => {
   await loadCategories()
   await loadStats()
+  // 支持从仪表盘带 ?status=0 跳转（草稿）自动套用筛选
+  const q = route.query.status
+  if (q !== undefined && q !== '') filterStatus.value = Number(q)
   await load()
 })
 </script>
@@ -180,18 +180,18 @@ onMounted(async () => {
       </NuxtLink>
     </div>
 
-    <!-- Stats -->
+    <!-- Stats（点击「总文章 / 已发布 / 草稿」筛选下方列表） -->
     <div class="stats-row">
-      <div class="stat-card">
+      <div class="stat-card clickable" :class="{ active: filterStatus === '' }" @click="setFilter('')">
         <div class="stat-card-label">总文章</div>
         <div class="stat-card-value">{{ stats.total }}</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card clickable" :class="{ active: filterStatus === 1 }" @click="setFilter(1)">
         <div class="stat-card-label">已发布</div>
         <div class="stat-card-value">{{ stats.published }}</div>
         <div class="stat-card-delta">+{{ Math.min(3, stats.published) }} 本月</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card clickable" :class="{ active: filterStatus === 0 }" @click="setFilter(0)">
         <div class="stat-card-label">草稿</div>
         <div class="stat-card-value">{{ stats.draft }}</div>
       </div>
@@ -217,12 +217,6 @@ onMounted(async () => {
       <div class="toolbar-search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input v-model="keyword" @keyup.enter="handleSearch" type="text" placeholder="搜索标题…" />
-      </div>
-      <div class="filter-tabs">
-        <button v-for="t in tabs" :key="t.value" @click="filterStatus = t.value; handleStatusFilter()"
-          class="filter-tab" :class="{ active: filterStatus === t.value }">
-          {{ t.label }} <span class="count">{{ t.count }}</span>
-        </button>
       </div>
       <select v-model="filterCategory" @change="handleStatusFilter" class="form-control" style="width: auto; padding: 7px 28px 7px 12px; font-size: 12px;">
         <option value="">全部分类</option>

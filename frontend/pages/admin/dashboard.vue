@@ -67,14 +67,14 @@ const todos = computed(() => [
     title: '待审评论',
     meta: meta.value.pendingComments > 0 ? `需要尽快处理` : '暂无',
     count: meta.value.pendingComments || 0,
-    to: '/admin/comments'
+    to: '/admin/comments?status=0'
   },
   {
     type: 'warning',
     title: '未发布草稿',
     meta: meta.value.draftCount > 0 ? `${meta.value.draftCount} 篇草稿待处理` : '草稿箱已清空',
     count: meta.value.draftCount || 0,
-    to: '/admin/posts'
+    to: '/admin/posts?status=0'
   },
   {
     type: 'success',
@@ -117,8 +117,8 @@ let trendChart: any = null
 let categoryChart: any = null
 let sparkCharts: any[] = []
 
-// 趋势图 tab
-const activeTab = ref('30')
+// 趋势图 tab（默认近 7 天）
+const activeTab = ref('7')
 
 // 主题色
 const getThemeColors = () => {
@@ -352,8 +352,8 @@ watch(activeTab, () => {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
           待审评论
         </div>
-        <!-- 2026-06-16 OPT：包 NuxtLink 跳 /admin/comments -->
-        <NuxtLink to="/admin/comments" class="kpi-card-link">
+        <!-- 2026-06-16 OPT：包 NuxtLink 跳 /admin/comments（带 status=0 直达待审） -->
+        <NuxtLink to="/admin/comments?status=0" class="kpi-card-link">
           <div class="kpi-card-value" :style="{ color: meta.pendingComments > 0 ? 'var(--accent)' : 'var(--text)' }">{{ meta.pendingComments }}</div>
           <div class="kpi-card-delta" :style="{ color: meta.pendingComments > 0 ? 'var(--accent)' : 'var(--success)' }">
             {{ meta.pendingComments > 0 ? '需要处理 · 去处理 →' : '已全部处理 · 查看 →' }}

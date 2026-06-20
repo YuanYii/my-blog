@@ -64,6 +64,17 @@ const pageTitle = computed(() => {
   return map[route.path] || '后台'
 })
 
+// 主题切换：复用前台 NavBar 同一套机制（.dark class + localStorage('theme')）
+// 默认深色：首次访问（localStorage 无值）即进入深色模式
+const isDark = ref(true)
+const toggleTheme = () => {
+  isDark.value = !isDark.value
+  if (import.meta.client) {
+    document.documentElement.classList.toggle('dark', isDark.value)
+    localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
+  }
+}
+
 // 挂载时拉一次侧边栏数据
 onMounted(() => {
   // client 阶段兜底鉴权：middleware 在 SSR 阶段会跳过（localStorage 不可用），
@@ -74,6 +85,9 @@ onMounted(() => {
     return
   }
   refreshMeta()
+  // 与全局主题状态同步（app.vue 已在首屏注入 .dark，这里只对齐 isDark 标记）
+  const saved = localStorage.getItem('theme')
+  isDark.value = saved !== 'light'
 })
 </script>
 
@@ -143,16 +157,13 @@ onMounted(() => {
           <h2 style="font-size: 14px; font-weight: 500; color: var(--text);">{{ pageTitle }}</h2>
         </div>
         <div style="display: flex; align-items: center; gap: 4px;">
-          <button @click="refreshMeta" class="icon-btn" aria-label="刷新" title="刷新数据">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-          </button>
-          <button class="icon-btn" aria-label="切换主题" title="切换主题">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-          </button>
-          <button class="icon-btn" aria-label="通知" title="通知" style="position: relative;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-            <span v-if="meta.pendingComments" style="position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); border: 1.5px solid var(--card);"></span>
-          </button>
+          <ClientOnly>
+            <button @click="toggleTheme" class="icon-btn" aria-label="切换主题" :title="isDark ? '切换到亮色' : '切换到暗色'">
+              <!-- 暗色模式显示月亮，亮色模式显示太阳 -->
+              <svg v-if="isDark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+            </button>
+          </ClientOnly>
           <div style="display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px; background: var(--bg-soft); border-radius: 8px; margin-left: 4px;">
             <ClientOnly>
               <!-- 2026-06-12 修复：原来固定显示 username 首字母圈 / username 文字。
