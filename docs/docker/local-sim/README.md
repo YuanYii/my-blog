@@ -37,12 +37,24 @@ docker build -t myblog-local-sim:latest .
 
 > Dockerfile 已把 apt 源换成清华镜像（`mirrors.tuna.tsinghua.edu.cn`），解决国内访问 `ports.ubuntu.com` / `archive.ubuntu.com`（经 Cloudflare）慢且 502 的问题。换其他源（阿里云 `mirrors.aliyun.com`、中科大 `mirrors.ustc.edu.cn`）改 Dockerfile 第 0 节那段 `sed` 即可。
 
+### 端口约定
+
+| 角色 | 宿主机端口 | 容器内端口 | 说明 |
+|---|---|---|---|
+| 后端（Spring Boot） | **28080** | 8080 | `28080` 避开本机常见的 8080（如有冲突换成任意空闲高端口） |
+| 前端（nginx） | **28000** | 80 | `28000` 避开本机 8000/80/3000（前端本地 dev 经常占 3000） |
+
+> **为什么不用 8080/8000**：
+> - 8080/8000 是本机开发最常被占的端口（IDEA、nginx、Vite、Vue dev server 等）
+> - 容器内端口保持 8080/80 跟生产 ECS 100% 一致，避免 `application.yml` 因端口变化连锁改动
+> - 改宿主机端口只需修改 `docker run -p` 一行，**不用动镜像 / Dockerfile / 容器内任何配置**
+
 ### 2.2 启动"假 ECS"
 
 ```bash
 docker run -d --name myblog-sim \
-  -p 8080:8080 \              # Spring Boot 端口（跟生产 SERVER_PORT 默认值一致）
-  -p 8000:80 \                # nginx 端口（宿主 8000 → 容器 80，避免跟本地 nginx 撞）
+  -p 28080:8080 \             # Spring Boot 端口（宿主 28080 → 容器 8080，跟生产 SERVER_PORT 默认值一致）
+  -p 28000:80 \               # nginx 端口（宿主 28000 → 容器 80；避开本机 8000/8080 跟本机其他服务撞）
   -v myblog-sim-data:/opt/myblog/db \         # SQLite 文件持久化
   -v myblog-sim-uploads:/opt/myblog/uploads \ # 上传文件持久化
   myblog-local-sim:latest
@@ -83,8 +95,8 @@ GITHUB_REPO=你的-owner/repo ./deploy-server.sh v4.1.0
 容器内或宿主机上：
 
 ```bash
-curl http://localhost:8080/api/v1/health      # 后端健康
-curl -I http://localhost:8000/                 # nginx 反代（前端静态）
+curl http://localhost:28080/api/v1/health      # 后端健康
+curl -I http://localhost:28000/                 # nginx 反代（前端静态）
 ```
 
 ---

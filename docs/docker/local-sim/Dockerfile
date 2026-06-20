@@ -14,7 +14,7 @@
 #   docker build -t myblog-local-sim:latest .
 # 运行（详见 README.md）：
 #   docker run -d --name myblog-sim \
-#     -p 8080:8080 -p 8000:80 \
+#     -p 28080:8080 -p 28000:80 \
 #     -v myblog-sim-data:/opt/myblog/db \
 #     -v myblog-sim-uploads:/opt/myblog/uploads \
 #     myblog-local-sim:latest
@@ -82,12 +82,16 @@ COPY entrypoint-helper.sh /usr/local/bin/entrypoint-helper
 RUN chmod +x /usr/local/bin/entrypoint-helper
 
 # ---------- 4. 暴露端口 ----------
+# [WARN] 8080 / 80 是**容器内**端口（EXPOSE 声明的是容器监听端口）
+#   宿主机端口在 `docker run -p 28080:8080 -p 28000:80` 时指定（见 README §2.2 端口约定）
+#   容器内端口必须跟生产 ECS 100% 一致,这样 application.yml / nginx.conf 不需要特例
 # 8080 = Spring Boot（跟生产 SERVER_PORT 默认一致）
 # 80   = nginx（容器内由 supervisord 监听，跟生产 PUBLIC_PORT 默认一致）
 EXPOSE 8080 80
 
 # ---------- 5. 健康检查 ----------
 # 容器视角：8080 是后端，80 是 nginx。健康检查打后端就够了
+# 走 127.0.0.1 容器 loopback,不依赖宿主机端口映射（HEALTHCHECK 跑在容器内,看不到 -p 映射）
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=60s \
     CMD curl -fsS http://127.0.0.1:8080/api/v1/health || exit 1
 

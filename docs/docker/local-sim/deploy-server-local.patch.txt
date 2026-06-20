@@ -162,7 +162,7 @@ RUN mkdir -p \
 ### 🟢 次要项（已评估，不改）
 
 - **必须有真实 GitHub Release**：§4/§5 从 release 拉 jar/schema/前端，本地模拟也走这条线。README §2 已说明前提（"先 publish-release 再 docker build"）。属设计预期，**不动**。
-- **首次 `docker ps` 显示 unhealthy**：HEALTHCHECK 打 8080，但 myblog `autostart=false` + 未部署，部署完成前一直 unhealthy。属设计预期（跟生产"systemd unit 没写前不知道 myblog" 一致），**不动**。
+- **首次 `docker ps` 显示 unhealthy**：HEALTHCHECK 打容器内 8080（不是宿主机 28080），但 myblog `autostart=false` + 未部署，部署完成前一直 unhealthy。属设计预期（跟生产"systemd unit 没写前不知道 myblog" 一致），**不动**。
 - **README "CORS 放宽" 表述**：实际 env 生成的是占位域名 `yourname.com` 不是 `*`。已修文档（v3 §4 变更）。
 
 ---

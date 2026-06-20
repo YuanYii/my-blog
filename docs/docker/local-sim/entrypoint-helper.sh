@@ -92,11 +92,15 @@ else
     echo
 fi
 
-echo "   常用命令："
+echo "   容器内常用命令（容器内视角, 端口是 8080/80 不是 28080/28000）："
 echo "     supervisorctl status                 # 看 redis / nginx / myblog 状态"
 echo "     supervisorctl tail -f myblog         # 实时后端日志（替代 journalctl -u myblog -f）"
 echo "     supervisorctl restart myblog         # 部署完重启后端"
-echo "     curl http://127.0.0.1:8080/api/v1/health   # 后端健康检查"
-echo "     curl -I http://127.0.0.1:80/               # nginx 健康检查"
+echo "     curl http://127.0.0.1:8080/api/v1/health   # 后端健康检查（容器内 loopback）"
+echo "     curl -I http://127.0.0.1:80/               # nginx 健康检查（容器内 loopback）"
+echo
+echo "   宿主机访问（从外面看, 走 -p 映射的端口）："
+echo "     curl http://localhost:28080/api/v1/health  # 后端"
+echo "     curl -I http://localhost:28000/            # 前端 nginx"
 echo
 info "完成。容器 ID: $(hostname)"
