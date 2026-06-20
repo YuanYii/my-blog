@@ -11,6 +11,7 @@ import com.blog.common.TrustedProxyUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -19,13 +20,21 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Admin 鉴权 filter
- * - 拦截 /admin/* 路径
- * - 校验 JWT（token 是否有效）
- * - 校验设备白名单（X-Device-Id 是否在 approved 列表）
- * - /auth/* /health /articles /comments 等公开接口不走这里
+ * B2（2026-06-20）：Admin 鉴权 filter 重构。
+ *
+ * 核心原则：
+ * 1. 显式 admin 路由表优先——枚举每个需要鉴权的端点，命中即拦截。
+ * 2. 写操作默认拒绝——POST/PUT/DELETE/PATCH 不在 public 白名单内的一律要求鉴权。
+ * 3. 防遗漏 WARN——未在 admin 表 / 未在 public 白名单命中的请求打 WARN（含去重 + IP 频次限制）。
+ * 4. 路径边界修复——ApiWhitelistService.matchPath 已补充边界校验（风险④）。
+ * 5. #14 修复——GET /articles/categories/all + with-count 收入 admin 路由表（信息泄露）。
  */
 @Slf4j
 @Component
@@ -37,102 +46,112 @@ public class AdminAuthFilter extends OncePerRequestFilter {
     private final ApiWhitelistService whitelistService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /** 漏登记 WARN：同 IP 每分钟最多打 N 条，之后降 DEBUG（防日志放大） */
+    @Value("${blog.security.unregistered-warn.per-min:5}")
+    private int unregisteredWarnPerMin;
+
+    /** 已告警 key（method:path），进程生命周期内同 key 只打一次 */
+    private final Set<String> warnedKeys = ConcurrentHashMap.newKeySet();
+
+    /** IP 频次窗口：long[]{count, windowStartSec} */
+    private final ConcurrentHashMap<String, long[]> warnRateMap = new ConcurrentHashMap<>();
+
+    // ======================== 显式 Admin 路由表 ========================
+    //
+    // 格式：RouteSpec(method, pathPattern)
+    //   method:      精确 HTTP 方法，或 "*" 表示任意方法
+    //   pathPattern: 以 "/" 结尾 → 前缀匹配；否则精确匹配
+    //
+    // 覆盖附录 C 所有 admin 端点（全量 grep 核验 2026-06-20）。
+
+    private static final List<RouteSpec> ADMIN_ROUTES = Arrays.asList(
+        // /admin/** 前缀——dashboard/devices/ip-bans/settings/uploads/api-whitelist
+        new RouteSpec("*",      "/admin/"),
+
+        // 文章 admin（散落在 /articles/ 下）
+        new RouteSpec("GET",    "/articles/admin/"),           // GET /articles/admin/all
+        new RouteSpec("GET",    "/articles/id/"),              // GET /articles/id/{id}
+        new RouteSpec("POST",   "/articles"),                  // POST /articles（精确）
+        new RouteSpec("PUT",    "/articles/"),                 // PUT /articles/{id}
+        new RouteSpec("DELETE", "/articles/"),                 // DELETE /articles/{id}
+
+        // 分类 admin
+        new RouteSpec("POST",   "/articles/categories"),       // POST /articles/categories（精确）
+        new RouteSpec("PUT",    "/articles/categories/"),      // PUT /articles/categories/{id}
+        new RouteSpec("DELETE", "/articles/categories/"),      // DELETE /articles/categories/{id}
+
+        // #14 修复：categories/all + with-count 含隐藏分类/草稿计数，信息泄露，收入 admin
+        new RouteSpec("GET",    "/articles/categories/all"),
+        new RouteSpec("GET",    "/articles/categories/with-count"),
+
+        // 标签 admin
+        new RouteSpec("POST",   "/articles/tags"),             // POST /articles/tags（精确）
+        new RouteSpec("DELETE", "/articles/tags/"),            // DELETE /articles/tags/{id}
+
+        // 评论 admin
+        new RouteSpec("GET",    "/comments/admin"),            // GET /comments/admin（精确）
+        new RouteSpec("PUT",    "/comments/"),                 // PUT /comments/{id}/status
+        new RouteSpec("DELETE", "/comments/"),                 // DELETE /comments/{id}
+
+        // Auth admin
+        new RouteSpec("GET",    "/auth/me"),                   // GET /auth/me（精确）
+        new RouteSpec("PUT",    "/auth/me/")                   // PUT /auth/me/password
+    );
+
+    // ======================== 显式 Public 写端点白名单 ========================
+    // 匿名可访问的写操作（只有这两个；其余写操作一律要求鉴权）
+    private static final List<RouteSpec> PUBLIC_WRITE_ROUTES = Arrays.asList(
+        new RouteSpec("POST", "/auth/login"),
+        new RouteSpec("POST", "/comments")      // 精确：POST /comments，不含 /comments/{id}
+    );
+
+    // ======================== shouldNotFilter ========================
+
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getRequestURI();
+        // 剥离 context-path（如 /api/v1），确保路径与 ADMIN_ROUTES / DB 白名单一致
+        // 不用 getServletPath()：MockMvc 默认将其置为 ""，会导致单测全部失效
+        String path = stripContextPath(request);
         String method = request.getMethod();
 
-        // 放行 OPTIONS 预检请求（CORS）
+        // OPTIONS 预检直接放行
         if ("OPTIONS".equalsIgnoreCase(method)) return true;
 
-        // 2026-06-12 严重安全修复（CVE-级别）：
-        // 原逻辑只看 path prefix，不看 HTTP 方法。配合 api_whitelist 里 `/api/v1/articles`
-        // 和 `/api/v1/comments` 被标为 public，导致以下端点全部 **匿名可访问**：
-        //   - POST/PUT/DELETE /api/v1/articles[/{id}]            (创建/编辑/删除文章)
-        //   - POST/PUT/DELETE /api/v1/articles/categories[/...]   (分类管理)
-        //   - POST/DELETE     /api/v1/articles/tags[/...]         (标签管理)
-        //   - GET             /api/v1/articles/admin/all          (admin 列表，能看草稿)
-        //   - GET             /api/v1/articles/id/{id}            (admin 详情)
-        //   - GET             /api/v1/comments/admin              (admin 评论列表)
-        //   - PUT             /api/v1/comments/{id}/status        (审核/拒评论)
-        //   - DELETE          /api/v1/comments/{id}               (物理删评论)
-        // 攻击者无需登录即可批量发文/删全站文章/清空评论审核队列。
-        //
-        // 双层修复：
-        //   1) 这里：在 public 命中下，对写方法（POST/PUT/DELETE/PATCH）默认要求鉴权，
-        //      仅 isPublicWriteAllowed 白名单的两个端点（登录、提交评论）保持匿名；
-        //   2) docs/sql/migrations/20260612_admin_subpaths.sql：给 api_whitelist 加更精细的
-        //      admin 子前缀（/articles/admin、/articles/id、/comments/admin），
-        //      配合 ApiWhitelistService 已有的"最长前缀优先"匹配，确保 admin 子路径被识别。
+        // 1. 命中显式 admin 路由表 → 必须鉴权（return false）
+        if (matchesRoutes(method, path, ADMIN_ROUTES)) return false;
+
+        // 2. 命中 DB public 白名单
         ApiWhitelist hit = whitelistService.matchPath(path);
+        if (hit != null && ApiWhitelistService.TYPE_PUBLIC.equals(hit.getType())) {
+            // GET / HEAD 匿名可读
+            if (isReadMethod(method)) return true;
+            // 显式 public 写端点
+            if (matchesRoutes(method, path, PUBLIC_WRITE_ROUTES)) return true;
+            // 其余写操作——default-deny（风险①）
+            return false;
+        }
 
-        // 明确 admin → 必须鉴权
-        if (hit != null && "admin".equals(hit.getType())) return false;
-
-        // 2026-06-13 修复（auto_fix BUG-001 + BUG-002 联合兜底）：
-        // 即使最长前缀命中了 public（如 `/api/v1/articles`），子路径含以下任一特征
-        // 时强制走鉴权，防止"父前缀 public 把 admin 子路径一起放行"：
-        //   - `/admin/`：admin 子空间（/articles/admin/all、/comments/admin、/admin/uploads 等）
-        //   - `/id/{数字}`：admin 按 id 取详情（/articles/id/123）
-        //   - path 以 `/api/v1/admin/` 开头但未在白名单显式登记（如 /admin/uploads 漏登记）
-        // 这些端点都是 admin 写/读敏感数据，匿名放行属于严重安全漏洞。
-        if (isAdminSubpath(path)) return false;
-
-        // 未命中 + 非 admin 子空间 → 防御性默认放行（注释保持原意：新增接口不要误伤）
-        if (hit == null) return true;
-
-        // 命中 public：GET / HEAD 是读，匿名 OK
-        if ("GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method)) return true;
-
-        // 命中 public 但是写方法：除非显式在 isPublicWriteAllowed 里授权，
-        // 否则一律要求鉴权（兜底防御）
-        return isPublicWriteAllowed(path, method);
-    }
-
-    /**
-     * 判定 path 是否为"应被鉴权但可能被父前缀 public 误放行"的 admin 子空间。
-     * 配合最长前缀匹配使用，作为多层防御。
-     */
-    private boolean isAdminSubpath(String path) {
-        if (path == null) return false;
-        // 1. 含 `/admin/` 子段（排除 `/admin/login` —— 那个走 isPublicWriteAllowed）
-        if (path.contains("/admin/")) return true;
-        // 2. 以 `/admin` 结尾（如 `/comments/admin`、`/articles/admin`）—— 父前缀 public 的子段
-        if (path.endsWith("/admin")) return true;
-        // 3. `/id/{纯数字}` —— admin 按 id 取详情（编辑页加载）
-        if (path.matches(".*/id/\\d+(/.*)?$")) return true;
-        // 4. `/api/v1/admin/*` 但白名单未登记（如 /admin/uploads 漏登记）
-        if (path.startsWith("/api/v1/admin/")) return true;
+        // 3. 未命中 admin 表、未命中 public 白名单
+        if (isReadMethod(method)) {
+            // GET 未登记：防遗漏 WARN，但放行（防误伤新增公开接口）
+            warnUnregistered(method, path, request);
+            return true;
+        }
+        // 写操作未登记：default-deny，并打 WARN
+        warnUnregistered(method, path, request);
         return false;
     }
 
-    /**
-     * 显式列出"可匿名调用"的写端点。除了这里之外，所有 public 前缀下的写请求都要求 token。
-     * 例如：
-     *   - POST /api/v1/auth/login         登录本身
-     *   - POST /api/v1/comments           访客提交评论
-     */
-    private boolean isPublicWriteAllowed(String path, String method) {
-        if (!"POST".equalsIgnoreCase(method)) return false;
-        if (path == null) return false;
-        // 登录
-        if (path.endsWith("/auth/login")) return true;
-        // 访客评论提交：bare /comments，不允许后缀（/{id} / status / /admin 等）
-        if (path.endsWith("/comments")) return true;
-        return false;
-    }
+    // ======================== doFilterInternal（鉴权核心） ========================
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        // 鉴权链路日志（REQ-LOG-2026-06-18 / FR-2）：每个拒绝点打 WARN，含 path / method / IP / 拒绝原因，
-        // 便于 owner grep 溯源（US-1）。traceId 由 TraceIdFilter 注入 MDC，logback pattern 自动带上。
-        // 安全（FR-2.5 / NFR-2）：禁打 token 全文 / password，仅记录必要要素。
-        String path = request.getRequestURI();
+        String path = stripContextPath(request);
         String method = request.getMethod();
         String ip = TrustedProxyUtil.resolveClientIp(request);
 
-        // 给所有 /admin/* 响应加 CORS 头
+        // CORS 头
         String origin = request.getHeader("Origin");
         if (origin != null) {
             response.setHeader("Access-Control-Allow-Origin", origin);
@@ -161,28 +180,23 @@ public class AdminAuthFilter extends OncePerRequestFilter {
             }
             tokenDeviceId = claims.get("deviceId");
         } catch (Exception e) {
-            // 具体失败分类由 JwtUtil.parse 内部已打 WARN，这里补充请求上下文
             log.warn("admin 鉴权拒绝：token 过期或无效, method={} path={} ip={}", method, path, ip);
             writeUnauthorized(response, ResultCode.TOKEN_INVALID.getCode(), "token 过期或无效");
             return;
         }
 
-        // 2) 校验设备白名单——吊销/待授权设备的 token 立即失效
+        // 2) 校验设备白名单
         String deviceId = request.getHeader("X-Device-Id");
         try {
             deviceService.verifyOnRequest(deviceId);
         } catch (BusinessException e) {
-            // 设备相关 code 透传（2001 待授权 / 2002 吊销 / 401 未授权）
             log.warn("admin 鉴权拒绝：设备校验未通过 code={} reason={} deviceId={} method={} path={} ip={}",
                     e.getCode(), e.getMessage(), deviceId, method, path, ip);
             writeUnauthorized(response, e.getCode(), e.getMessage());
             return;
         }
 
-        // 3) 防 token 借用：token.claim.deviceId 必须 == header.X-Device-Id
-        // ——防止 A 设备的 token 被用到 B 设备（即使 B 是 approved 状态）
-        // token 未带 deviceId claim（老 token 兼容）放行；header 没 deviceId 也放行
-        // ——但两者都缺失会进入 #2 的设备白名单校验，自然被拒
+        // 3) 防 token 借用：token.deviceId == header.X-Device-Id
         if (deviceId != null && !deviceId.isEmpty()
                 && tokenDeviceId != null && !tokenDeviceId.toString().isEmpty()
                 && !tokenDeviceId.toString().equals(deviceId)) {
@@ -192,21 +206,99 @@ public class AdminAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 放行：INFO 含 uid / deviceId / path（FR-2.2）。INFO 级，量可控（admin 操作低频）。
         if (log.isInfoEnabled()) {
             log.info("admin 鉴权通过：uid={} deviceId={} method={} path={} ip={}", uid, deviceId, method, path, ip);
         }
-        // 传递操作人给下游 controller，供业务日志记录"操作人"（FR-3.1/3.4/3.7）
         com.blog.common.web.AuthContext.set(request, uid, deviceId);
         chain.doFilter(request, response);
     }
 
+    // ======================== 工具方法 ========================
+
+    private static boolean isReadMethod(String method) {
+        return "GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method);
+    }
+
+    /** 检查 (method, path) 是否匹配 routes 列表中任一规则 */
+    private static boolean matchesRoutes(String method, String path, List<RouteSpec> routes) {
+        for (RouteSpec spec : routes) {
+            if (spec.matches(method, path)) return true;
+        }
+        return false;
+    }
+
     /**
-     * 写 401 响应（code + message 透传）
+     * 防遗漏 WARN：路径未在 admin 表 / public 白名单登记。
+     * 去重（同 key 进程生命周期只打一次）+ IP 频次上限（防日志放大）。
      */
+    private void warnUnregistered(String method, String path, HttpServletRequest request) {
+        String key = method + ":" + path;
+        boolean firstTime = warnedKeys.add(key);
+
+        String ip = TrustedProxyUtil.resolveClientIp(request);
+        boolean withinRateLimit = checkAndIncrementWarnRate(ip);
+
+        if (firstTime && withinRateLimit) {
+            log.warn("疑似未登记端点（admin/public 表均未命中）method={} path={} ip={}", method, path, ip);
+        } else {
+            log.debug("疑似未登记端点（已去重/超频次降级）method={} path={} ip={}", method, path, ip);
+        }
+    }
+
+    /** 固定窗口限频：同 IP 每分钟最多 unregisteredWarnPerMin 条 WARN，超出返回 false */
+    private boolean checkAndIncrementWarnRate(String ip) {
+        if (ip == null || ip.isEmpty()) return true;
+        long now = Instant.now().getEpochSecond();
+        boolean[] allowed = {true};
+        warnRateMap.compute(ip, (k, old) -> {
+            if (old == null || now - old[1] > 60) {
+                return new long[]{1L, now};
+            }
+            if (old[0] >= unregisteredWarnPerMin) {
+                allowed[0] = false;
+                return old;
+            }
+            old[0]++;
+            return old;
+        });
+        return allowed[0];
+    }
+
     private void writeUnauthorized(HttpServletResponse response, int code, String message) throws IOException {
         response.setStatus(401);
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write(objectMapper.writeValueAsString(Result.error(code, message)));
+    }
+
+    // 剥离 context-path，生产环境（/api/v1/admin/...）→ /admin/...；测试环境 contextPath="" 不变
+    private static String stripContextPath(HttpServletRequest request) {
+        String contextPath = request.getContextPath();
+        String uri = request.getRequestURI();
+        if (contextPath != null && !contextPath.isEmpty() && uri.startsWith(contextPath)) {
+            return uri.substring(contextPath.length());
+        }
+        return uri;
+    }
+
+    // ======================== 路由规则描述符 ========================
+
+    private static final class RouteSpec {
+        private final String method;   // HTTP 方法，"*" 表示任意
+        private final String pattern;  // 以 "/" 结尾 → 前缀匹配；否则精确匹配
+
+        RouteSpec(String method, String pattern) {
+            this.method = method;
+            this.pattern = pattern;
+        }
+
+        boolean matches(String reqMethod, String reqPath) {
+            if (!"*".equals(method) && !method.equalsIgnoreCase(reqMethod)) return false;
+            if (pattern.endsWith("/")) {
+                // 前缀匹配（含路径边界）
+                return reqPath.startsWith(pattern) || reqPath.equals(pattern.substring(0, pattern.length() - 1));
+            }
+            // 精确匹配
+            return pattern.equals(reqPath);
+        }
     }
 }
