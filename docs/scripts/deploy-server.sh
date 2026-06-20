@@ -396,7 +396,7 @@ SQLITE_PATH=$DB_FILE
 JWT_SECRET=$JWT_SECRET_GENERATED
 
 # --- CORS(**改成你的真实域名**, 多个用逗号分隔)---
-CORS_ORIGINS=https://yourname.com,https://www.yourname.com
+CORS_ORIGINS=$([ "$LOCAL_SIM" = "1" ] && echo "http://localhost:28000,http://localhost:28080,https://yourname.com,https://www.yourname.com" || echo "https://yourname.com,https://www.yourname.com")
 
 # --- 文件上传 ---
 UPLOAD_DIR=$INSTALL_DIR/uploads
@@ -412,7 +412,11 @@ EOF
         chown myblog:myblog "$ENV_FILE"
     fi
     info "[OK] $ENV_FILE generated (JWT_SECRET=$(echo "$JWT_SECRET_GENERATED" | cut -c1-8)..., chmod 600 done)"
-    warn "[WARN]  After deploy, please edit $ENV_FILE, and change CORS_ORIGINS to your real domain!"
+    if [ "$LOCAL_SIM" = "1" ]; then
+        info "[OK] LOCAL_SIM: CORS_ORIGINS set to localhost:28000/28080 (browser login ready)"
+    else
+        warn "[WARN]  After deploy, please edit $ENV_FILE, and change CORS_ORIGINS to your real domain!"
+    fi
 fi
 
 # ============= 8. 服务管理（systemd / supervisord 二选一）=============
