@@ -485,6 +485,56 @@ public class BackupService {
 
     // ============= 3. 工具方法 ==============
 
+    /**
+     * 2026-06-21 v4.2.1 polish 新增：手动删除一条备份记录
+     *
+     * 业务规则：
+     *  - PENDING / RUNNING → 拒绝（BACKUP_RECORD_RUNNING/3002），脚本进程可能在写 db / 读 stage，删记录会留垃圾
+     *  - FAILED → 直删 db 行（GitHub 端没产物可删）
+     *  - SUCCESS → 先 deleteGitHubRelease(tag) best-effort → WARN 不回滚 db（GitHub 删失败 db 也要删，否则列表会一直显示）
+     *    复用 trimOldRecords 已有的 deleteGitHubRelease，命令构造零分叉
+     *
+     * 写 INFO 操作日志（含 username）便于审计。
+     *
+     * 已知 trade-off（2026-06-21 自查 P1-3）：
+     *  - 多 admin tab 同时点同一条 SUCCESS 删除时,两条请求都过 PENDING/RUNNING 校验后都会调
+     *    deleteGitHubRelease(tag);第二个 release delete 返 404,日志噪音但不影响功能。
+     *  - 单实例下前端 deletingId 单 tab 已挡;真要彻底防需引入 DELETING 状态枚举 + 乐观锁,
+     *    改动面过大且触发概率极低（多 tab 同 id 同 ms 操作）,当前不修。
+     */
+    public void deleteBackupRecord(Long id, HttpServletRequest request) {
+        BackupRecord r = backupRecordMapper.selectById(id);
+        if (r == null) {
+            log.warn("删除备份记录拒绝: 记录不存在 id={} operator={}", id, AuthContext.username(request));
+            throw new BusinessException(ResultCode.NOT_FOUND, "备份记录不存在");
+        }
+        String status = r.getStatus();
+        if ("PENDING".equals(status) || "RUNNING".equals(status)) {
+            log.warn("删除备份记录拒绝: 任务进行中 id={} status={} operator={}",
+                    id, status, AuthContext.username(request));
+            throw new BusinessException(ResultCode.BACKUP_RECORD_RUNNING,
+                    "备份任务进行中(" + status + "),无法删除");
+        }
+
+        String tag = r.getTag();
+        String username = AuthContext.username(request);
+
+        // SUCCESS: 先删 GitHub Release(best-effort)
+        if ("SUCCESS".equals(status) && tag != null && !tag.isEmpty()) {
+            boolean releaseDeleted = deleteGitHubRelease(tag);
+            if (!releaseDeleted) {
+                // 沿用 trimOldRecords 的策略:WARN 不回滚 db,避免重复手动清理
+                log.warn("删除备份记录: GitHub Release {} 删除失败(可能已被手动删),仍删 db 行 operator={}",
+                        tag, username);
+            } else {
+                log.info("删除备份记录: GitHub Release {} 已删除 operator={}", tag, username);
+            }
+        }
+
+        backupRecordMapper.deleteById(id);
+        log.info("删除备份记录成功: id={} status={} tag={} operator={}", id, status, tag, username);
+    }
+
     private void markFailed(Long recordId, String stage, String message) {
         BackupRecord r = backupRecordMapper.selectById(recordId);
         if (r == null) return;

@@ -12,14 +12,18 @@ import org.springframework.web.bind.annotation.*;
 import javax.servlet.http.HttpServletRequest;
 
 /**
- * 数据备份管理（REQ-BACKUP-2026-06-20，v4.2.0）
+ * 数据备份管理（REQ-BACKUP-2026-06-20 + REQ-BACKUP-POLISH-2026-06-21，v4.2.0 / v4.2.1）
  *
  * 设计依据：docs/设计文档/博客数据备份方案设计.md §5
  *
  * API：
- *  - POST /api/v1/admin/backup/run   触发备份（异步，立即返回 record id）
- *  - GET  /api/v1/admin/backup/list  历史列表（分页）
- *  - GET  /api/v1/admin/backup/{id}  单条详情 + 状态
+ *  - POST   /api/v1/admin/backup/run     触发备份（异步，立即返回 record id）
+ *  - GET    /api/v1/admin/backup/list    历史列表（分页）
+ *  - GET    /api/v1/admin/backup/{id}    单条详情 + 状态
+ *  - DELETE /api/v1/admin/backup/{id}    删除一条备份记录(v4.2.1 polish)
+ *          SUCCESS → 先删 GitHub Release(best-effort) + 删 db
+ *          FAILED  → 直删 db
+ *          PENDING/RUNNING → 拒绝(3002 BACKUP_RECORD_RUNNING)
  *
  * 鉴权：admin（AdminAuthFilter 已在 /admin/** 路径统一拦截）
  */
@@ -68,5 +72,16 @@ public class BackupController {
             return Result.error(404, "备份记录不存在");
         }
         return Result.success(r);
+    }
+
+    /**
+     * 2026-06-21 v4.2.1 polish 新增：删除一条备份记录
+     * 业务规则在 BackupService.deleteBackupRecord（SUCCESS→删 GitHub+db / FAILED→直删 db / PENDING|RUNNING→拒 3002）
+     */
+    @DeleteMapping("/{id}")
+    public Result<Void> delete(@PathVariable Long id, HttpServletRequest request) {
+        log.info("备份删除触发: id={} operator={}", id, AuthContext.username(request));
+        backupService.deleteBackupRecord(id, request);
+        return Result.success();
     }
 }
