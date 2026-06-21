@@ -219,6 +219,7 @@ DEPLOY_MODE=data IMPORT_DB=1 sudo ./docs/scripts/deploy-server.sh v3.x.x   # 只
 | **8.2 提示词优化：不落盘** | "优化提示词"任务**只在对话里输出**——不写文件（无论是否提示"输出为 MD"） |
 | **8.3 过程文件：放项目目录** | 主动写的 draft / 临时分析 / 截图 / 比对资料一律写到**对应项目目录下**（docs/、docs/scripts/、.audit/、tmp/、screenshots/ 等），或只输出在对话里。**不写到 `~/`、`~/Desktop/`、`~/.mavis/` 等家目录**。mavis 系统自管文件（scratchpad / memory / session log）不受此约束 |
 | **8.4 git commit 默认不自动** | 默认不自动 git commit —— 改完代码停留在工作区，等用户显式说"提交"才执行；触发词必须是用户原话 |
+| **8.5 本地 docker 服务报错 → 查 `myblog-sim` 容器日志** | 用户说"本地 docker 服务报错"（含 traceId / 5xx / 接口异常等）时，**直接进 `myblog-sim` 容器查日志**：`docker logs myblog-sim 2>&1 \| grep <traceId>` + 容器内 `/opt/myblog/logs/blog.log` 配套；不要先查 dev 本地文件日志（`/tmp/blog-dev-logs/`）或 host 上其它路径——`myblog-sim` 才是本地 docker 部署的运行实例。仅本项目适用 |
 
 跨项目 / 跨会话 / 跨场景适用。
 
