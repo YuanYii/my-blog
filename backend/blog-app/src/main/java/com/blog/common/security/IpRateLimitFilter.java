@@ -3,6 +3,7 @@ package com.blog.common.security;
 import com.blog.auth.service.IpBanService;
 import com.blog.common.Result;
 import com.blog.common.TrustedProxyUtil;
+import com.blog.common.web.TraceIdUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -109,6 +110,8 @@ public class IpRateLimitFilter extends OncePerRequestFilter {
     private void writeTooManyRequests(HttpServletResponse response, String message) throws IOException {
         response.setStatus(429);
         response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write(objectMapper.writeValueAsString(Result.error(429, message)));
+        // 2026-06-21 v4.2.1 polish: 拼 traceId 后缀,与 AdminAuthFilter / GlobalExceptionHandler 一致
+        response.getWriter().write(objectMapper.writeValueAsString(
+                Result.error(429, TraceIdUtil.withTraceId(message))));
     }
 }

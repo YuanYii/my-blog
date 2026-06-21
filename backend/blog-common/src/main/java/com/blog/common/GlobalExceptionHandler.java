@@ -1,7 +1,7 @@
 package com.blog.common;
 
+import com.blog.common.web.TraceIdUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
@@ -22,17 +22,16 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /** MDC key —— 与 TraceIdFilter / logback-spring.xml 对齐 */
-    private static final String MDC_TRACE_ID = "traceId";
-
     /**
      * 业务异常（FR-4.1）：已知业务异常输出 WARN。
-     * traceId 由 logback pattern 的 %X{traceId} 自动带上（FR-4.3），此处无需手工拼。
+     * 2026-06-21 v4.2.1 polish: 拼 traceId 后缀到 response message,与 handleAny 行为一致,
+     * 前端 toast 业务错也能看到 traceId,owner 排查日志方便。
+     * 日志行 traceId 由 logback pattern %X{traceId} 自动带,无需手工拼。
      */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Result<Void>> handleBusiness(BusinessException e) {
         log.warn("业务异常: code={} msg={}", e.getCode(), e.getMessage());
-        return ResponseEntity.ok(Result.error(e.getCode(), e.getMessage()));
+        return ResponseEntity.ok(Result.error(e.getCode(), TraceIdUtil.withTraceId(e.getMessage())));
     }
 
     /** @Valid 参数校验失败 (RequestBody) */
@@ -124,15 +123,12 @@ public class GlobalExceptionHandler {
     /**
      * 兜底（FR-4.2/4.3）：未预期异常输出 ERROR（含完整 stacktrace），日志带 traceId（MDC pattern）。
      * 同时把 traceId 回写到响应 message，方便用户/owner 即使不看响应头也能复制编号定位（US-3）。
+     * 2026-06-21 v4.2.1 polish: 改用 TraceIdUtil.withTraceId 抽出去,与 handleBusiness / AdminAuthFilter / IpRateLimitFilter 共用一份逻辑
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleAny(Exception e) {
         log.error("未预期异常", e);
-        String traceId = MDC.get(MDC_TRACE_ID);
-        String message = ResultCode.INTERNAL_ERROR.getMessage();
-        if (traceId != null && !traceId.isEmpty()) {
-            message = message + "（请反馈编号 traceId=" + traceId + "）";
-        }
+        String message = TraceIdUtil.withTraceId(ResultCode.INTERNAL_ERROR.getMessage());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Result.error(ResultCode.INTERNAL_ERROR.getCode(), message));
     }

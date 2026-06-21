@@ -8,6 +8,7 @@ import com.blog.common.BusinessException;
 import com.blog.common.Result;
 import com.blog.common.ResultCode;
 import com.blog.common.TrustedProxyUtil;
+import com.blog.common.web.TraceIdUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -170,6 +171,7 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         String token = auth.substring(7);
         Object tokenDeviceId;
         Object uid;
+        String username = null; // 2026-06-21 v4.2.1 polish: 从 token subject 取 username,供业务日志/操作人字段使用
         try {
             io.jsonwebtoken.Claims claims = jwtUtil.parse(token);
             uid = claims.get("uid");
@@ -179,6 +181,14 @@ public class AdminAuthFilter extends OncePerRequestFilter {
                 return;
             }
             tokenDeviceId = claims.get("deviceId");
+            // 2026-06-21 v4.2.1 polish: token 签发时 JwtUtil.generate 已 .setSubject(username)
+            // 这里零额外 IO 拿一下,后续业务日志能直接显示真实用户名(不再 "uid:1")
+            try {
+                String sub = claims.getSubject();
+                if (sub != null && !sub.isEmpty()) username = sub;
+            } catch (Exception ignored) {
+                // subject 解析失败不阻塞(旧 token 可能没 subject),username 留 null
+            }
         } catch (Exception e) {
             log.warn("admin 鉴权拒绝：token 过期或无效, method={} path={} ip={}", method, path, ip);
             writeUnauthorized(response, ResultCode.TOKEN_INVALID.getCode(), "token 过期或无效");
@@ -207,9 +217,11 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         }
 
         if (log.isInfoEnabled()) {
-            log.info("admin 鉴权通过：uid={} deviceId={} method={} path={} ip={}", uid, deviceId, method, path, ip);
+            log.info("admin 鉴权通过：username={} uid={} deviceId={} method={} path={} ip={}",
+                    username, uid, deviceId, method, path, ip);
         }
-        com.blog.common.web.AuthContext.set(request, uid, deviceId);
+        // 2026-06-21 v4.2.1 polish: 透传 username 到 AuthContext,业务日志/操作人字段不再 "uid:xxx"
+        com.blog.common.web.AuthContext.set(request, uid, deviceId, username);
         chain.doFilter(request, response);
     }
 
@@ -267,7 +279,10 @@ public class AdminAuthFilter extends OncePerRequestFilter {
     private void writeUnauthorized(HttpServletResponse response, int code, String message) throws IOException {
         response.setStatus(401);
         response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write(objectMapper.writeValueAsString(Result.error(code, message)));
+        // 2026-06-21 v4.2.1 polish: 拼 traceId 后缀,与 GlobalExceptionHandler 行为一致
+        // 不走 GlobalExceptionHandler,这里手工补(避免前端 toast "token 过期"看不到 traceId 没法定位日志)
+        response.getWriter().write(objectMapper.writeValueAsString(
+                Result.error(code, TraceIdUtil.withTraceId(message))));
     }
 
     // 剥离 context-path，生产环境（/api/v1/admin/...）→ /admin/...；测试环境 contextPath="" 不变
