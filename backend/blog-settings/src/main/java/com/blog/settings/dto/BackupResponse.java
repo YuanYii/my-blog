@@ -41,6 +41,12 @@ public class BackupResponse {
     private String errorStage;
     private String errorMessage;
 
+    /**
+     * 2026-06-21：触发请求的 traceId（失败时透传给 owner,反查 server log 用）
+     * 触发成功也会带,便于跨系统排查；前端在失败弹框里展示 + 复制
+     */
+    private String traceId;
+
     private Long operatorId;
     private String operatorName;
 

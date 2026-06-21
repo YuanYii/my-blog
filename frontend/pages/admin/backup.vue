@@ -53,6 +53,7 @@ interface BackupItem {
   errorStage?: string
   errorMessage?: string
   operatorName?: string
+  traceId?: string
 }
 const list = ref<BackupItem[]>([])
 const total = ref(0)
@@ -237,6 +238,29 @@ const handleCopyTag = async (tag: string) => {
       document.execCommand('copy')
       document.body.removeChild(ta)
       $toast.success(`已复制 tag: ${tag}`)
+    }
+  } catch (e: any) {
+    $toast.warning('复制失败,请手动选中复制')
+  }
+}
+
+// 2026-06-21：复制 traceId（失败详情弹框里用,owner 反查 server log）
+// 复用 handleCopyTag 的 clipboard 兜底逻辑,只是文案不同
+const handleCopyTraceId = async (traceId: string) => {
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(traceId)
+      $toast.success(`已复制 traceId: ${traceId}`)
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = traceId
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      $toast.success(`已复制 traceId: ${traceId}`)
     }
   } catch (e: any) {
     $toast.warning('复制失败,请手动选中复制')
@@ -591,6 +615,20 @@ onBeforeUnmount(() => {
               <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
                 #{{ errorDialogItem?.id }} · {{ errorDialogItem?.status }}
               </code>
+            </div>
+          </div>
+          <!--
+            2026-06-21：失败详情里展示 traceId,owner 拿这个编号反查 server log
+            /opt/myblog/logs/blog.log.* 定位完整请求链路
+            没拿到 traceId(理论上 @Async 后 MDC 透传没接,这是从 record 字段读的)时也兼容,显示 -
+          -->
+          <div class="form-group" v-if="errorDialogItem?.traceId">
+            <label class="form-label">追踪编号（反馈给 owner 查日志用）</label>
+            <div class="form-control" style="background: var(--bg-soft); cursor: default; display: flex; align-items: center; gap: 8px;">
+              <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; flex: 1; word-break: break-all;">{{ errorDialogItem.traceId }}</code>
+              <button @click="handleCopyTraceId(errorDialogItem.traceId)" class="row-action" title="复制 traceId" aria-label="复制 traceId" style="width: 24px; height: 24px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
             </div>
           </div>
           <div class="form-group">

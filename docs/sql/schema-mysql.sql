@@ -248,6 +248,7 @@ CREATE TABLE IF NOT EXISTS `backup_record` (
   `error_message` TEXT                                  COMMENT '失败信息（不含密码/secret）',
   `operator_id`   BIGINT       DEFAULT NULL              COMMENT '触发人 uid',
   `operator_name` VARCHAR(64)  DEFAULT NULL              COMMENT '触发人 username',
+  `trace_id`      VARCHAR(64)  DEFAULT NULL              COMMENT '2026-06-21: 触发请求的 traceId，失败详情展示用',
   PRIMARY KEY (`id`),
   KEY `idx_backup_record_started_at` (`started_at` DESC),
   KEY `idx_backup_record_status` (`status`)

@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.blog.common.ResultCode;
 import com.blog.common.BusinessException;
 import com.blog.common.web.AuthContext;
+import com.blog.common.web.TraceIdUtil;
 import com.blog.settings.dto.BackupResponse;
 import com.blog.settings.entity.BackupRecord;
 import com.blog.settings.mapper.BackupRecordMapper;
@@ -172,6 +173,10 @@ public class BackupService {
             }
         }
         record.setOperatorName(resolveOperatorName(request));
+        // 2026-06-21：记录触发请求的 traceId,失败详情里给 owner 反查 server log 用
+        // 这里在请求线程,MDC 里有值;@Async 跑 runScriptAsync 时 MDC 不会透传(TraceIdFilter 注释也提到本期不做 @Async 透传),
+        // 所以 markFailed 时从 record.getTraceId() 拿,而不是 MDC.get
+        record.setTraceId(org.slf4j.MDC.get(TraceIdUtil.MDC_TRACE_ID));
         try {
             // v4.3.2: partial unique index uk_backup_record_running 兜底 TOCTOU 窗口
             backupRecordMapper.insert(record);
@@ -566,7 +571,10 @@ public class BackupService {
     private String resolveOperatorName(HttpServletRequest request) {
         if (request == null) return null;
         Object uid = AuthContext.uid(request);
-        return uid == null ? null : "uid:" + uid;
+        if (uid == null) return null;
+        // 2026-06-21：操作人显示当前登录用户名(username),无则兜底 "uid:"+uid
+        String username = AuthContext.username(request);
+        return (username != null && !username.isEmpty()) ? username : "uid:" + uid;
     }
 
     private BackupResponse toResponse(BackupRecord r) {
@@ -582,7 +590,8 @@ public class BackupService {
                 .operatorId(r.getOperatorId())
                 .operatorName(r.getOperatorName())
                 .errorStage(r.getErrorStage())
-                .errorMessage(r.getErrorMessage());
+                .errorMessage(r.getErrorMessage())
+                .traceId(r.getTraceId());
         if (r.getStartedAt() != null && r.getFinishedAt() != null) {
             b.durationSec(Duration.between(r.getStartedAt(), r.getFinishedAt()).getSeconds());
         }

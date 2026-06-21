@@ -224,7 +224,10 @@ CREATE TABLE IF NOT EXISTS backup_record (
   error_stage     VARCHAR(16),                           -- 失败阶段 DUMP/PACK/UPLOAD/SCRIPT
   error_message   TEXT,                                  -- 失败信息（不含密码/secret）
   operator_id     BIGINT,                                -- 触发人 uid
-  operator_name   VARCHAR(64)                            -- 触发人 username
+  operator_name   VARCHAR(64),                           -- 触发人 username
+  trace_id        VARCHAR(64)                            -- 2026-06-21: 触发请求的 traceId，失败详情里展示
+                                                          -- 用于 owner 反查 server log(/opt/myblog/logs/blog.log.*)
+                                                          -- @Async 新线程 MDC 不会透传,所以存到 record 字段里
 );
 CREATE INDEX IF NOT EXISTS idx_backup_record_started_at ON backup_record(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_backup_record_status ON backup_record(status);

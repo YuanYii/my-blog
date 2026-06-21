@@ -70,4 +70,10 @@ public class BackupRecord {
 
     /** 触发人 username（冗余存储，user 表改名不影响历史） */
     private String operatorName;
+
+    /**
+     * 2026-06-21：触发请求的 traceId（MDC 透传 @Async 不靠谱,存到 record 字段里）
+     * 用途：失败详情里展示给 owner,反查 server log(/opt/myblog/logs/blog.log.*)
+     */
+    private String traceId;
 }
