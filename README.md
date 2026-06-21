@@ -1,7 +1,7 @@
 # 个人博客系统
 
-> **v4.0.0** — Spring Boot 2.7（多模块）+ Nuxt 3 前后端分离的个人博客 MVP。
-> 当前状态：v2.6.0 dev/prod 默认 SQLite（一文件 0 内存占用，MySQL 降级为可选 profile） + v2.7.0 前端全静态化（`nuxt generate` + nginx serve，省 150-250MB 内存）+ 公开页 SEO 预渲染 + **v4.0.0 日志体系（SLF4J/Logback + traceId + 文件滚动 30 天）+ IP 限流封禁（Redis + DB 持久化）+ 动态 favicon**。
+> **v4.2.0** — Spring Boot 2.7（多模块）+ Nuxt 3 前后端分离的个人博客 MVP。
+> 当前状态：v2.6.0 dev/prod 默认 SQLite（一文件 0 内存占用，MySQL 降级为可选 profile） + v2.7.0 前端全静态化（`nuxt generate` + nginx serve，省 150-250MB 内存）+ 公开页 SEO 预渲染 + **v4.0.0 日志体系（SLF4J/Logback + traceId + 文件滚动 30 天）+ IP 限流封禁（Redis + DB 持久化）+ 动态 favicon** + **v4.2.0 数据备份（加密上传 GitHub Release）+ v4.2.1 备份 polish（删除记录 / traceId 全链路 / UI 对齐）**。
 
 ---
 
@@ -16,11 +16,14 @@
 | 模块 | 功能 |
 |------|------|
 | **前台公开** | 首页（Hero 个人介绍 + 文章列表）/ 文章详情 / 归档 / 标签云 / 关于页（**SEO 预渲染**） |
-| **管理后台** | 仪表盘（KPI 聚合 + 30 天趋势）/ 文章增删改 / 评论审核 / 分类&标签管理 / 8-tab 站点设置 / 设备白名单管理 / **IP 封禁查看与手动解封** |
+| **管理后台** | 仪表盘（KPI 聚合 + 30 天趋势）/ 文章增删改 / 评论审核 / 分类&标签管理 / 8-tab 站点设置 / 设备白名单管理 / **数据备份（加密上传 GitHub Release）+ 数据恢复** |
 | **系统** | JWT 鉴权 / 设备白名单（X-Device-Id 绑定 token）/ API 路由白名单（DB 驱动，最长前缀匹配）/ 文件上传（本地存储 + 扩展名 + magic bytes 双重校验）/ 站点设置 8 section（blog/social/preferences/theme/advanced/techstack/experience + admin profile）/ Swagger API 文档 / 全静态前端 / **SLF4J+Logback 日志体系（traceId 串联全链路，文件滚动 30 天，3GB 容量上限）** / **IP 限流（10 次/秒 + 30 分钟封禁，Redis 热路径 + DB 持久化 + admin 手动解封）** |
 
 ### 1.3 版本记录
 
+- **v4.2.1**（2026-06-21）— **备份 polish**：删除备份记录（`DELETE /admin/backup/{id}`，SUCCESS 删 GitHub Release + db 行，FAILED 仅删 db，PENDING/RUNNING 拒绝 3002）+ traceId 全链路（`TraceIdUtil` 统一工具类，AdminAuthFilter / IpRateLimitFilter / GlobalExceptionHandler 三处拒绝响应均拼 traceId）+ 前端 `formatError` 自动展示 traceId + 操作人显示 username（JWT subject 透传，零 IO）
+- **v4.2.0**（2026-06-20）— **数据备份**：admin 后台一键加密备份（`POST /admin/backup/run`，异步执行，`blog-backup.sh` 产物 AES-256-CBC 加密上传 GitHub Release）+ 备份历史列表 + 单条详情轮询 + `BackupRecord` 表 + `BACKUP_CONFLICT(3001)` 互斥
+- **v4.1.0**（2026-06-19）— 重构优化落地（A1/B1/B2/D 重构项）
 - **v4.0.0**（2026-06-18）— **日志体系**（SLF4J/Logback + traceId + 文件滚动 30 天 + 3GB 上限，dev/prod 分离，prod 关 CONSOLE 防 systemd 双写绕过预算）+ **IP 限流封禁**（10 次/秒 + 30 分钟封禁，Redis 计数 + DB 持久化 + admin 后台手动解封 + 应用重启回灌）+ 动态 favicon + 加密数据迁移链路（`sqlite-export.sh` AES-256-CBC + PBKDF2 100k → `sqlite-import.sh` 解密导入，publish-release / deploy-server 通过 `EXPORT_DB` / `IMPORT_DB` 外置开关集成）
 - **v2.7.0**（2026-06-17）— 前端改全静态（`nuxt generate` + nginx serve），1C2G 省 150-250MB 内存 + 公开页 SEO 预渲染 + 每日凌晨 3 点 cron `rebuild-static.sh` rebuild
 - **v2.6.0**（2026-06-17）— dev/prod 默认改 SQLite（一文件 0 内存），MySQL 降级可选 profile（`spring.profiles.active=*,mysql`）+ 业务 SQL 跨方言统一（38 处）+ 端到端 29 端点验证脚本
@@ -46,17 +49,28 @@ my-blog/
 │   │   ├── sqlite-export.sh           # 加密导出 dev db（AES-256-CBC + PBKDF2 100k，产出 .sql.gz.enc）
 │   │   ├── sqlite-import.sh           # 解密导入到目标 db（错密码不碰目标 db）
 │   │   ├── rebuild-static.sh          # 每日 cron 重建前端静态文件
-│   │   └── verify-sqlite.sh           # 端到点验证脚本（v2.6.0 29 端点；v4.0.0 已扩到 60 端点）
+│   │   ├── verify-sqlite.sh           # 端到点验证脚本（v4.0.0 起 60+ 端点）
+│   │   ├── blog-backup.sh             # 数据备份脚本（加密 + 上传 GitHub Release）
+│   │   ├── blog-restore.sh            # 数据恢复脚本（systemd-run --scope，即发即忘）
+│   │   ├── deploy-server.env.example  # deploy env 模板
+│   │   ├── deploy.env                 # deploy env（不入库）
+│   │   └── sudoers-myblog-restore.example  # 恢复 sudoers 白名单
 │   ├── sql/                           # 数据库脚本（v2.6.0 整合后 2 个 schema）
-│   │   ├── schema-mysql.sql           # MySQL 完整 schema + seed data（12 张表）
-│   │   └── schema-sqlite.sql          # SQLite 完整 schema + seed data（dev/prod 默认，12 张表）
+│   │   ├── schema-mysql.sql           # MySQL 完整 schema + seed data（13 张表）
+│   │   └── schema-sqlite.sql          # SQLite 完整 schema + seed data（dev/prod 默认，14 张表）
 │   ├── docker/                        # 历史 docker-compose（v2.5 之前用，v2.6+ 不再推荐）
 │   ├── nginx/                         # Nginx 反向代理配置（nginx.conf / nginx-https.conf）
 │   ├── 设计文档/                      # 设计方案
 │   │   ├── 博客系统设计方案.md
 │   │   ├── IP限流封禁方案设计.md       # v4.0.0 IP 限流封禁方案
-│   │   └── 服务日志体系设计.md         # v4.0.0 日志体系需求 + 设计
-│   ├── changelogs/                    # 版本变更记录（v2.0.0 → v4.0.0）
+│   │   ├── 服务日志体系设计.md         # v4.0.0 日志体系需求 + 设计
+│   │   ├── 服务日志体系设计_可行性分析.md
+│   │   ├── 博客数据备份方案设计.md     # v4.2.0 数据备份方案
+│   │   ├── 博客数据恢复方案设计.md     # v4.3.0 数据恢复方案
+│   │   └── 重构优化方案_2026-06-20.md  # v4.1.0 重构优化
+│   ├── 数据备份操作手册.md            # v4.2.0 数据备份操作手册
+│   ├── 项目部署操作手册.md            # v4.0.0+ 部署操作手册
+│   ├── changelogs/                    # 版本变更记录（v2.0.0 → v4.2.1）
 │   ├── 接口契约审计报告.md            # API 契约 100% 一致性审计（v4.0.0 快照：13 Controller / 60 端点）
 │   └── 项目部署解决方案.md            # 生产部署方案（VPS 1C2G，无 docker）
 ├── AGENTS.md                          # 项目级 agent 上下文（v4.0.0 同步）
@@ -72,11 +86,16 @@ backend/
 ├── blog-common/                       # 公共组件（所有模块共享）
 │   └── src/main/java/com/blog/common/
 │       ├── Result.java               # 统一响应格式 {code, data, message}
-│       ├── ResultCode.java           # 业务码枚举（200/400/401/403/404/500）
+│       ├── ResultCode.java           # 业务码枚举（200/400/401/403/404/500 + 1xxx/2xxx/3xxx）
 │       ├── BusinessException.java    # 业务异常
-│       ├── GlobalExceptionHandler.java # 全局异常处理
+│       ├── GlobalExceptionHandler.java # 全局异常处理（含 traceId 回写）
 │       ├── PageRequest.java          # 分页请求参数
-│       └── PageResult.java           # 分页响应结构
+│       ├── PageResult.java           # 分页响应结构
+│       ├── TrustedProxyUtil.java     # 反代 IP 解析（X-Forwarded-For）
+│       └── web/
+│           ├── AuthContext.java       # 请求级操作人上下文（uid/deviceId/username）
+│           ├── TraceIdFilter.java     # traceId 注入 Filter（@Order HIGHEST_PRECEDENCE）
+│           └── TraceIdUtil.java       # traceId 工具（withTraceId 统一拼后缀）
 │
 ├── blog-auth/                         # 用户认证 & JWT
 │   └── src/main/java/com/blog/auth/
@@ -97,7 +116,8 @@ backend/
 │       │   └── IpBanMapper.java
 │       ├── service/
 │       │   ├── DeviceService.java     # 设备注册/审批/校验逻辑
-│       │   └── ApiWhitelistService.java # 白名单最长前缀匹配 + 缓存刷新
+│       │   ├── ApiWhitelistService.java # 白名单最长前缀匹配 + 缓存刷新
+│       │   └── IpBanService.java      # IP 封禁查询/解封（v4.0.0）
 │       └── util/
 │           └── JwtUtil.java # JWT 签发/解析（启动时校验 secret 长度）
 │
@@ -116,30 +136,48 @@ backend/
 │       │   ├── TagMapper.java
 │       │   └── PageViewMapper.java    # 走 JdbcTemplate.update 跨方言兼容
 │       ├── service/
+│       │   ├── ArticleService.java    # 文章业务逻辑
 │       │   └── PageViewService.java   # 业务层去重（X-Visitor-Id + UK 双重去重）
-│       └── security/
-│           └── PageViewFilter.java    # 公开页自动写 page_view
+│       ├── security/
+│       │   └── PageViewFilter.java    # 公开页自动写 page_view
+│       └── config/
+│           └── AsyncConfig.java       # 异步线程池配置
 │
 ├── blog-comment/                       # 评论
 │   └── src/main/java/com/blog/comment/
 │       ├── controller/
 │       │   └── CommentController.java # 公开列表 + 审核 + admin 列表
-│       └── entity/
-│           └── Comment.java
+│       ├── entity/
+│       │   └── Comment.java
+│       └── service/
+│           └── CommentService.java    # 评论业务逻辑
 │
-├── blog-settings/                      # 站点设置 & 文件上传
+├── blog-settings/                      # 站点设置 & 文件上传 & 数据备份/恢复
 │   └── src/main/java/com/blog/settings/
 │       ├── controller/
-│   │   ├── SettingsController.java           # admin 读写（8 tab）+ 文件上传
-│   │   ├── UploadController.java             # /admin/uploads 单文件上传（前端实际使用）
+│       │   ├── SettingsController.java           # admin 读写（8 tab）+ 文件上传
+│       │   ├── UploadController.java             # /admin/uploads 单文件上传（前端实际使用）
 │       │   ├── PublicSettingsController.java    # 公开读端点 /public/settings/{section}（匿名可看）
-│       │   └── PublicProfileController.java     # 公开个人资料 /public/profile（前台关于页用）
+│       │   ├── PublicProfileController.java     # 公开个人资料 /public/profile（前台关于页用）
+│       │   ├── BackupController.java            # 数据备份（v4.2.0：触发/列表/详情 + v4.2.1：删除）
+│       │   └── RestoreController.java           # 数据恢复（v4.3.0：触发/列表/详情）
 │       ├── entity/
-│       │   └── SiteSettings.java                 # 站点设置（8 section：blog/social/preferences/theme/advanced + techstack/experience v2.3 新增 + admin profile）
+│       │   ├── SiteSettings.java                 # 站点设置（8 section）
+│       │   ├── BackupRecord.java                 # 备份记录（v4.2.0）
+│       │   └── RestoreRecord.java                # 恢复记录（v4.3.0）
+│       ├── dto/
+│       │   ├── BackupResponse.java               # 备份响应 DTO
+│       │   └── RestoreResponse.java              # 恢复响应 DTO
 │       ├── mapper/
-│       │   └── SiteSettingsMapper.java
-│       └── service/
-│           └── SiteSettingsService.java          # 业务逻辑 + Redis 5min 缓存
+│       │   ├── SiteSettingsMapper.java
+│       │   ├── BackupRecordMapper.java           # v4.2.0
+│       │   └── RestoreRecordMapper.java          # v4.3.0
+│       ├── service/
+│       │   ├── SiteSettingsService.java          # 业务逻辑 + Redis 5min 缓存
+│       │   ├── BackupService.java                # 备份触发/异步执行/删除/GitHub Release 管理
+│       │   └── RestoreService.java               # 恢复触发/异步执行/状态回填
+│       └── config/
+│           └── RestoreStartupReconciler.java     # 启动 + @Scheduled 双轨回填恢复状态
 │
 └── blog-app/ # 启动模块（唯一可执行的 Spring Boot）
     └── src/main/
@@ -148,9 +186,11 @@ backend/
         │   ├── config/
         │   │   ├── CorsConfig.java     # CORS 跨域（读 yml 环境变量）
         │   │   ├── MybatisPlusConfig.java
-        │   │   └── OpenApiConfig.java   # Swagger
+        │   │   ├── OpenApiConfig.java   # Swagger
+        │   │   └── StaticResourceConfig.java # 静态资源映射
         │   ├── security/
-        │   │   └── AdminAuthFilter.java # JWT 每请求鉴权 + 设备白名单校验
+        │   │   ├── AdminAuthFilter.java # JWT 每请求鉴权 + 设备白名单校验
+        │   │   └── IpRateLimitFilter.java # IP 限流封禁（v4.0.0，Redis + DB）
         │   └── controller/
         │       ├── HelloController.java
         │       ├── DashboardController.java # 仪表盘聚合（KPI + 30 天趋势 + 热门）
@@ -181,18 +221,21 @@ frontend/
 │                                          （BUG-001 修复：SSR 阶段跳过 localStorage；v2.7.0 已删 SSR 判断，全静态化后 import.meta.server 恒为 false）
 │
 ├── composables/ # 组合式函数
-│   ├── useApi.ts                      # Axios 封装（统一拦截/错误处理）
+│   ├── useApi.ts                      # $fetch 封装（统一拦截/错误处理）
 │   ├── useAuth.ts                     # 鉴权状态（login/logout/me，v2.7.0 已删 SSR cookie 读取）
-│   ├── useAdminApi.ts                 # admin API 封装
+│   ├── useAdminApi.ts                 # admin API 封装（自动带 Authorization + X-Device-Id）
 │   ├── usePublicApi.ts                # 公开 API 封装（自动加 X-Visitor-Id）
 │   ├── useDialog.ts / useToast.ts     # 替代浏览器原生 alert/confirm/prompt
 │   ├── useDevice.ts                   # 设备指纹
-│   └── useAdminMeta.ts                # Admin meta 标签
+│   ├── useAdminMeta.ts                # Admin meta 标签
+│   ├── useDashboardUtils.ts           # 仪表盘工具函数
+│   ├── useImageUpload.ts              # 图片上传逻辑
+│   └── useVisitor.ts                  # 访客 ID 管理
 │
 ├── components/                        # 公开组件（NavBar / SiteFooter / GlobalDialog / ...）
 ├── plugins/                           # Nuxt 插件（auth.client.ts 等）
 │
-├── pages/ # 13 个页面（5 公开 + 8 admin）
+├── pages/ # 15 个页面（5 公开 + 10 admin）
 │   ├── index.vue                      # 首页（Hero + 文章列表）
 │   ├── post/[slug].vue                # 文章详情（v2.7.0 build 时预渲染）
 │   ├── archives.vue                   # 归档
@@ -208,7 +251,7 @@ frontend/
 │       ├── tags.vue                   # 标签管理
 │       ├── settings.vue               # 个人设置（8 tab：profile/social/preferences/blog/theme/advanced/techstack/experience）
 │       ├── devices.vue                # 设备管理
-│       └── ip-bans.vue                # IP 封禁查看与手动解封（v4.0.0）
+│       └── backup.vue                 # 数据备份（v4.2.0 + v4.2.1 polish）
 │
 ├── scripts/
 │   └── fetch-routes.js                # build 前拉后端所有公开页 slug，生成 .routes.json
@@ -276,7 +319,7 @@ frontend/
                          │  SQLite    │         │    Redis     │
                          │  blog.db   │         │  7.x         │
                          │ (v2.6 默认)│         │  :6379       │
-                         │ 12 张表   │         │ (login限流/IP)│
+                         │ 14 张表  │         │ (login限流/IP)│
                          └────────────┘         └──────────────┘
                                                        │
                                               ┌────────┴────────┐
@@ -294,6 +337,10 @@ frontend/
 - **Filter 链**：TraceIdFilter（`@Order(HIGHEST_PRECEDENCE)`）→ IpRateLimitFilter（`HIGHEST_PRECEDENCE + 1`）→ AdminAuthFilter → 业务 Controller，确保任何被拦截的请求都带 traceId 日志。
 - **日志落盘**：所有请求带 traceId 进 Logback 文件，30 天滚动 3GB 上限，prod 关 CONSOLE 防 systemd 双写绕过预算。
 - **IP 封禁**：触发后写 Redis 标记 + DB 持久化 + 30 分钟自动解封，admin 可手动 `PUT /admin/ip-bans/{id}/unban` 提前解封。
+
+**v4.2.0 关键变化**：
+- **数据备份**：`BackupService` 异步调用 `blog-backup.sh`（`ProcessBuilder` + `systemd-run --scope`），产物加密上传 GitHub Release；`BackupRecord` 表记录状态；`trimOldRecords` 自动保留最近 30 条 SUCCESS。
+- **traceId 全链路**：`TraceIdUtil.withTraceId()` 统一工具类，AdminAuthFilter / IpRateLimitFilter / GlobalExceptionHandler 三处拒绝响应均拼 traceId 后缀，前端 `formatError` 自动展示。
 
 ### 3.3 后端模块依赖关系
 
@@ -328,10 +375,11 @@ blog-app（启动类，唯一可执行 jar）
 | 100x | 文章/分类/标签/评论/用户 not found | 1006 | 凭证错误 |
 | 2001 | 设备未授权 | 2002 | 设备已吊销 |
 | 2003 | 自删/自吊销禁止 | 1007 | Token 无效 |
+| 3001 | 已有 RUNNING 备份任务 | 3002 | 备份进行中，无法删除 |
 
 详见 `docs/接口契约审计报告.md`。
 
-### 3.5 数据库设计（12 张表）
+### 3.5 数据库设计（14 张表）
 
 | 表名 | 说明 | 关键字段 |
 |------|------|----------|
@@ -347,10 +395,12 @@ blog-app（启动类，唯一可执行 jar）
 | `api_whitelist` | API 路由白名单（AdminAuthFilter 用，v2.2 新增） | path_prefix / type (public/admin) / enabled / description |
 | `page_view` | 访问统计（v2.5.0 新增，v2.6.0 业务层去重） | visitor / url / visit_date / ua / ip |
 | `ip_ban` | IP 封禁记录（v4.0.0 新增，限流超阈值时落库 + 手动解封） | ip / expires_at / unbanned / created_at |
+| `backup_record` | 备份记录（v4.2.0 新增，异步备份状态 + GitHub Release tag） | status / tag / started_at / finished_at / error_stage / operator_name |
+| `restore_record` | 恢复记录（v4.3.0 新增，异步恢复状态） | status / source_tag / scope / started_at / finished_at / error_stage |
 
-**SQL 文件**（v2.6.0 整合后，2 个 schema 替代 8 个散文件；v4.0.0 起 12 张表）：
-- `docs/sql/schema-sqlite.sql` — **dev/prod 默认**，12 张表 + seed data
-- `docs/sql/schema-mysql.sql` — MySQL 可选 profile，12 张表 + seed data（按月分区）
+**SQL 文件**（v2.6.0 整合后，2 个 schema 替代 8 个散文件；v4.3.0 起 14 张表）：
+- `docs/sql/schema-sqlite.sql` — **dev/prod 默认**，14 张表 + seed data
+- `docs/sql/schema-mysql.sql` — MySQL 可选 profile，13 张表 + seed data
 
 ### 3.6 配色契约
 
@@ -455,9 +505,9 @@ docker stop blog-redis blog-mysql   # 启了 docker 的才需要
 
 1. **改完模块必须 install**：每次修改 `blog-auth` / `blog-article` 等模块后，必须运行 `mvn -pl blog-xxx -am install -DskipTests`，否则 `mvn spring-boot:run` 不会加载新类（classpath 走 jar 而非 target/classes）
 2. **MySQL 中文 SQL 导入**：用 `--default-character-set=utf8mb4`，不要用 docker exec pipe 写含中文的 SQL 数据（会双重编码，**SQLite 无此问题**）
-3. **SQLite 单写者锁**：Hikari `maximum-pool-size: 1` 必须保持，否则并发写会 SQLITE_BUSY
+3. **SQLite WAL 模式**：v4.0.0 起开 WAL（`journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL`），Hikari `maximum-pool-size` 已放开到 **8**（WAL 下「多读+单写」可并发，`busy_timeout` 让偶发写竞争等待而非立刻 SQLITE_BUSY）
 4. **admin SSR 鉴权**：`frontend/middleware/admin-auth.ts` 已修复 SSR 阶段跳过 localStorage，直接访问 `/admin/*` 不会误踢已登录用户（v2.7.0 全静态化后 `import.meta.server` 恒为 `false`，SSR 判断代码已删）
-5. **端到端验证**：`docs/scripts/verify-sqlite.sh` 跑 29 个端点（含 page_view 业务层去重验证），全过后才算 dev 完成
+5. **端到端验证**：`docs/scripts/verify-sqlite.sh` 跑 60+ 个端点（含 page_view 业务层去重验证、备份/恢复端点），全过后才算 dev 完成
 
 ---
 
@@ -557,6 +607,8 @@ sudo bash /opt/myblog/scripts/deploy-server.sh
 9. 重启服务 + 30 秒健康检查轮询
 10. 输出运维命令清单
 
+> 支持 `DEPLOY_MODE=full|code|data` + `IMPORT_DB=1` 钩子（详见 `AGENTS.md` §5）。
+
 ### 5.4 每日 cron 重建静态（v2.7.0 配套）
 
 新文章发布后最迟 24h 内可见，配套每日凌晨 3 点 cron：
@@ -585,16 +637,17 @@ crontab -e
 ### 5.5 端到端验证
 
 ```bash
-# 在本地（dev 环境）跑 29 端点验证
+# 在本地（dev 环境）跑端到端验证
 bash docs/scripts/verify-sqlite.sh
 
-# 期望输出："✅ 全部 29 个端点通过"
+# 期望输出："✅ 全部 XX 个端点通过"
 # 包含：
-#   - 12 个公开端点（健康、文章、分类、标签、归档、评论、设置、设备检查）
-#   - 11 个 admin 端点（鉴权 + 仪表盘 + 各管理模块）
-#   - 4 个写操作端点（更新 profile、page_view 写入/去重）
-#   - 1 个业务层去重验证（X-Visitor-Id 同访客连刷 5 次 → DB +1 行）
-#   - 1 个 page_view 业务层去重（同 visitor 5 次 → 1 行）
+#   - 公开端点（健康、文章、分类、标签、归档、评论、设置、设备检查）
+#   - admin 端点（鉴权 + 仪表盘 + 各管理模块）
+#   - 写操作端点（更新 profile、page_view 写入/去重）
+#   - 数据备份端点（触发/列表/详情/删除）
+#   - 数据恢复端点（触发/列表/详情）
+#   - 业务层去重验证（X-Visitor-Id 同访客连刷 5 次 → DB +1 行）
 ```
 
 ### 5.6 生产环境配置
@@ -669,20 +722,25 @@ scp /tmp/migration.sql.gz.enc myblog@<ecs-ip>:/tmp/
 # 3. 生产端解密 + 导入（交互式输一次密码；错密码不碰目标 db）
 ssh myblog@<ecs-ip> "sudo bash /opt/myblog/scripts/sqlite-import.sh /opt/myblog/db/blog.db /tmp/migration.sql.gz.enc"
 
-# ============ 生产部署（v2.6.0 起）============
+# ============ 生产部署（v2.6.0 起，v4.0.0+ DEPLOY_MODE）============
 # 上传 jar + schema + 脚本到 ECS
 scp backend/blog-app/target/blog-app.jar myblog@<ecs-ip>:/tmp/
 scp docs/sql/schema-sqlite.sql myblog@<ecs-ip>:/tmp/
 scp docs/scripts/deploy-server.sh myblog@<ecs-ip>:/tmp/
 
-# ECS 上一键部署
-sudo bash /opt/myblog/scripts/deploy-server.sh
+# ECS 一键部署（v4.0.0 起标准方式）
+sudo DEPLOY_MODE=full bash /opt/myblog/scripts/deploy-server.sh
+# DEPLOY_MODE=full|code|data + IMPORT_DB=1 钩子
 
 # 每日 cron rebuild（v2.7.0 配套）
 0 3 * * * bash /opt/myblog/scripts/rebuild-static.sh
 
-# ============ 数据库备份（SQLite）============
-# 在线热备份（不锁库）
+# ============ 数据备份（v4.2.0 起）============
+# 触发加密备份（admin 后台 UI 或 SSH）
+# UI：admin → 系统 → 数据备份 → 立即备份
+# SSH：sudo -E bash /opt/myblog/scripts/blog-backup.sh
+
+# ============ 数据库热备份（SQLite）============
 sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%M%S).db"
 ```
 
@@ -702,39 +760,41 @@ sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%
 
 | 文档 | 说明                                         |
 |------|--------------------------------------------|
-| [`docs/设计文档/博客系统设计方案.md`](docs/设计文档/博客系统设计方案.md) | 完整需求与架构设计（v3.1，含 v2.6.0/v2.7.0 变更记录）       |
+| [`docs/设计文档/博客系统设计方案.md`](docs/设计文档/博客系统设计方案.md) | 完整需求与架构设计（v3.1，含 v2.6.0/v2.7.0/v4.0.0 变更记录）       |
 | [`docs/项目部署解决方案.md`](docs/项目部署解决方案.md) | 部署解决方案（VPS 1C2G，无 docker，v4.0.0 配套） |
 | [`docs/项目部署操作手册.md`](docs/项目部署操作手册.md) | 部署操作手册（v4.0.0+ 一步步操作）              |
-| [`docs/接口契约审计报告.md`](docs/接口契约审计报告.md) | API 契约 100% 一致性审计（v4.0.0 快照：13 Controller / 60 端点） |
+| [`docs/接口契约审计报告.md`](docs/接口契约审计报告.md) | API 契约 100% 一致性审计（v4.0.0 快照：13 Controller / 60 端点，v4.2.0+ 新增备份/恢复端点待补） |
+| [`docs/数据备份操作手册.md`](docs/数据备份操作手册.md) | 数据备份操作手册（v4.2.0+ 配置/触发/恢复）      |
+| [`docs/设计文档/博客数据备份方案设计.md`](docs/设计文档/博客数据备份方案设计.md) | 数据备份方案设计（v4.2.0 已实现）                |
+| [`docs/设计文档/博客数据恢复方案设计.md`](docs/设计文档/博客数据恢复方案设计.md) | 数据恢复方案设计（v4.3.0 已实现）               |
 | [`docs/设计文档/IP限流封禁方案设计.md`](docs/设计文档/IP限流封禁方案设计.md) | IP 限流封禁方案（v4.0.0 已实现）                |
 | [`docs/设计文档/服务日志体系设计.md`](docs/设计文档/服务日志体系设计.md) | 服务日志体系设计（v4.0.0 已实现）               |
-| [`docs/changelogs/`](docs/changelogs/) | 版本变更记录（v2.0.0 → v4.0.0，每个版本独立 md）          |
-| [`AGENTS.md`](AGENTS.md) | 项目级 agent 上下文（v4.0.0 同步更新）                 |
-| [`docs/changelogs/2026-06-17-v2.6.0-sqlite-migration.md`](docs/changelogs/2026-06-17-v2.6.0-sqlite-migration.md) | v2.6.0 SQLite 改造完整 changelog               |
-| [`docs/changelogs/2026-06-17-v2.7.0-nuxt-static.md`](docs/changelogs/2026-06-17-v2.7.0-nuxt-static.md) | v2.7.0 全静态化完整 changelog                    |
+| [`docs/设计文档/重构优化方案_2026-06-20.md`](docs/设计文档/重构优化方案_2026-06-20.md) | 重构优化方案（v4.1.0 已实现）                   |
+| [`docs/changelogs/`](docs/changelogs/) | 版本变更记录（v2.0.0 → v4.2.1，每个版本独立 md）          |
+| [`AGENTS.md`](AGENTS.md) | 项目级 agent 上下文（v4.2.0 同步更新）                 |
 
 ---
 
 ## 七、暂未实现（后续规划）
 
-### 7.1 已完成（v2.6.0 / v2.7.0 落地）
+### 7.1 已完成
 
 - ✅ **数据导入/导出**（v2.6.0 落地 MySQL → SQLite 工具；v4.0.0 替换为 `sqlite-export.sh` / `sqlite-import.sh` 加密链路，AES-256-CBC + PBKDF2 100k）
-- ✅ **自动化单元测试**（v2.6.0 `verify-sqlite.sh` 端到端 29 端点验证脚本）
+- ✅ **自动化单元测试**（v2.6.0 `verify-sqlite.sh` 端到点验证脚本，v4.0.0 起 60+ 端点）
 - ✅ **Flyway / Liquibase 数据库迁移**（v2.6.0 整合到 2 个 schema 文件，等价于"单文件 migration"）
+- ✅ **SQLite WAL 模式 + 并发优化**（v4.0.0：WAL + busy_timeout + pool-size 放开到 8）
+- ✅ **数据备份**（v4.2.0：admin 后台一键加密备份 → GitHub Release + v4.2.1 polish：删除记录 / traceId 全链路）
+- ✅ **数据恢复**（v4.3.0：admin 后台选择备份 → 异步恢复 + 容错轮询 + 启动回填）
 
 ### 7.2 backlog（按优先级）
 
 | 优先级 | 项 | 说明 |
 |---|---|---|
-| 🟡 中 | SQLite 单写者锁缓解 | 当前 Hikari `maximum-pool-size: 1`，5 并发请求会排队；可考虑 WAL 模式 + connection pool 调优 |
 | 🟡 中 | page_view 长期数据清理 | v2.6.0 起无分区（SQLite 不支持），按月清理脚本待加 |
 | 🟡 中 | article.word_count 写时计算 | 写文章时计算并入库，避免 dashboard `computeTotalWordCount` 全表扫描 |
 | 🟡 中 | 评论树形结构 | 按 `parent_id` 递归（当前扁平列表） |
 | 🟡 中 | Redis 缓存层扩展 | 当前仅 `site_settings` 接入 Redis（5min TTL），文章详情/列表/分类/标签缓存待补 |
-| 🟢 低 | Service 层下沉 | 已有 `DeviceService` / `ApiWhitelistService` / `SiteSettingsService` / `PageViewService`，文章/评论/分类 Controller 直调 Mapper 待统一下沉 |
 | 🟢 低 | 图片懒加载 + WebP 转换 | 公开页图片优化 |
-| 🟢 低 | deploy-mysql.sh | 保留 5 容器 docker-compose 方案的部署脚本（用户已明确推迟） |
 | 🟢 低 | GitHub Actions CI/CD | 自动化测试 + 镜像推送（v2.6.0/v2.7.0 部署脚本已就绪，CI 配套待加） |
 | 🟢 低 | rebuild 事件触发 | 从每日 cron 改为写文章时触发（30-60s 延迟） |
 | 🟢 低 | CDN 加速 | 把 `/var/www/blog/` 同步到阿里云 OSS / CDN，国内访问加速 |
