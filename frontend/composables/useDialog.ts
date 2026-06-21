@@ -42,12 +42,17 @@ export const useDialog = () => {
   // SSR 阶段：返回 noop，confirm/prompt 永远返回 confirmed=false
   // dialog 是纯 client 端 UI 状态，SSR 不会有任何使用
   if (import.meta.server) {
+    // 2026-06-21 v4.2.1 polish 修复: 显式标注返回类型 DialogResult
+    // 之前直接返回 { confirmed: false } 让 TS union 推导把 prompt 也缩成 { confirmed: boolean },
+    // 调用方 `const { value } = await $dialog.prompt(...)` 报 TS2339 "value 不存在"
+    // 一次性把所有页面的 dialog prompt TS 错误连带修掉(MarkdownEditor.vue 等历史错)
+    const noopResult: DialogResult = { confirmed: false }
     return {
       state: ref({ open: false, title: '', message: '' }),
       handleConfirm: () => {},
       handleCancel: () => {},
-      confirm: async () => ({ confirmed: false }),
-      prompt: async () => ({ confirmed: false })
+      confirm: async (): Promise<DialogResult> => noopResult,
+      prompt: async (): Promise<DialogResult> => noopResult
     }
   }
   // 单例状态：所有页面共享一个 dialog 状态

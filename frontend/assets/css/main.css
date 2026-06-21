@@ -198,7 +198,14 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
 .table { width: 100%; border-collapse: collapse; }
 .table th, .table td { padding: 12px 16px; text-align: left; font-size: 14px; }
 .table thead { background: var(--bg-soft); }
-.table th { font-weight: 500; color: var(--text-2); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.table th {
+  font-weight: 500; color: var(--text-2); font-size: 12px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  /* 2026-06-21 v4.2.1 polish: 表头之间分隔符 ——
+     last-child 不加边线收尾;用 --line-soft 与现有 tr border-top 视觉统一 */
+  border-right: 1px solid var(--line-soft);
+}
+.table th:last-child { border-right: none; }
 .table tbody tr { border-top: 1px solid var(--line-soft); transition: background 0.15s; }
 .table tbody tr:hover { background: var(--bg-soft); }
 
