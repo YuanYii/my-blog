@@ -242,9 +242,11 @@ if [ "${EXPORT_DB:-0}" = "1" ]; then
         #    FORCE_EXPORT=1 让 export 跳过"非交互拒绝"门,密码必须操作员手输
         # page_view 不再用 --exclude 整表剔除（那会连 CREATE TABLE 一起丢，IMPORT_DB=1
         # 销毁式重建后应用读 page_view 的后台仪表盘 no such table 500）。
-        # 改由 sqlite-export.sh 的 CLEAR_DATA_TABLES 处理：保留表结构、只清数据(同 admin_device)。
+        # 改由 sqlite-export.sh 的 --clear-tables 显式清空(保留表结构、只清数据)。
+        # 2026-06-21:这是发布链路(IMPORT_DB=1 触发)→ 全量部署场景必须清,显式传参
         FORCE_EXPORT=1 bash "$ROOT_DIR/docs/scripts/sqlite-export.sh" \
             "$ROOT_DIR/backend/blog.db" \
+            --clear-tables=admin_device,page_view \
             -o "$DUMP_FILE" 2> >(sed 's/^/    /' >&2)
         EXPORT_RC=$?
 

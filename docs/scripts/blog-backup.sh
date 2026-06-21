@@ -38,7 +38,7 @@
 # 可选环境变量:
 #   BACKUP_STAGE_DIR             明文中转目录(默认 /tmp/blog-backup-stage)
 #   INSTALL_DIR                  部署根(默认 /opt/myblog)
-#   SQLITE_PATH                  db 路径(默认 /opt/myblog/blog.db)
+#   SQLITE_PATH                  db 路径(默认 /opt/myblog/db/blog.db, 跟 myblog.env 对齐)
 #   UPLOAD_DIR                   上传目录(默认 /opt/myblog/uploads)
 #   SKIP_UPLOADS=1               跳过 uploads(只备份 db)
 #   SKIP_DB=1                    跳过 db(只备份 uploads)
@@ -54,6 +54,7 @@
 #   14 SHA256SUMS 生成失败
 #   15 GitHub release 创建失败
 #   16 GitHub asset 上传失败
+#   17 依赖自装失败(jq 装不上,curl 兜底分支不可用)
 # ============================================================
 
 set -euo pipefail
@@ -62,7 +63,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 不假设脚本必须从 INSTALL_DIR/scripts 跑(开发机调试时可能在 git 仓根)
 INSTALL_DIR="${INSTALL_DIR:-/opt/myblog}"
-SQLITE_PATH="${SQLITE_PATH:-$INSTALL_DIR/blog.db}"
+SQLITE_PATH="${SQLITE_PATH:-$INSTALL_DIR/db/blog.db}"
 UPLOAD_DIR="${UPLOAD_DIR:-$INSTALL_DIR/uploads}"
 STAGE_DIR="${BACKUP_STAGE_DIR:-/tmp/blog-backup-stage}"
 SCRIPT_DIR_LOCAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -133,7 +134,10 @@ if [[ "${SKIP_UPLOADS:-0}" != "1" && ! -d "$UPLOAD_DIR" ]]; then
     SKIP_UPLOADS=1
 fi
 
-# 校验 gh CLI / curl
+# 校验 gh CLI / curl / jq
+# gh 优先(不需要 jq),curl 兜底(需要 jq 解析 create-release 的 upload_url)
+# 2026-06-21 修 STEP-UPLOAD 422：myblog-sim 容器没装 jq,curl -d 收到空 body 导致 GitHub 报
+#   "links/0/schema, nil is not an object"。此处自装 jq,装不上再报错退出(退出码 17)
 if [[ "${DRY_RUN:-0}" != "1" ]]; then
     if command -v gh >/dev/null 2>&1; then
         USE_GH=1
@@ -141,6 +145,29 @@ if [[ "${DRY_RUN:-0}" != "1" ]]; then
     elif command -v curl >/dev/null 2>&1; then
         USE_GH=0
         info "未检测到 gh CLI,fallback 到 curl + GitHub REST API"
+        # curl 兜底分支额外需要 jq(解析 create release 响应用)
+        if ! command -v jq >/dev/null 2>&1; then
+            info "jq 未安装,尝试自动安装"
+            if command -v apt-get >/dev/null 2>&1; then
+                DEBIAN_FRONTEND=noninteractive apt-get update -qq \
+                    && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq jq \
+                    || { err "apt-get install jq 失败"; exit 17; }
+            elif command -v apk >/dev/null 2>&1; then
+                apk add --no-cache jq \
+                    || { err "apk add jq 失败"; exit 17; }
+            elif command -v dnf >/dev/null 2>&1; then
+                dnf install -y jq \
+                    || { err "dnf install jq 失败"; exit 17; }
+            elif command -v yum >/dev/null 2>&1; then
+                yum install -y jq \
+                    || { err "yum install jq 失败"; exit 17; }
+            else
+                err "未找到 apt/apk/dnf/yum 任一包管理器,无法自动安装 jq(请手动装 jq 后重跑)"
+                exit 17
+            fi
+            command -v jq >/dev/null 2>&1 || { err "jq 自装后仍不可用"; exit 17; }
+            info "jq 已安装: $(jq --version)"
+        fi
     else
         err "gh 和 curl 都没装,无法上传"
         exit 10
@@ -220,7 +247,7 @@ if [[ "${SKIP_DB:-0}" != "1" ]]; then
     fi
     if ! FORCE_EXPORT=1 \
          BACKUP_ENCRYPTION_PASSWORD="$BACKUP_ENCRYPTION_PASSWORD" \
-         bash "$SQLITE_EXPORT_SH" -o "$DB_ENC_FILE" "${EXTRA_ARGS[@]}" \
+         bash "$SQLITE_EXPORT_SH" "$SQLITE_PATH" -o "$DB_ENC_FILE" "${EXTRA_ARGS[@]}" \
             >> "$STAGE_DIR/db-export.log" 2>&1; then
         err "sqlite-export.sh 失败,日志:"
         cat "$STAGE_DIR/db-export.log" >&2

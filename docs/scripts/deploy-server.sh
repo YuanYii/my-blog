@@ -284,37 +284,22 @@ if [ "$LOCAL_SIM" != "1" ]; then
     chown myblog:myblog "$INSTALL_DIR/blog-app.jar"
 fi
 
-# 第一次跑:seed 数据
-# 判据:"DB 不存在" OR "DB 是空的(一张表都没有)"——后者是 2026-06-18 真实踩过的坑
-#   场景:ECS 上有残留 /opt/myblog/blog.db(0 KB 或无表), 脚本原版会"DB 已存在, 跳过", 
-#   但应用一启动就报 no such table: api_whitelist
-# 用 sqlite_master 查:哪怕只有 1 张表, 也算"有数据"(多半是 admin_device 之类的), 就跳过
-DB_HAS_TABLES=$(sqlite3 "$DB_FILE" "SELECT COUNT(*) FROM sqlite_master WHERE type='table';" 2>/dev/null || echo "0")
-if [ ! -f "$DB_FILE" ] || [ "${DB_HAS_TABLES:-0}" = "0" ]; then
-    if [ ! -f "$DB_FILE" ]; then
-        info "First deploy, initializing SQLite ($DB_FILE) ..."
-    else
-        warn "DB file exists but has no tables ($DB_FILE) -- usually a leftover from a previous interrupted/failed deploy"
-        warn "  auto-seeding schema to fix"
-        # 备份空壳, 再灌
-        cp "$DB_FILE" "$INSTALL_DIR/db/backups/blog-empty-$(date +%Y%m%d-%H%M%S).db"
-    fi
-    cp "$TMP_DIR/schema-sqlite.sql" "$INSTALL_DIR/schema-sqlite.sql"
-    if [ "$LOCAL_SIM" != "1" ]; then
-        chown myblog:myblog "$INSTALL_DIR/schema-sqlite.sql"
-    fi
-    # schema-sqlite.sql 里本身就有 INSERT 语句, 直接用 sqlite3 灌入
-    sqlite3 "$DB_FILE" < "$INSTALL_DIR/schema-sqlite.sql"
-    if [ "$LOCAL_SIM" != "1" ]; then
-        chown myblog:myblog "$DB_FILE"
-    fi
-    info "[OK] SQLite initialized (admin/123456)"
-else
-    info "DB exists with $DB_HAS_TABLES tables ($DB_FILE), skipping schema import"
-    # 备份当前库
-    cp "$DB_FILE" "$INSTALL_DIR/db/backups/blog-$(date +%Y%m%d-%H%M%S).db"
-    info "Backed up current DB"
+# 全量部署:备份旧 DB → 删除 → 用 schema-sqlite.sql 重建（干净的全新库）
+# schema-sqlite.sql 包含建表 DDL + 种子数据(admin/123456)
+if [ -f "$DB_FILE" ]; then
+    cp "$DB_FILE" "$INSTALL_DIR/db/backups/blog-before-${TAG}-$(date +%Y%m%d-%H%M%S).db"
+    info "Backed up existing DB before full deploy"
+    rm -f "$DB_FILE"
 fi
+cp "$TMP_DIR/schema-sqlite.sql" "$INSTALL_DIR/schema-sqlite.sql"
+if [ "$LOCAL_SIM" != "1" ]; then
+    chown myblog:myblog "$INSTALL_DIR/schema-sqlite.sql"
+fi
+sqlite3 "$DB_FILE" < "$INSTALL_DIR/schema-sqlite.sql"
+if [ "$LOCAL_SIM" != "1" ]; then
+    chown myblog:myblog "$DB_FILE"
+fi
+info "[OK] SQLite initialized from schema (full deploy)"
 
 # ============= 6. 部署前端静态文件 =============
 info "=== 6. Deploying frontend static files ==="
@@ -349,11 +334,15 @@ spring:
   profiles:
     active: prod
   datasource:
-    url: jdbc:sqlite:$DB_FILE
+    # 2026-06-21 v4.0.1 后:加 WAL + busy_timeout + synchronous=NORMAL(对齐 jar 内 application-prod.yml)
+    # 历史 bug:本步写裸 URL,导致 prod PRAGMA journal_mode=delete + busy_timeout=0 + pool-size=1
+    #          → page_view 异步写持 PENDING 锁时,backup 进程 .schema 拿 SHARED 被拒
+    #          → "database is locked" 反复出现。改后单写多读并发 + 锁竞争自动等。
+    url: jdbc:sqlite:$DB_FILE?journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL
     driver-class-name: org.sqlite.JDBC
     hikari:
-      # v2.6.0:SQLite 单写者锁
-      maximum-pool-size: 1
+      # v4.0.1:开 WAL + busy_timeout 后连接池才可安全 >1,1 会让 page_view 写串行排队阻塞首页读
+      maximum-pool-size: 8
   redis:
     host: 127.0.0.1
     port: 6379
@@ -616,13 +605,14 @@ if [ "$IMPORT_DB" = "1" ]; then
             err "Data import failed (wrong password, y/N cancel, or corrupted file), exit code $IMPORT_RC"
         fi
         info "[OK] Data import complete"
-        
-        # data 模式:服务已经在跑(没重启过),导入完直接探活
-        # full/code 模式:下一步要 systemctl restart,会自动加载新数据
-        if [ "$DEPLOY_MODE" = "data" ]; then
-            info "DEPLOY_MODE=data, not restarting service (data updated, effective on next API call)"
-            info "  (db file rebuilt by sqlite-import.sh, service process holds old db fd)"
-            info "  (to apply immediately: systemctl restart myblog)"
+
+        # sqlite-import.sh 删除旧 DB 文件并重建,app 进程持有的 fd 指向已删除的 inode
+        # 必须重启 app 让它重新打开新 DB 文件并刷新缓存
+        info "Restarting app to pick up imported DB..."
+        if [ "$LOCAL_SIM" = "1" ]; then
+            supervisorctl restart myblog
+        elif systemctl is-active --quiet myblog 2>/dev/null; then
+            systemctl restart myblog
         fi
     fi
 fi

@@ -6,11 +6,15 @@
 # 用途:跨环境数据迁移(防止传输过程中泄露)
 #
 # 用法:
-#   bash docs/scripts/sqlite-export.sh                           # 默认导出 backend/blog.db
+#   bash docs/scripts/sqlite-export.sh                           # 默认导出 backend/blog.db(项目根)
+#   SQLITE_PATH=/opt/myblog/db/blog.db bash ...                  # 通过 env 指定 db 路径(v4.2.1+)
 #   bash docs/scripts/sqlite-export.sh /path/to/blog.db          # 指定源 db
 #   bash docs/scripts/sqlite-export.sh --exclude page_view       # 排除指定表(逗号分隔)
 #   bash docs/scripts/sqlite-export.sh -o /tmp/blog-2026.sql.gz.enc  # 指定输出文件
 #   bash docs/scripts/sqlite-export.sh --no-data                 # 只导 schema 不导数据(仍加密)
+#   bash docs/scripts/sqlite-export.sh --clear-tables=admin_device,page_view
+#                                # 显式清空指定表的数据(保留 schema)
+#                                # 默认**不**清空任何表(数据备份场景需保留全量数据)
 #
 # 算法:openssl AES-256-CBC + PBKDF2 100k 迭代 + salt
 # 跨平台:macOS LibreSSL / Linux OpenSSL 3.x / Alpine busybox openssl 都支持
@@ -114,20 +118,28 @@ secure_rm() {
 }
 
 # ---- 参数解析 ----
-DB_PATH="backend/blog.db"
+# 默认 db 路径优先级:SQLITE_PATH env > 位置参数 > 旧默认 backend/blog.db
+# 2026-06-21 v4.2.1 修复:blog-backup.sh 调用时如果漏传位置参数,会 fallback 到
+# 旧默认 backend/blog.db(项目根下的开发机路径),与 INSTALL_DIR 部署(/opt/myblog/db/blog.db)对不上。
+# 加 env 兜底,让上游 blog-backup.sh / 运维脚本可以更直接地传路径。
+DB_PATH="${SQLITE_PATH:-backend/blog.db}"
 OUTPUT=""
 EXCLUDE_TABLES=""
 DATA_ONLY=false
 SCHEMA_ONLY=false
 
 # ---- 强制清空的表(保留 schema,但不导出数据)----
-# admin_device 是设备授权白名单表,含设备指纹/IP 等敏感信息,
-# 导出/迁移时一律清空数据,避免随备份文件泄露。
-# page_view 是公开页访问统计日志:写入量最大、纯环境本地数据,且含 ip/user_agent/referer 等 PII。
-# 必须用 CLEAR_DATA_TABLES(保留建表语句、只清数据)而非 --exclude(连 CREATE TABLE 一起剔除)——
+# 2026-06-21 v4.x.x 行为变更:默认**不**清空任何表,数据备份场景需保留全量数据。
+# 需要清空的调用方(全量部署 publish-release.sh / deploy-server.sh 的 IMPORT_DB 链路)
+# 显式传 --clear-tables=admin_device,page_view。
+#
+# 语义说明:
+#   - admin_device: 设备授权白名单,含设备指纹/IP 等敏感信息
+#   - page_view: 公开页访问统计日志,含 ip/user_agent/referer 等 PII
+# 必须用 --clear-tables(保留建表语句、只清数据)而非 --exclude(连 CREATE TABLE 一起剔除)——
 # 应用的 PageViewFilter 写库、DashboardController(今日 PV/UV、趋势、热门 TOP10)读库都依赖此表存在,
 # 表结构必须随 dump 发布,否则 IMPORT_DB=1 重建后后台仪表盘 no such table: page_view 直接 500。
-CLEAR_DATA_TABLES=("admin_device" "page_view")
+CLEAR_DATA_TABLES=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -145,6 +157,23 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-data)
             SCHEMA_ONLY=true
+            shift
+            ;;
+        --clear-tables)
+            # 逗号分隔的表名列表:保留 schema,但不导出这些表的数据(INSERT 段跳过)
+            # 例如: --clear-tables=admin_device,page_view
+            if [[ -z "${2:-}" ]]; then
+                error "--clear-tables requires a value (e.g. --clear-tables=admin_device,page_view)"
+            fi
+            for t in $(echo "$2" | tr ',' ' '); do
+                CLEAR_DATA_TABLES+=("$t")
+            done
+            shift 2
+            ;;
+        --clear-tables=*)
+            for t in $(echo "${1#*=}" | tr ',' ' '); do
+                CLEAR_DATA_TABLES+=("$t")
+            done
             shift
             ;;
         --data-only)
@@ -171,6 +200,24 @@ done
 # ---- 校验 ----
 command -v sqlite3 >/dev/null 2>&1 || error "sqlite3 not installed, install: brew install sqlite"
 command -v openssl >/dev/null 2>&1 || error "openssl not installed"
+
+# ---- sqlite3 包装:统一加 .timeout,避免与生产 SQLite(delete 模式 + busy_timeout=0)撞锁 ----
+# 2026-06-21 BUG 修复:
+#   触发场景:本地 docker 部署下,prod 容器 PRAGMA journal_mode=delete / busy_timeout=0 / pool-size=1
+#            (原因见 deploy-server.sh step 7 仍是 v2.6.0 旧配置),Spring 端 page_view 异步写
+#            持 PENDING 锁时,backup 进程 .schema 拿新 SHARED 锁被拒 → "database is locked"
+#   修复:所有 sqlite3 调用走本函数,内部 .timeout 30000 → SQLITE_BUSY 时等待最多 30s 而非立即报错。
+#   配合 deploy-server.sh 同步打开 WAL+busy_timeout=10000+pool=8 才算根治(治本),本函数是治标
+#   ——即使部署端配置没改,backup 也不会秒炸。
+SQLITE_TIMEOUT_MS="${SQLITE_TIMEOUT_MS:-30000}"
+
+# 用法:sqlite3_with_timeout <db_path> <sql_or_dotcmd...>
+#      sql_or_dotcmd 形如 ".schema api_whitelist" 或 "SELECT 1"
+# 注意:CLI 调用 .timeout 之后,所有同进程后续命令都继承这个超时,直到进程退出。
+sqlite3_with_timeout() {
+    local db_path="$1"; shift
+    sqlite3 "$db_path" ".timeout $SQLITE_TIMEOUT_MS" "$@"
+}
 
 # 解析 db 路径(支持相对路径,相对项目根)
 # 2026-06-18:脚本搬到 docs/scripts/ 后比原 scripts/ 多一层目录,项目根要往上跳两级
@@ -201,7 +248,7 @@ EXCLUDE_ARGS=""
 if [[ -n "$EXCLUDE_TABLES" ]]; then
     # 校验表是否存在
     for tbl in $(echo "$EXCLUDE_TABLES" | tr ',' ' '); do
-        EXISTS=$(sqlite3 "$DB_PATH" "SELECT name FROM sqlite_master WHERE type='table' AND name='$tbl';" 2>/dev/null)
+        EXISTS=$(sqlite3_with_timeout "$DB_PATH" "SELECT name FROM sqlite_master WHERE type='table' AND name='$tbl';" 2>/dev/null)
         if [[ -z "$EXISTS" ]]; then
             warn "Table $tbl does not exist, skipping"
             continue
@@ -211,7 +258,7 @@ if [[ -n "$EXCLUDE_TABLES" ]]; then
 fi
 
 # ---- 收集所有表 ----
-ALL_TABLES=$(sqlite3 "$DB_PATH" ".tables" | tr -s ' ' '\n' | grep -v '^$' | sort)
+ALL_TABLES=$(sqlite3_with_timeout "$DB_PATH" ".tables" | tr -s ' ' '\n' | grep -v '^$' | sort)
 TOTAL_COUNT=$(echo "$ALL_TABLES" | wc -l | tr -d ' ')
 
 info "Source database: $DB_PATH"
@@ -264,10 +311,48 @@ echo "=== Exporting plain SQL to temp file ==="
 } > "$TMP_SQL"
 
 # 2. Schema(过滤 sqlite_sequence,这是 SQLite 内部表不能手动 INSERT)
+# 2026-06-21 v4.2.2 加固:.schema 失败时保留 TMP_SQL + 打最后几行,方便下次出错时定位是哪张表
+# (之前 dump 阶段报 "Error: near 'UNION': syntax error" 无法复现,无现场信息)
+#
+# 2026-06-21 v4.2.2 增强:单张表 dump 加 4 次退避重试(间隔 0/1/2/4s),覆盖偶发 SQLITE_BUSY
+# 即使部署端 journal_mode=delete + busy_timeout=0 (v2.6.0 旧配置),脚本端也能扛过偶发锁竞争。
+# 注意:sqlite3 CLI 进程每次调用都是新进程,需要每次都设 .timeout → 已由 sqlite3_with_timeout 封装。
+schema_dump_failed=0
 for tbl in "${EXPORT_TABLES[@]}"; do
-    sqlite3 "$DB_PATH" ".schema $tbl" | grep -v "CREATE TABLE sqlite_sequence" >> "$TMP_SQL"
+    attempt=0
+    max_attempts=4
+    backoff_seq=(0 1 2 4)  # 第 1 次立即;第 2 次等 1s;第 3 次等 2s;第 4 次等 4s
+    dump_ok=0
+    while [[ $attempt -lt $max_attempts ]]; do
+        sleep_secs="${backoff_seq[$attempt]}"
+        if [[ $sleep_secs -gt 0 ]]; then
+            sleep "$sleep_secs"
+        fi
+        if sqlite3_with_timeout "$DB_PATH" ".schema $tbl" 2>/tmp/.schema-err.$$ | grep -v "CREATE TABLE sqlite_sequence" >> "$TMP_SQL"; then
+            dump_ok=1
+            break
+        fi
+        attempt=$((attempt + 1))
+        err_msg=$(cat /tmp/.schema-err.$$ 2>/dev/null || true)
+        if [[ $attempt -lt $max_attempts ]]; then
+            warn ".schema $tbl 失败 (第 ${attempt}/${max_attempts} 次): ${err_msg:-unknown error}, ${backoff_seq[$attempt]}s 后重试"
+        else
+            warn ".schema $tbl 失败 (第 ${attempt}/${max_attempts} 次,放弃): ${err_msg:-unknown error}"
+        fi
+    done
+    rm -f /tmp/.schema-err.$$
+    if [[ $dump_ok -ne 1 ]]; then
+        # 保留失败时的 dump 现场
+        cp "$TMP_SQL" "${TMP_SQL}.failed" 2>/dev/null || true
+        echo "[FAIL_AT_TABLE=$tbl] $(date +%s) attempts=${attempt}" >> "${TMP_SQL}.failed"
+        schema_dump_failed=1
+        break
+    fi
     echo "" >> "$TMP_SQL"
 done
+if [[ $schema_dump_failed -eq 1 ]]; then
+    error "schema dump 失败,TMP_SQL 保留在 ${TMP_SQL}.failed"
+fi
 
 # 3. 数据(INSERT)
 # [WARN] 不能用 `sqlite3 ... .mode insert $tbl; SELECT *` —— sqlite 3.50+ (2025-05-29 起)
@@ -286,12 +371,16 @@ if [[ "$SCHEMA_ONLY" != "true" ]]; then
     CLEAR_PY=$(printf "'%s'," "${CLEAR_DATA_TABLES[@]}")
     CLEAR_PY="[${CLEAR_PY%,}]"
 
-    python3 - "$DB_PATH" "$EXCLUDE_PY" "$CLEAR_PY" >> "$TMP_SQL" <<'PYEOF'
+    python3 - "$DB_PATH" "$EXCLUDE_PY" "$CLEAR_PY" "$SQLITE_TIMEOUT_MS" >> "$TMP_SQL" <<'PYEOF'
 import sqlite3, sys
 db_path = sys.argv[1]
 tables = eval(sys.argv[2])
 clear_tables = set(eval(sys.argv[3]))
-con = sqlite3.connect(db_path)
+# 2026-06-21 BUG 修复:Python 端 sqlite3.connect 默认 timeout=5s,但生产容器 PRAGMA busy_timeout=0 时
+#   5s 也不够(5s 内可能还在等 page_view 异步写完)。与脚本 CLI 端对齐 SQLITE_TIMEOUT_MS(默认 30s)。
+#   治本仍是部署端开 WAL + busy_timeout=10000;治标是这里手动覆盖 timeout。
+timeout_ms = int(sys.argv[4])
+con = sqlite3.connect(db_path, timeout=timeout_ms / 1000.0)
 for tbl in tables:
     if tbl in clear_tables:
         print(f'-- === data: {tbl} (cleared: device authorization table, data excluded from export) ===')
@@ -396,7 +485,11 @@ info "Encrypted export complete"
 echo "  File:    $OUTPUT"
 echo "  Size:    $FILE_SIZE"
 echo "  Tables:  $EXPORT_COUNT"
-echo "  Cleared: ${CLEAR_DATA_TABLES[*]} (schema only, data excluded)"
+if [[ ${#CLEAR_DATA_TABLES[@]} -gt 0 ]]; then
+    echo "  Cleared: ${CLEAR_DATA_TABLES[*]} (schema only, data excluded)"
+else
+    echo "  Cleared: (none, all tables' data exported)"
+fi
 
 echo -e "${YELLOW}[KEY] REMEMBER THIS PASSWORD! You will need the same password to import on production.${NC}"
 echo -e "${YELLOW}   Lost password = unrecoverable data (that's the point of encryption)${NC}"
