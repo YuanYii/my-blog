@@ -283,7 +283,10 @@ public class RestoreService {
     private String resolveOperatorName(HttpServletRequest request) {
         if (request == null) return null;
         Object uid = AuthContext.uid(request);
-        return uid == null ? null : "uid:" + uid;
+        if (uid == null) return null;
+        // 2026-06-21：操作人显示当前登录用户名(username),无则兜底 "uid:"+uid
+        String username = AuthContext.username(request);
+        return (username != null && !username.isEmpty()) ? username : "uid:" + uid;
     }
 
     private RestoreResponse toResponse(RestoreRecord r) {
