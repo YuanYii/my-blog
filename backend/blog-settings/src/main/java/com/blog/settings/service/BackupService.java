@@ -9,6 +9,7 @@ import com.blog.common.web.AuthContext;
 import com.blog.settings.dto.BackupResponse;
 import com.blog.settings.entity.BackupRecord;
 import com.blog.settings.mapper.BackupRecordMapper;
+import com.blog.settings.mapper.RestoreRecordMapper;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -62,6 +63,7 @@ import java.util.concurrent.TimeUnit;
 public class BackupService {
 
     private final BackupRecordMapper backupRecordMapper;
+    private final RestoreRecordMapper restoreRecordMapper;
     private final ObjectMapper objectMapper;
 
     /**
@@ -146,10 +148,15 @@ public class BackupService {
         }
 
         // 2. 并发控制：已有 RUNNING 任务?
-        int running = backupRecordMapper.countRunning();
-        if (running > 0) {
-            log.warn("备份触发拒绝: 已有 RUNNING 中的备份任务,operator={}", AuthContext.uid(request));
-            throw new BusinessException(ResultCode.BACKUP_CONFLICT);
+        // v4.3.0 (REQ-RESTORE-2026-06-20): 双向互斥, restore 进行中也不能触发备份
+        // 否则恢复期间覆盖 db 时, 备份会读到半截 db
+        int runningBackup = backupRecordMapper.countRunning();
+        int runningRestore = restoreRecordMapper.countRunning();
+        if (runningBackup > 0 || runningRestore > 0) {
+            log.warn("备份触发拒绝: 有正在执行的任务 (backup={}, restore={}), operator={}",
+                runningBackup, runningRestore, AuthContext.uid(request));
+            throw new BusinessException(ResultCode.BACKUP_CONFLICT,
+                "已有正在执行的任务 (备份或恢复),请等待完成后再试");
         }
 
         // 3. 创建 PENDING 记录
@@ -165,7 +172,19 @@ public class BackupService {
             }
         }
         record.setOperatorName(resolveOperatorName(request));
-        backupRecordMapper.insert(record);
+        try {
+            // v4.3.2: partial unique index uk_backup_record_running 兜底 TOCTOU 窗口
+            backupRecordMapper.insert(record);
+        } catch (Exception e) {
+            String msg = e.getMessage() == null ? "" : e.getMessage();
+            if (msg.contains("UNIQUE constraint failed") && msg.contains("uk_backup_record_running")) {
+                log.warn("备份触发拒绝 (DB 唯一索引兜底): concurrent backup detected, operator={}",
+                        AuthContext.uid(request));
+                throw new BusinessException(ResultCode.BACKUP_CONFLICT,
+                    "已有正在执行的任务 (备份或恢复),请等待完成后再试");
+            }
+            throw e;
+        }
 
         log.info("备份任务创建: id={} operator_id={} operator_name={}",
                 record.getId(), record.getOperatorId(), record.getOperatorName());

@@ -212,7 +212,9 @@ CREATE TABLE IF NOT EXISTS backup_record (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   tag             VARCHAR(64),                            -- GitHub Release tag（SUCCESS 才有）
   status          VARCHAR(16) NOT NULL,                   -- PENDING/RUNNING/SUCCESS/FAILED
-  started_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  started_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,  -- v4.3.2: 保留 DEFAULT (历史遗留)
+                                                              -- BackupService.triggerBackup 显式 setStartedAt 兜底填北京时间,
+                                                              -- DEFAULT 是冗余兜底 — 新表 (如 restore_record) 建议不要 DEFAULT
   finished_at     DATETIME,
   db_size         BIGINT       DEFAULT 0,                 -- db dump 加密后大小
   uploads_size    BIGINT       DEFAULT 0,                 -- uploads tar 加密后大小
@@ -226,6 +228,39 @@ CREATE TABLE IF NOT EXISTS backup_record (
 );
 CREATE INDEX IF NOT EXISTS idx_backup_record_started_at ON backup_record(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_backup_record_status ON backup_record(status);
+-- v4.3.2 (REQ-RESTORE-2026-06-20): 双向并发互斥的数据库兜底
+-- 任意时刻只允许一条 backup_record.status='RUNNING' (单进程 countRunning() + insert 之间有 TOCTOU 窗口)
+-- SQLite partial unique index 在写入层强保证, 第二次 INSERT 会直接抛 UNIQUE constraint failed
+-- Java 侧捕获这个异常转 BusinessException(BACKUP_CONFLICT)
+CREATE UNIQUE INDEX IF NOT EXISTS uk_backup_record_running ON backup_record(status) WHERE status = 'RUNNING';
+
+-- ----------------------------------------------------
+-- 12. restore_record 数据恢复记录（v4.3.0，REQ-RESTORE-2026-06-20）
+-- ----------------------------------------------------
+-- 状态机：PENDING → RUNNING → SUCCESS / FAILED / UNKNOWN
+-- UNKNOWN 给"启动回填发现孤儿但磁盘没 result.json"用
+-- 配套：RestoreRecord / RestoreRecordMapper / RestoreService / RestoreStartupReconciler / RestoreController
+-- 2026-06-21：时间由 Java（MyBatis-Plus MetaObjectHandler，北京时间）填充，
+-- 不用 DEFAULT CURRENT_TIMESTAMP（SQLite 该默认值永远写 UTC）。
+-- Java 侧 RestoreService.triggerRestore 显式 record.setStartedAt(LocalDateTime.now()) 兜底。
+CREATE TABLE IF NOT EXISTS restore_record (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  status            VARCHAR(16)  NOT NULL,                  -- PENDING/RUNNING/SUCCESS/FAILED/UNKNOWN
+  source_record_id  BIGINT,                                -- 关联 backup_record.id（哪个备份被恢复）
+  source_tag        VARCHAR(64),                           -- 备份的 GitHub Release tag（崩溃后回填用）
+  scope             VARCHAR(16)  NOT NULL,                  -- DB_ONLY / DB_UPLOADS
+  started_at        DATETIME     NOT NULL,                 -- 由 Java setStartedAt 显式填, 不依赖 SQLite DEFAULT
+  finished_at       DATETIME,
+  error_stage       VARCHAR(32),                           -- 失败阶段 PRECHECK/STOP/DOWNLOAD/SHA256/DECRYPT/IMPORT/UPLOADS/START/HEALTH/VERIFY/ORPHAN/TRAP
+  error_message     TEXT,                                  -- 失败信息（不含密码/secret）
+  verify_diff       TEXT,                                  -- v3 数据完整性校验差异（manifest 行数 vs 实际）
+  operator_id       BIGINT,                                -- 触发人 uid
+  operator_name     VARCHAR(64)                            -- 触发人 username
+);
+CREATE INDEX IF NOT EXISTS idx_restore_record_started_at ON restore_record(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_restore_record_status ON restore_record(status);
+-- v4.3.2 (REQ-RESTORE-2026-06-20): 同上, 双向互斥的数据库兜底
+CREATE UNIQUE INDEX IF NOT EXISTS uk_restore_record_running ON restore_record(status) WHERE status = 'RUNNING';
 CREATE INDEX IF NOT EXISTS idx_page_view_visit_date ON page_view(visit_date);
 
 -- ----------------------------------------------------
