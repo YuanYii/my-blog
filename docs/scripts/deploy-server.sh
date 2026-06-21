@@ -284,6 +284,27 @@ if [ "$LOCAL_SIM" != "1" ]; then
     chown myblog:myblog "$INSTALL_DIR/blog-app.jar"
 fi
 
+# ---- schema 增量兜底:在删旧 DB 之前补齐生产历史库的列 ----
+# 2026-06-21 v4.2.0 引入:Commit 5 把 step 5 改成"删旧 DB → 全量重建"后,生产历史 db
+# 缺的新列(如 backup_record.trace_id)再也不会被"DEPLOY_MODE=code 保留 db"路径自动补上。
+# 在删之前跑幂等 ALTER → 旧 db 备份文件(blog-before-{TAG}-*.db)里也带新列,
+# 未来从备份恢复不会缺列。
+#
+# 通用模式(未来加列照抄):
+#   if ! sqlite3 "$DB_FILE" "PRAGMA table_info(表名);" | grep -q "列名"; then
+#       info "Patching 表名: adding 列名 column"
+#       sqlite3 "$DB_FILE" "ALTER TABLE 表名 ADD COLUMN 列名 类型;"
+#   fi
+if [ -f "$DB_FILE" ]; then
+    if ! sqlite3 "$DB_FILE" "PRAGMA table_info(backup_record);" | grep -q trace_id; then
+        info "Patching backup_record: adding trace_id column (v4.2.0)"
+        sqlite3 "$DB_FILE" "ALTER TABLE backup_record ADD COLUMN trace_id VARCHAR(64);" \
+            || err "failed to ALTER TABLE backup_record ADD COLUMN trace_id"
+        # ALTER ADD COLUMN 不会自动建 NOT NULL 默认值的索引(本列允许 NULL,免建)
+        info "[OK] backup_record.trace_id column added"
+    fi
+fi
+
 # 全量部署:备份旧 DB → 删除 → 用 schema-sqlite.sql 重建（干净的全新库）
 # schema-sqlite.sql 包含建表 DDL + 种子数据(admin/123456)
 if [ -f "$DB_FILE" ]; then
