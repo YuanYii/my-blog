@@ -14,6 +14,9 @@ const { user } = useAuth()
 
 const loading = ref(true)
 const kpi = ref<any>({})
+// 2026-06-21：dashboard 待办"数据备份"项需要展示"距上次成功备份 N 天"
+// 后端 DashboardController 新增 lastBackup: { lastBackupAt, lastBackupTag }
+const lastBackup = ref<{ lastBackupAt: string | null; lastBackupTag: string | null } | null>(null)
 const categoryDist = ref<any[]>([])
 const publishTrend = ref<any[]>([])
 const visitTrend = ref<any[]>([])
@@ -37,6 +40,7 @@ const loadAll = async () => {
     visitTrend.value = res.data?.visitTrend || []
     visitTrend7.value = res.data?.visitTrend7 || []
     topArticles.value = res.data?.topArticles || []
+    lastBackup.value = res.data?.lastBackup || null
   } catch {
     kpi.value = {}
   } finally {
@@ -44,6 +48,27 @@ const loadAll = async () => {
   }
   await refreshMeta()
 }
+
+// 2026-06-21：dashboard 待办"数据备份"项计算"距上次成功备份 N 天"
+// lastBackupAt 为 null → "未备份过";否则按 Date.now() - lastBackupAt 算天数
+// ≥7 天标 urgent(深色高亮),<7 天标 success
+const daysSinceLastBackup = computed(() => {
+  if (!lastBackup.value?.lastBackupAt) return null
+  const t = new Date(lastBackup.value.lastBackupAt).getTime()
+  if (isNaN(t)) return null
+  return Math.floor((Date.now() - t) / 86400000)
+})
+
+const lastBackupDateText = computed(() => {
+  if (!lastBackup.value?.lastBackupAt) return null
+  const d = new Date(lastBackup.value.lastBackupAt)
+  if (isNaN(d.getTime())) return null
+  // YYYY-MM-DD,本地时区
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+})
 
 const todos = computed(() => [
   {
@@ -61,11 +86,13 @@ const todos = computed(() => [
     to: '/admin/posts?status=0'
   },
   {
-    type: 'success',
+    type: (daysSinceLastBackup.value === null || daysSinceLastBackup.value >= 7) ? 'urgent' : 'success',
     title: '数据备份',
-    meta: '下次自动备份：明天 03:00',
-    count: '✓',
-    to: '/admin/settings'
+    meta: lastBackup.value?.lastBackupAt
+      ? `上次备份：${lastBackupDateText.value}${daysSinceLastBackup.value! >= 7 ? `（已 ${daysSinceLastBackup.value} 天）` : ''}`
+      : '未备份过',
+    count: (daysSinceLastBackup.value === null || daysSinceLastBackup.value >= 7) ? '!' : '✓',
+    to: '/admin/backup'
   }
 ])
 

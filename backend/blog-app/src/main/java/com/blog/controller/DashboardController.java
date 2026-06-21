@@ -2,6 +2,8 @@ package com.blog.controller;
 
 import com.blog.article.service.PageViewService;
 import com.blog.common.Result;
+import com.blog.settings.entity.BackupRecord;
+import com.blog.settings.mapper.BackupRecordMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +32,8 @@ public class DashboardController {
 
     private final JdbcTemplate jdbc;
     private final PageViewService pageViewService;
+    // 2026-06-21：dashboard 待办"数据备份"项需要显示距上次成功备份的天数
+    private final BackupRecordMapper backupRecordMapper;
 
     @GetMapping
     public Result<Map<String, Object>> dashboard() {
@@ -107,6 +111,22 @@ public class DashboardController {
         todos.put("pendingComments", kpi.get("pendingComments"));
         todos.put("draftArticles", kpi.get("draftArticles"));
         data.put("todos", todos);
+
+        // === 2026-06-21：最近一次 SUCCESS 备份（前端 dashboard 待办用） ===
+        // 没备份过则 lastBackupAt = null，前端展示"未备份过"
+        try {
+            BackupRecord last = backupRecordMapper.selectLatestSuccess();
+            Map<String, Object> lastBackup = new HashMap<>();
+            lastBackup.put("lastBackupAt", last == null ? null : last.getStartedAt());
+            lastBackup.put("lastBackupTag", last == null ? null : last.getTag());
+            data.put("lastBackup", lastBackup);
+        } catch (Exception e) {
+            // 兜底：万一 backup_record 表还没建好,不影响 dashboard 其他字段
+            Map<String, Object> lastBackup = new HashMap<>();
+            lastBackup.put("lastBackupAt", null);
+            lastBackup.put("lastBackupTag", null);
+            data.put("lastBackup", lastBackup);
+        }
 
         return Result.success(data);
     }

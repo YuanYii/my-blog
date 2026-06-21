@@ -23,4 +23,11 @@ public interface BackupRecordMapper extends BaseMapper<BackupRecord> {
      */
     @Select("SELECT COUNT(*) FROM backup_record WHERE status = #{status}")
     int countByStatus(String status);
+
+    /**
+     * 最近一次 SUCCESS 备份记录（用于 dashboard 显示"上次备份时间"）
+     * 2026-06-21 新增：dashboard 待办"数据备份"项需要显示距上次成功备份的天数
+     */
+    @Select("SELECT * FROM backup_record WHERE status = 'SUCCESS' ORDER BY started_at DESC LIMIT 1")
+    BackupRecord selectLatestSuccess();
 }
