@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
@@ -37,6 +38,20 @@ public class ArticleService {
     private final CategoryMapper categoryMapper;
     private final TagMapper tagMapper;
     private final JdbcTemplate jdbc;
+
+    /**
+     * 2026-06-22 v4.x polish：adminList 排序白名单 Map
+     * - key = DB 列名（白名单，只允许这里出现的字段——防 SQL 注入 / ORDER BY 炸裂）
+     * - value = 默认方向（true=asc, false=desc）。调用方 dir=desc 会翻转成 false，否则保持默认
+     * - 加新字段只动这一行,不会"忘了同步到 split(":") 那段"
+     */
+    private static final Map<String, Boolean> ADMIN_SORT_FIELDS = new HashMap<>();
+    static {
+        ADMIN_SORT_FIELDS.put("published_at", false);  // 默认 desc（最新发布在前）
+        ADMIN_SORT_FIELDS.put("view_count", false);    // 默认 desc（最热在前）
+        ADMIN_SORT_FIELDS.put("updated_at", false);    // 默认 desc（最近编辑在前）
+        ADMIN_SORT_FIELDS.put("created_at", false);    // 默认 desc（最新创建在前）
+    }
 
     // ===== 公开接口 =====
 
@@ -73,6 +88,9 @@ public class ArticleService {
     }
 
     public Result<List<Map<String, Object>>> archives() {
+        // 2026-06-22 v4.x polish：.last("LIMIT 1000") 是绕过 MyBatis-Plus 方言处理的硬编码 SQL。
+        //   当前 SQLite / MySQL 都兼容 LIMIT <n>，没问题；
+        //   TODO：未来切 SQL Server（TOP）/ Oracle（ROWNUM <=）时改为方言感知（用 DialectFactory 或在 mapper xml 里写多套）。
         List<Article> list = articleMapper.selectList(
             new QueryWrapper<Article>()
                 .eq("status", 1)
@@ -112,14 +130,17 @@ public class ArticleService {
         if (categoryId != null) qw.eq("category_id", categoryId);
         if (keyword != null && !keyword.isEmpty()) qw.like("title", keyword);
         if (sort != null && !sort.isEmpty()) {
-            String[] parts = sort.split(":");
+            // 2026-06-22 v4.x polish：sort 改用白名单 Map（不再 split(":") 静默吞 :extra）
+            //   格式：field:dir，多余段（:foo:bar）直接拒绝 → 静默走默认排序
+            //   加新字段只需扩 ADMIN_SORT_FIELDS，新增不会忘改两处
+            String[] parts = sort.split(":", 3);
             if (parts.length == 2) {
                 String field = parts[0].trim();
                 String dir = parts[1].trim().toLowerCase();
-                if (("published_at".equals(field) || "view_count".equals(field)
-                        || "updated_at".equals(field) || "created_at".equals(field))
-                    && ("asc".equals(dir) || "desc".equals(dir))) {
-                    qw.orderBy(true, "asc".equals(dir), field);
+                Boolean asc = ADMIN_SORT_FIELDS.get(field);
+                if (asc != null) {
+                    // dir 为 "desc" → false（降序），其他（包括 "asc"）→ 走 Map 预置默认升序
+                    qw.orderBy(true, "desc".equals(dir) ? false : asc, field);
                 }
             }
         } else {
@@ -132,6 +153,14 @@ public class ArticleService {
         return Result.success(PageResult.of(records, p.getTotal(), p.getCurrent(), p.getSize()));
     }
 
+    /**
+     * 创建文章（多步写：articleMapper.insert + 多次 article_tag 插入 → 事务保护）
+     *
+     * 2026-06-22 v4.x polish：原实现缺事务保护——若 insertArticleTagIfNotExists 在
+     * articleMapper.insert 成功之后失败（如并发 UNIQUE 冲突），会产生"文章已入库但标签丢失"
+     * 的孤立数据。加 @Transactional 确保任一步失败整体回滚。
+     */
+    @Transactional
     public Result<Map<String, Object>> create(Article article, HttpServletRequest request) {
         if (article.getTitle() == null || article.getTitle().trim().isEmpty()) {
             throw new BusinessException(400, "标题不能为空");
@@ -193,6 +222,13 @@ public class ArticleService {
         return Result.success(data);
     }
 
+    /**
+     * 更新文章（多步写：articleMapper.updateById + DELETE article_tag + 多次 INSERT 标签 → 事务保护）
+     *
+     * 2026-06-22 v4.x polish：原实现缺事务保护——DELETE FROM article_tag 成功后，
+     * 若后续 INSERT 标签失败，会导致"文章标签全丢"。加 @Transactional 整体回滚。
+     */
+    @Transactional
     public Result<Void> update(Long id, Article article, HttpServletRequest request) {
         Article existing = articleMapper.selectById(id);
         if (existing == null) throw new BusinessException(1001, "文章不存在");
@@ -248,6 +284,13 @@ public class ArticleService {
         return Result.success();
     }
 
+    /**
+     * 删除文章（多步写：articleMapper.deleteById + DELETE article_tag → 事务保护）
+     *
+     * 2026-06-22 v4.x polish：原实现缺事务保护——articleMapper.deleteById 成功后，
+     * 若后续 DELETE FROM article_tag 失败（如并发锁），会留下"幽灵标签"（指向已删除文章）。
+     */
+    @Transactional
     public Result<Void> delete(Long id, HttpServletRequest request) {
         Article existing = articleMapper.selectById(id);
         if (existing == null) throw new BusinessException(1001, "文章不存在");
@@ -414,13 +457,20 @@ public class ArticleService {
 
     /**
      * 业务层去重插入 article_tag（替代 INSERT IGNORE，跨 SQLite/MySQL）。
+     *
+     * 2026-06-22 v4.x polish：原"先 SELECT COUNT 再 INSERT"模式有 TOCTOU 竞态——
+     * 两请求同时过 COUNT=0 都会尝试 INSERT，第二个撞 UK 约束抛异常未 catch，
+     * 直接 500 给前端。改用 INSERT + catch DataIntegrityViolationException 兜底：
+     * - 单条 INSERT 比 COUNT+INSERT 少一次 round-trip
+     * - catch 异常让并发场景幂等（重复就是吞掉）
+     * - 跨方言一致（SQLite UNIQUE constraint failed / MySQL Duplicate entry 都包在 Spring 统一异常里）
      */
     private void insertArticleTagIfNotExists(Long articleId, Long tagId) {
-        Integer exists = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM article_tag WHERE article_id = ? AND tag_id = ?",
-                Integer.class, articleId, tagId);
-        if (exists == null || exists == 0) {
+        try {
             jdbc.update("INSERT INTO article_tag (article_id, tag_id) VALUES (?, ?)", articleId, tagId);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            // 已存在：幂等吞掉（外层 @Transactional 不会回滚,单条 INSERT 失败不影响其他 tag）
+            log.debug("article_tag 已存在(幂等忽略): article_id={} tag_id={}", articleId, tagId);
         }
     }
 
@@ -432,7 +482,11 @@ public class ArticleService {
         m.put("summary", a.getSummary());
         m.put("coverUrl", a.getCoverUrl());
         m.put("status", a.getStatus());
-        m.put("viewCount", a.getViewCount());
+        // 2026-06-22 v4.x polish：viewCount null 兜底为 0——
+        //   Article.viewCount 是 Integer（可空包装类），任何绕过 create() setViewCount(0) 的路径
+        //   都可能让前端拿到 null（NaN 渲染/JSON 反序列化异常）。
+        //   currentPwd 本质是"+1 累加"的初值兜底——见 detail() / detailById()。
+        m.put("viewCount", a.getViewCount() == null ? 0 : a.getViewCount());
         m.put("categoryId", a.getCategoryId());
         m.put("publishedAt", a.getPublishedAt());
         m.put("createdAt", a.getCreatedAt());
