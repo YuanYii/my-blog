@@ -203,16 +203,18 @@ download() {
 
 # 优先下冷部署包, 没的话就单个下
 BUNDLE="deploy-bundle-${TAG}.zip"
-if curl -fsSL -o "$BUNDLE" "$BASE_URL/$BUNDLE" 2>/dev/null; then
+# 2026-06-22 修复:BUNDLE / SHA256SUMS 必须下到 TMP_DIR 里,否则 sha256sum -c 找不到文件会全 FAIL
+#   原代码下到当前目录,但 sha256sum -c 在 TMP_DIR 跑,导致"沉默失败"(warn continue 掩盖了真错)
+if curl -fsSL -o "$TMP_DIR/$BUNDLE" "$BASE_URL/$BUNDLE" 2>/dev/null; then
     info "Got cold-deployment package $BUNDLE, verifying sha256..."
-    curl -fsSL -o SHA256SUMS "$BASE_URL/SHA256SUMS" 2>/dev/null || warn "No SHA256SUMS, skipping verification"
-    if [ -f SHA256SUMS ]; then
+    curl -fsSL -o "$TMP_DIR/SHA256SUMS" "$BASE_URL/SHA256SUMS" 2>/dev/null || warn "No SHA256SUMS, skipping verification"
+    if [ -f "$TMP_DIR/SHA256SUMS" ]; then
         if command -v sha256sum >/dev/null; then
-            (cd "$TMP_DIR" && sha256sum -c SHA256SUMS) || warn "sha256 verification failed, continuing"
+            (cd "$TMP_DIR" && sha256sum -c SHA256SUMS) || err "sha256 verification failed (refusing to deploy corrupted bundle)"
         fi
     fi
     info "Extracting $BUNDLE ..."
-    unzip -qo "$BUNDLE"
+    (cd "$TMP_DIR" && unzip -qo "$BUNDLE")
 else
     warn "No cold-deployment package, downloading files individually"
     download "blog-app.jar"
@@ -248,12 +250,78 @@ else
     warn "blog-backup.sh not in release (v4.2.0+ data backup feature will not work)"
 fi
 
+# ============= 4.5 启动 Redis（提前：让 §5 stop_app / flush_redis 有 redis 可用）=============
+# 2026-06-22 改动：原本在 §10 启动 Redis,但 §5 stop_app 之前需要 flush_redis,
+#   要求 redis 已起. 故把 enable+restart 提前到 §4.5 (download 之后).
+#   §10 保留为"验证 redis 在线"的兜底（idempotent, 多启动一次无害）.
+info "=== 4.5 Starting Redis ==="
+if [ "$LOCAL_SIM" = "1" ]; then
+    supervisorctl restart redis
+else
+    systemctl enable redis-server 2>/dev/null || systemctl enable redis 2>/dev/null || true
+    systemctl restart redis-server 2>/dev/null || systemctl restart redis 2>/dev/null || true
+fi
+
+# ============= 4.6 flush_redis 函数定义 =============
+# 每次重启 myblog 之前清空 redis 缓存, 避免:
+#   - 旧版本写入的 key schema 与新代码不兼容（序列化格式/字段名变更）
+#   - 旧 prod 数据残留（限流计数器 / token 黑名单 / 配置缓存）与导入的新 db 不一致
+#   - schema 改了字段名 / 类型后, 旧 cache value 反序列化报错
+# 规则:
+#   - FLUSH_REDIS=1 (默认) → 执行 FLUSHDB
+#   - FLUSH_REDIS=0 → 跳过 (用户显式要求保留缓存, 比如只想 reload 代码不动数据)
+#   - redis-cli 不存在 / redis ping 不通 → warn + skip, 不致命 (脚本不应被辅助步骤打断)
+#   - REDIS_PASSWORD 从 env_file 读, 读不到用 fallback 无密码 (对齐 §7.5 默认值)
+FLUSH_REDIS="${FLUSH_REDIS:-1}"
+
+flush_redis() {
+    if [ "$FLUSH_REDIS" != "1" ]; then
+        info "  FLUSH_REDIS=0, skipping redis flush (cache preserved across restart)"
+        return 0
+    fi
+    if ! command -v redis-cli >/dev/null 2>&1; then
+        warn "  redis-cli not found, skipping redis flush (install redis-tools to enable)"
+        return 0
+    fi
+
+    # 从 env_file 拿 REDIS_* 配置, 不存在用 fallback (127.0.0.1:6379 无密码, 对齐 §7.5 默认值)
+    # [FIX] 2026-06-22 dryrun 撞墙:§4.6 在 §7.5 之前被调用,ENV_FILE 此时未定义 → set -u 触发 unbound variable
+    # 修法:用 ${ENV_FILE:-} 兜底
+    local host="127.0.0.1"
+    local port="6379"
+    local pass=""
+    if [ -n "${ENV_FILE:-}" ] && [ -f "$ENV_FILE" ]; then
+        # 用 . 拿而不是 source, 避免 env_file 里 set -e 干扰 / 副作用
+        pass=$(. "$ENV_FILE" 2>/dev/null && echo "${REDIS_PASSWORD:-}")
+        # host/port 在 env_file 里也是写死的 127.0.0.1:6379, 这里尊重 env_file 的设置但兜底
+        host=$(. "$ENV_FILE" 2>/dev/null && echo "${REDIS_HOST:-$host}")
+        port=$(. "$ENV_FILE" 2>/dev/null && echo "${REDIS_PORT:-$port}")
+    fi
+
+    # 先 PING 验证连通性 (连接失败 / auth 错都不会致命 flush, 只 warn)
+    if ! redis-cli -h "$host" -p "$port" ${pass:+-a "$pass"} PING >/dev/null 2>&1; then
+        warn "  redis at $host:$port not reachable, skipping flush"
+        return 0
+    fi
+
+    # FLUSHDB 清当前 db (默认 db 0), 不用 FLUSHALL (会清掉所有 db, 风险大)
+    if redis-cli -h "$host" -p "$port" ${pass:+-a "$pass"} FLUSHDB >/dev/null 2>&1; then
+        info "  [OK] redis cache flushed ($host:$port, db=${REDIS_DB:-0})"
+    else
+        warn "  redis FLUSHDB failed (non-fatal), service may start with stale cache"
+        return 0
+    fi
+}
+
 # ============= 5. 部署 jar / schema / 应用配置 =============
 if [ "$DEPLOY_MODE" = "data" ]; then
     info "=== 5. Deploying jar / schema / app config ==="
     info "    DEPLOY_MODE=data, skipping jar/schema/frontend/app config (db only)"
 else
     info "=== 5. Deploying backend jar ==="
+# 2026-06-22 新增:stop_app 之前清空 redis,避免旧版本写入的 cache (限流计数/token 黑名单/配置缓存)
+#   与新版本 jar 不兼容 (key schema/序列化格式/字段名变更 等). flush_redis 自身有 redis-cli/连通性检测,失败非致命.
+flush_redis
 stop_app() {
     if [ "$LOCAL_SIM" = "1" ]; then
         # 容器内：supervisord 管 myblog，stop 由 supervisorctl 负责（§8 后做）
@@ -488,6 +556,8 @@ EOF
     info "  generated: $SUPERVISOR_CONF"
     
     # 3) 让 supervisord 重新读取配置 + 拉起 myblog
+    # 2026-06-22 新增:restart 前 flush redis,确保新进程从干净缓存启动（详见 §4.6 函数定义）
+    flush_redis
     supervisorctl reread
     supervisorctl update myblog
     supervisorctl restart myblog
@@ -523,6 +593,8 @@ WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
     systemctl enable myblog
+    # 2026-06-22 新增:restart 前 flush redis,确保新进程从干净缓存启动（详见 §4.6 函数定义）
+    flush_redis
     systemctl restart myblog
     info "[OK] systemd service configured and started"
 fi
@@ -604,6 +676,9 @@ if [ "$IMPORT_DB" = "1" ]; then
         # sqlite-import.sh 删除旧 DB 文件并重建,app 进程持有的 fd 指向已删除的 inode
         # 必须重启 app 让它重新打开新 DB 文件并刷新缓存
         info "Restarting app to pick up imported DB..."
+        # 2026-06-22 新增:IMPORT_DB 把 dev 数据灌进来,旧的 redis 缓存(限流/token/配置)与新 db 不一致,
+        #   必须 flush 后重启,否则新进程从脏缓存启动会拿到与 db 错位的状态
+        flush_redis
         if [ "$LOCAL_SIM" = "1" ]; then
             supervisorctl restart myblog
         elif systemctl is-active --quiet myblog 2>/dev/null; then
@@ -623,18 +698,33 @@ if [ "$DEPLOY_MODE" = "data" ]; then
 else
     info "=== 9. Configuring nginx ==="
 NGINX_CONF="/etc/nginx/conf.d/myblog.conf"
-cat > "$NGINX_CONF" <<EOF
+# 2026-06-22 [FIX] 用 'EOF' (带引号) 禁止 bash 变量展开,避免 set -u 下 \$http_host 等 nginx 变量被当作 bash 变量求值触发 unbound variable
+# nginx 占位符 NGINX_PORT / NGINX_ROOT / NGINX_UPLOADS / NGINX_APP_PORT 在写完后做替换
+cat > "$NGINX_CONF" <<'NGINX_EOF'
 server {
-    listen       $PUBLIC_PORT default_server;
+    listen       NGINX_PORT default_server;
     server_name  _;
 
     # 前端静态文件(v2.7.0 全静态)
-    root         $INSTALL_DIR/frontend;
+    root         NGINX_ROOT/frontend;
     index        index.html;
-    try_files    \$uri \$uri/ /200.html;
+    try_files    $uri $uri/ /200.html;
 
     # Nuxt 生成的 SPA fallback
     location = /200.html { add_header Cache-Control "no-cache"; }
+
+    # 2026-06-22 修复 BUG：上传文件 404
+    # 原配置没 /uploads/ 段,nginx 把 /uploads/2026/06/xxx.png 走到 root $INSTALL_DIR/frontend/ 下找
+    # → open() "/opt/myblog/frontend/uploads/2026/06/xxx.png" failed (No such file or directory)
+    # → 404。文件其实写在 $INSTALL_DIR/uploads/ 下。
+    # ^~ 表示"优先最长匹配,不再走正则 location",避免被下面 \.(png|jpg) 抢走或被 /api/ 误命中。
+    # alias 直接指向 uploads 目录,不走 Spring(Spring 的 StaticResourceConfig 走 /api/v1/uploads/,由 /api/ 反代接管)。
+    location ^~ /uploads/ {
+        alias NGINX_UPLOADS/;
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
 
     # 静态资源长缓存
     location ~* \.(js|css|woff2?|ttf|svg|png|jpg|jpeg|gif|ico|webp)$ {
@@ -644,11 +734,18 @@ server {
 
     # 后端 API 反代
     location /api/ {
-        proxy_pass         http://127.0.0.1:$SERVER_PORT;
-        proxy_set_header   Host              \$host;
-        proxy_set_header   X-Real-IP         \$remote_addr;
-        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto \$scheme;
+        proxy_pass         http://127.0.0.1:NGINX_APP_PORT;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        # 2026-06-22 修复 BUG:上传头像/封面后,前端用返回的 url 加载图片报 ERR_CONNECTION_REFUSED
+        #   根因:UploadController 构造绝对 URL 时读 X-Forwarded-Host 头拿外部 host,
+        #   nginx conf 之前没透传,fallback 到 request.getServerName()="localhost"(没端口)→ 浏览器访问 http://localhost/... 默认 80 端口被拒。
+        #   透传 X-Forwarded-Host 后,后端能拿到浏览器实际访问的 host(含端口),拼出正确 URL。
+        #   用 $http_host 而不是 $host:$server_port:前者直接是 HTTP Host 头原值(含端口)，
+        #   后者在"浏览器→非标端口(28000)→nginx:80→后端:8080"两次反代场景下永远是 nginx 自己的 80。
+        proxy_set_header   X-Forwarded-Host  $http_host;
         proxy_read_timeout 60s;
         client_max_body_size 20m;
     }
@@ -658,7 +755,9 @@ server {
     gzip_types text/plain text/css application/javascript application/json image/svg+xml;
     gzip_min_length 1024;
 }
-EOF
+NGINX_EOF
+# bash 变量替换占位符（heredoc 用 'EOF' 禁了 bash 展开,这里手动替换）
+sed -i "s|NGINX_PORT|$PUBLIC_PORT|g; s|NGINX_ROOT|$INSTALL_DIR|g; s|NGINX_UPLOADS|$INSTALL_DIR/uploads|g; s|NGINX_APP_PORT|$SERVER_PORT|g" "$NGINX_CONF"
 
 # 处理可能与本配置冲突的"自带 default_server"
 # Debian/Ubuntu:/etc/nginx/sites-enabled/default(含 listen 80 default_server)
@@ -691,13 +790,18 @@ fi
 info "[OK] nginx configured and started"
 fi  # DEPLOY_MODE != "data" (close step 9 nginx block)
 
-# ============= 10. Redis 启动 =============
-info "=== 10. Starting Redis ==="
-if [ "$LOCAL_SIM" = "1" ]; then
-    supervisorctl restart redis
+# ============= 10. Redis 健康检查（启动已在 §4.5 完成）=============
+# 2026-06-22 改动:redis 启动逻辑提前到 §4.5,确保 §5 stop_app / flush_redis 可用.
+#   本步骤改为"验证 redis 在线"兜底,失败给 warn (不致命,运行时也会暴露).
+info "=== 10. Verifying Redis health ==="
+if command -v redis-cli >/dev/null 2>&1; then
+    if redis-cli -h 127.0.0.1 -p 6379 PING >/dev/null 2>&1; then
+        info "[OK] Redis is up (127.0.0.1:6379)"
+    else
+        warn "Redis ping failed at 127.0.0.1:6379, runtime will fail until redis recovers"
+    fi
 else
-    systemctl enable redis-server 2>/dev/null || systemctl enable redis 2>/dev/null || true
-    systemctl restart redis-server 2>/dev/null || systemctl restart redis 2>/dev/null || true
+    warn "redis-cli not installed, skip redis health check"
 fi
 
 # ============= 11. 等待服务起来 =============

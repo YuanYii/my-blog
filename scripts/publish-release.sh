@@ -26,8 +26,8 @@
 # 用法：
 #   export GITHUB_TOKEN=ghp_xxxxx
 #   export GITHUB_REPO=yourname/your-repo
-#   ./docs/scripts/publish-release.sh                          # 仅代码发版
-#   EXPORT_DB=1 ./docs/scripts/publish-release.sh             # 代码 + 加密数据一起发版
+#   ./scripts/publish-release.sh                          # 仅代码发版
+#   EXPORT_DB=1 ./scripts/publish-release.sh             # 代码 + 加密数据一起发版
 #
 # 行为：
 #   - 不接受传参指定 tag（自动）
@@ -39,9 +39,9 @@
 set -euo pipefail
 
 # ============= 0. 准备 =============
-# 2026-06-18：脚本搬到 docs/scripts/ 后比原 scripts/ 多一层目录，项目根要往上跳两级
+# 2026-06-22:脚本从 docs/scripts/ 搬到 scripts/,从脚本目录到项目根跳一级
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
 # 颜色
@@ -50,27 +50,42 @@ info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
-# 尝试加载 docs/scripts/deploy.env（本地运维用，gitignored）
+# 尝试加载 scripts/deploy.env（本地运维用，gitignored）
 # 使用 set -a 让变量自动 export
+# 2026-06-22 修复:命令行 export 优先于 deploy.env 文件值。
+#   原行为:set -a + source deploy.env 会无条件覆盖命令行 export,
+#   导致 EXPORT_DB=1 ./publish-release.sh 静默被 deploy.env 里的 EXPORT_DB=0 吞掉。
+#   修法:snapshot 命令行已设置的 4 个开关(EXPORT_DB / IMPORT_DB / DEPLOY_MODE / ENABLE_HTTPS),
+#   source 完成后再 restore,保证命令行值胜出。
 if [ -f "$SCRIPT_DIR/deploy.env" ]; then
     info "加载 $SCRIPT_DIR/deploy.env"
+    _CMDLINE_EXPORT_DB="${EXPORT_DB:-}"
+    _CMDLINE_IMPORT_DB="${IMPORT_DB:-}"
+    _CMDLINE_DEPLOY_MODE="${DEPLOY_MODE:-}"
+    _CMDLINE_ENABLE_HTTPS="${ENABLE_HTTPS:-}"
     set -a
     # shellcheck disable=SC1091
     source "$SCRIPT_DIR/deploy.env"
     set +a
+    # restore 命令行值(只覆盖这 4 个开关,其他变量照常从文件读)
+    [ -n "$_CMDLINE_EXPORT_DB" ] && EXPORT_DB="$_CMDLINE_EXPORT_DB"
+    [ -n "$_CMDLINE_IMPORT_DB" ] && IMPORT_DB="$_CMDLINE_IMPORT_DB"
+    [ -n "$_CMDLINE_DEPLOY_MODE" ] && DEPLOY_MODE="$_CMDLINE_DEPLOY_MODE"
+    [ -n "$_CMDLINE_ENABLE_HTTPS" ] && ENABLE_HTTPS="$_CMDLINE_ENABLE_HTTPS"
+    unset _CMDLINE_EXPORT_DB _CMDLINE_IMPORT_DB _CMDLINE_DEPLOY_MODE _CMDLINE_ENABLE_HTTPS
 fi
 
 # 校验环境变量
 if [ -z "${GITHUB_TOKEN:-}" ]; then
     err "GITHUB_TOKEN 未设置。3 种配置方式（任选一种）："
-    err "  1. cp docs/scripts/deploy.env.example docs/scripts/deploy.env，编辑后重跑"
+    err "  1. cp scripts/deploy.env.example scripts/deploy.env，编辑后重跑"
     err "  2. export GITHUB_TOKEN=ghp_xxx 后重跑"
-    err "  3. 临时一次性：GITHUB_TOKEN=ghp_xxx ./docs/scripts/publish-release.sh"
+    err "  3. 临时一次性：GITHUB_TOKEN=ghp_xxx ./scripts/publish-release.sh"
     exit 1
 fi
 if [ -z "${GITHUB_REPO:-}" ]; then
     err "GITHUB_REPO 未设置。export GITHUB_REPO=owner/repo 后重试"
-    err "  （参考 docs/scripts/deploy.env.example）"
+    err "  （参考 scripts/deploy.env.example）"
     exit 1
 fi
 
@@ -105,12 +120,25 @@ ALL_RELEASES=$(curl -s -H "Authorization: token $GITHUB_TOKEN" -H "Accept: appli
 
 MAX_PATCH=$(echo "$ALL_RELEASES" | python3 -c "
 import sys, json, re
+raw = sys.stdin.read()
 try:
-    rels = json.load(sys.stdin)
-except Exception:
-    rels = []
+    rels = json.loads(raw)
+except Exception as e:
+    print('__API_ERR__:JSON 解析失败: ' + str(e))
+    sys.exit(0)
+# GitHub 错误时返回 {\"message\":..., \"status\":401/404} dict
+# 这种情况一定有 'message' 字段 → 把真实错误信号暴露给 bash, 别静默吞
+if isinstance(rels, dict):
+    msg = rels.get('message') or 'GitHub 返回 dict 但无 message 字段'
+    print('__API_ERR__:' + str(msg))
+    sys.exit(0)
+if not isinstance(rels, list):
+    print('__API_ERR__:GitHub 返回顶层不是 list (type=' + type(rels).__name__ + ')')
+    sys.exit(0)
 patches = []
 for r in rels:
+    if not isinstance(r, dict):
+        continue
     t = (r.get('tag_name') or '')
     m = re.match(r'^v(\d+)\.(\d+)\.(\d+)$', t)
     if not m:
@@ -128,6 +156,11 @@ else:
 if [ -z "$MAX_PATCH" ]; then
     err "GitHub release 列表拉取/解析失败（python 输出空）"
     err "  请检查 \$GITHUB_TOKEN / \$GITHUB_REPO 是否正确，网络是否可达 api.github.com"
+    exit 1
+fi
+if [[ "$MAX_PATCH" == __API_ERR__:* ]]; then
+    err "GitHub API 报错: ${MAX_PATCH#__API_ERR__:}"
+    err "  请检查 \$GITHUB_TOKEN 是否有效（401=失效/权限不足，404=仓库不存在）"
     exit 1
 fi
 NEW_PATCH=$((MAX_PATCH + 1))
@@ -191,32 +224,33 @@ info "前端静态文件已生成"
 info "=== 4. 打包资源到 staging ==="
 cp "$JAR_PATH"                                 "$STAGE_DIR/assets/blog-app.jar"
 tar -czf "$STAGE_DIR/assets/frontend-static.tar.gz" -C "$STATIC_DIR" .
-cp "$ROOT_DIR/docs/sql/schema-sqlite.sql"      "$STAGE_DIR/assets/schema-sqlite.sql"
+# 2026-06-22 修复:sql/ 已合并到 docs/sql/(v2.6.0 整合)
+cp "$ROOT_DIR/docs/sql/schema-sqlite.sql" "$STAGE_DIR/assets/schema-sqlite.sql"
 
 # deploy-server.sh 是服务器端唯一能拉到的脚本，缺失就强制失败
-if [ ! -f "$ROOT_DIR/docs/scripts/deploy-server.sh" ]; then
-    err "$ROOT_DIR/docs/scripts/deploy-server.sh 不存在，无法发布"
+if [ ! -f "$ROOT_DIR/scripts/deploy-server.sh" ]; then
+    err "$ROOT_DIR/scripts/deploy-server.sh 不存在，无法发布"
     err "  （这是服务器端一键部署脚本，发布包里必须带）"
     exit 1
 fi
-cp "$ROOT_DIR/docs/scripts/deploy-server.sh"   "$STAGE_DIR/assets/deploy-server.sh"
+cp "$ROOT_DIR/scripts/deploy-server.sh"   "$STAGE_DIR/assets/deploy-server.sh"
 
 # sqlite-import.sh 也是服务器端要的(IMPORT_DB=1 时 deploy-server 会调它解密导入)
-if [ ! -f "$ROOT_DIR/docs/scripts/sqlite-import.sh" ]; then
-    err "$ROOT_DIR/docs/scripts/sqlite-import.sh 不存在，无法发布"
+if [ ! -f "$ROOT_DIR/scripts/sqlite-import.sh" ]; then
+    err "$ROOT_DIR/scripts/sqlite-import.sh 不存在，无法发布"
     err "  （deploy-server.sh 在 IMPORT_DB=1 时会调它解密 .enc 导入，发布包里必须带）"
     exit 1
 fi
-cp "$ROOT_DIR/docs/scripts/sqlite-import.sh"   "$STAGE_DIR/assets/sqlite-import.sh"
+cp "$ROOT_DIR/scripts/sqlite-import.sh"   "$STAGE_DIR/assets/sqlite-import.sh"
 chmod +x "$STAGE_DIR/assets/sqlite-import.sh"
 
 # blog-backup.sh v4.2.0 数据备份脚本（admin 后台点"立即备份"时由后端 ProcessBuilder 调）
-if [ ! -f "$ROOT_DIR/docs/scripts/blog-backup.sh" ]; then
-    err "$ROOT_DIR/docs/scripts/blog-backup.sh 不存在，无法发布"
+if [ ! -f "$ROOT_DIR/scripts/blog-backup.sh" ]; then
+    err "$ROOT_DIR/scripts/blog-backup.sh 不存在，无法发布"
     err "  （v4.2.0 admin 后台数据备份功能由后端调此脚本，发布包里必须带）"
     exit 1
 fi
-cp "$ROOT_DIR/docs/scripts/blog-backup.sh"      "$STAGE_DIR/assets/blog-backup.sh"
+cp "$ROOT_DIR/scripts/blog-backup.sh"      "$STAGE_DIR/assets/blog-backup.sh"
 chmod +x "$STAGE_DIR/assets/blog-backup.sh"
 
 # ============= 4.6 数据导出(可选,EXPORT_DB=1 触发)=============
@@ -232,7 +266,7 @@ if [ "${EXPORT_DB:-0}" = "1" ]; then
         # 调 sqlite-export.sh,密码从 stdin 读(交互式 read -s)
         # 用 process substitution 避免 pipe 偷走 stdin（read -s 拿不到密码）
         # page_view 不用 --exclude（会丢表结构），改用 --clear-tables
-        FORCE_EXPORT=1 bash "$ROOT_DIR/docs/scripts/sqlite-export.sh" \
+        FORCE_EXPORT=1 bash "$ROOT_DIR/scripts/sqlite-export.sh" \
             "$ROOT_DIR/backend/blog.db" \
             --clear-tables=admin_device,page_view \
             -o "$DUMP_FILE" 2> >(sed 's/^/    /' >&2)

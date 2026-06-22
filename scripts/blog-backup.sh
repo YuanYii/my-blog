@@ -67,8 +67,7 @@ SQLITE_EXPORT_SH=""
 for candidate in \
     "$INSTALL_DIR/scripts/sqlite-export.sh" \
     "$SCRIPT_DIR/sqlite-export.sh" \
-    "$SCRIPT_DIR/../sqlite-export.sh" \
-    "$SCRIPT_DIR/../../docs/scripts/sqlite-export.sh"; do
+    "$SCRIPT_DIR/../sqlite-export.sh"; do
     if [[ -f "$candidate" ]]; then
         SQLITE_EXPORT_SH="$candidate"
         break
@@ -109,7 +108,7 @@ if [[ "${DRY_RUN:-0}" != "1" ]]; then
     fi
 fi
 if [[ -z "$SQLITE_EXPORT_SH" ]]; then
-    err "找不到 sqlite-export.sh(已查 $INSTALL_DIR/scripts/、$SCRIPT_DIR/、../、../../docs/scripts/)"
+    err "找不到 sqlite-export.sh(已查 $INSTALL_DIR/scripts/、$SCRIPT_DIR/、../)"
     exit 10
 fi
 info "INSTALL_DIR      = $INSTALL_DIR"

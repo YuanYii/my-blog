@@ -6,13 +6,13 @@
 # 用途:跨环境数据迁移(防止传输过程中泄露)
 #
 # 用法:
-#   bash docs/scripts/sqlite-export.sh                           # 默认导出 backend/blog.db(项目根)
-#   SQLITE_PATH=/opt/myblog/db/blog.db bash ...                  # 通过 env 指定 db 路径(v4.2.1+)
-#   bash docs/scripts/sqlite-export.sh /path/to/blog.db          # 指定源 db
-#   bash docs/scripts/sqlite-export.sh --exclude page_view       # 排除指定表(逗号分隔)
-#   bash docs/scripts/sqlite-export.sh -o /tmp/blog-2026.sql.gz.enc  # 指定输出文件
-#   bash docs/scripts/sqlite-export.sh --no-data                 # 只导 schema 不导数据(仍加密)
-#   bash docs/scripts/sqlite-export.sh --clear-tables=admin_device,page_view
+#   bash scripts/sqlite-export.sh                           # 默认导出 backend/blog.db(项目根)
+#   SQLITE_PATH=/opt/myblog/db/blog.db bash ...              # 通过 env 指定 db 路径(v4.2.1+)
+#   bash scripts/sqlite-export.sh /path/to/blog.db          # 指定源 db
+#   bash scripts/sqlite-export.sh --exclude page_view       # 排除指定表(逗号分隔)
+#   bash scripts/sqlite-export.sh -o /tmp/blog-2026.sql.gz.enc  # 指定输出文件
+#   bash scripts/sqlite-export.sh --no-data                 # 只导 schema 不导数据(仍加密)
+#   bash scripts/sqlite-export.sh --clear-tables=admin_device,page_view
 #                                # 显式清空指定表的数据(保留 schema)
 #                                # 默认**不**清空任何表(数据备份场景需保留全量数据)
 #
@@ -20,7 +20,7 @@
 # 跨平台:macOS LibreSSL / Linux OpenSSL 3.x / Alpine busybox openssl 都支持
 #
 # 输出: ./backups/blog-YYYYMMDD-HHMMSS.sql.gz.enc(默认)
-# 导入: bash docs/scripts/sqlite-import.sh /path/to/blog.db ./backups/blog-*.sql.gz.enc
+# 导入: bash scripts/sqlite-import.sh /path/to/blog.db ./backups/blog-*.sql.gz.enc
 # ============================================================
 
 set -e
@@ -211,9 +211,9 @@ sqlite3_with_timeout() {
 }
 
 # 解析 db 路径(支持相对路径,相对项目根)
-# 2026-06-18:脚本搬到 docs/scripts/ 后比原 scripts/ 多一层目录,项目根要往上跳两级
+# 2026-06-22:脚本从 docs/scripts/ 搬到 scripts/,从脚本目录到项目根跳一级
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 if [[ ! "$DB_PATH" = /* ]]; then
     DB_PATH="$PROJECT_ROOT/$DB_PATH"
@@ -474,6 +474,6 @@ echo -e "${YELLOW}   Lost password = unrecoverable data (that's the point of enc
 echo
 echo "Next steps:"
 echo "  # Local import (test)"
-echo "  bash docs/scripts/sqlite-import.sh /tmp/test.db $OUTPUT"
+echo "  bash scripts/sqlite-import.sh /tmp/test.db $OUTPUT"
 echo "  # Publish to GitHub Release (publish-release.sh with EXPORT_DB=1)"
 echo "  # Remote import on production (deploy-server.sh with IMPORT_DB=1)"
