@@ -1,10 +1,8 @@
 <script setup lang="ts">
 /**
- * 数据备份 + 数据恢复页（REQ-BACKUP-2026-06-20 + REQ-BACKUP-POLISH-2026-06-21 + REQ-RESTORE-2026-06-20，v4.2.0 / v4.2.1 / v4.3.0）
+ * 数据备份页（v4.4.0 拆分）
  *
- * 设计依据：
- *  - docs/设计文档/博客数据备份方案设计.md
- *  - docs/设计文档/博客数据恢复方案设计.md
+ * 设计依据：docs/设计文档/博客数据备份方案设计.md
  *
  * 2026-06-21 v4.2.1 polish 整体重写：
  *  - 表格风格对齐 devices.vue（.table-wrap > table.table，去内联 width/scoped style）
@@ -23,13 +21,6 @@
  *  1. 用户点「立即备份」 → 二次确认 Dialog → 调 POST /admin/backup/run
  *  2. 后端立即返回 record id → 前端轮询 GET /admin/backup/{id}（每 2s）
  *  3. 状态从 PENDING → RUNNING → SUCCESS / FAILED
- *
- *  【恢复】（v4.3.0）
- *  1. 用户在列表单选一条 SUCCESS 备份 → 点「数据恢复」按钮
- *  2. 二次确认 Dialog → 选 DB_ONLY / DB_UPLOADS → 调 POST /admin/restore/run
- *  3. 后端建 PENDING + 异步跑 blog-restore.sh（systemd-run --scope, 即发即忘）
- *  4. 前端启动容错轮询（退避重试 2s→30s, 容忍后端停服 1-5 分钟）
- *  5. RestoreStartupReconciler 双轨回填（启动 + @Scheduled 5min）状态进 SUCCESS/FAILED/UNKNOWN
  *
  * 失败信息不含密码/secret（后端已脱敏）
  */
@@ -70,8 +61,8 @@ const triggering = ref(false)
 // 2026-06-21 v4.2.1 polish: 改用 $dialog.confirm(代替 window.confirm),与全站风格一致
 const handleTrigger = async () => {
   if (triggering.value) return
-  if (restorePollingId.value !== null) {
-    $toast.error('恢复进行中,不能触发备份')
+  if (pollingId.value !== null) {
+    $toast.error('备份进行中,不能重复触发')
     return
   }
   const { confirmed } = await $dialog.confirm({
@@ -267,110 +258,7 @@ const handleCopyTraceId = async (traceId: string) => {
   }
 }
 
-// ============= 恢复部分（v4.3.0 新增）=============
-const selectedId = ref<number | null>(null)
-const restoreDialog = ref(false)
-const restoreScope = ref<'DB_ONLY' | 'DB_UPLOADS'>('DB_ONLY')
 
-// 容错轮询 (v4 关键: 容忍后端停服 1-5 分钟)
-const restorePollingId = ref<number | null>(null)
-const restoreTimer = ref<ReturnType<typeof setTimeout> | null>(null)
-const restoreBackoffMs = ref(2000)
-const restoreConsecutiveFailures = ref(0)
-
-const selectedItem = computed(() => list.value.find(x => x.id === selectedId.value) || null)
-
-// 「数据恢复」按钮
-const handleRestore = () => {
-  if (!selectedId.value) {
-    $toast.error('请先选择一条备份')
-    return
-  }
-  if (!selectedItem.value || selectedItem.value.status !== 'SUCCESS') {
-    $toast.error('只能恢复 SUCCESS 状态的备份')
-    return
-  }
-  restoreScope.value = 'DB_ONLY'  // 默认仅 db
-  restoreDialog.value = true
-}
-
-// 确认恢复
-const confirmRestore = async () => {
-  restoreDialog.value = false
-  restoreConsecutiveFailures.value = 0
-  restoreBackoffMs.value = 2000
-  try {
-    const res = await post<any>('/admin/restore/run', {
-      recordId: selectedId.value,
-      scope: restoreScope.value
-    })
-    const id = res?.data?.id
-    if (!id) throw new Error('未返回 record id')
-    $toast.success('恢复任务已创建, 服务将停止约 1-5 分钟, 浏览器可能短暂断线')
-    startRestorePolling(id)
-  } catch (e: any) {
-    $toast.error(formatError(e, '触发失败'))
-  }
-}
-
-// 取消 Dialog（点击遮罩或取消按钮）
-const cancelRestore = () => {
-  restoreDialog.value = false
-}
-
-// 容错轮询（v4 关键: 不复用 startPolling, 接口路径不同）
-const startRestorePolling = (id: number) => {
-  stopRestorePolling()
-  restorePollingId.value = id
-  const tick = async () => {
-    try {
-      const res = await get<any>(`/admin/restore/${id}`)
-      const item = res?.data
-      if (!item) return
-      restoreConsecutiveFailures.value = 0
-      restoreBackoffMs.value = 2000
-      if (item.status === 'SUCCESS' || item.status === 'FAILED' || item.status === 'UNKNOWN') {
-        stopRestorePolling()
-        if (item.status === 'SUCCESS') {
-          $toast.success(`恢复成功: ${item.sourceTag || ''}`)
-        } else if (item.status === 'UNKNOWN') {
-          $toast.warning(`恢复状态未知, 请检查服务端日志: ${item.errorStage || ''}`)
-        } else {
-          $toast.error(`恢复失败: ${item.errorStage || '未知阶段'}`)
-        }
-        // 不刷新 backup list (restore 不影响 backup list)
-      }
-    } catch (e: any) {
-      // 后端停服期间 connection refused, 退避重试
-      restoreConsecutiveFailures.value++
-      restoreBackoffMs.value = Math.min(restoreBackoffMs.value * 2, 30000)
-      // v4.3.2: 30 次失败 = backoff 序列 [2,4,8,16,30,30...,30] 大约 5-15 分钟, 放弃轮询
-      // 设计文档 §7.5 写 "5 分钟", 60 次实际 ~28 分钟 (注释误导, 与"5 分钟"不一致)
-      if (restoreConsecutiveFailures.value > 30) {
-        // 连续失败 > 5-15 分钟 → 放弃轮询, 让用户手动刷新
-        stopRestorePolling()
-        $toast.warning('轮询超时, 请手动刷新页面查看最终状态')
-      }
-    }
-  }
-  // v4.3.2: 不要直接 tick(), 让 schedule 自然调度 (第一次 2s 后)
-  // 之前: 先 tick() 再 schedule() → 0s 发一次 + 2s 再发一次 (重复请求, 无害但语义不对)
-  // 用 setTimeout 自调度, 不用 setInterval (退避需要动态间隔)
-  const schedule = () => {
-    restoreTimer.value = setTimeout(async () => {
-      await tick()
-      if (restorePollingId.value !== null) schedule()
-    }, restoreBackoffMs.value)
-  }
-  schedule()
-}
-const stopRestorePolling = () => {
-  if (restoreTimer.value) {
-    clearTimeout(restoreTimer.value)
-    restoreTimer.value = null
-  }
-  restorePollingId.value = null
-}
 
 // ============= 工具 =============
 
@@ -437,7 +325,6 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   stopPolling()
-  stopRestorePolling()
 })
 </script>
 
@@ -447,24 +334,17 @@ onBeforeUnmount(() => {
     <div class="page-head">
       <div>
         <h1>数据备份</h1>
-        <p>将生产数据库和上传文件加密后备份到 GitHub 备份仓库, 也可从这里恢复到任意一次备份</p>
+        <p>将生产数据库和上传文件加密后备份到 GitHub 备份仓库</p>
       </div>
       <div style="display: flex; align-items: center; gap: 12px;">
         <button
           @click="handleTrigger"
-          :disabled="triggering || pollingId !== null || restorePollingId !== null"
+          :disabled="triggering || pollingId !== null"
           class="btn-new"
         >
-          <svg v-if="pollingId === null && restorePollingId === null" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+          <svg v-if="pollingId === null" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
           <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spin"><circle cx="12" cy="12" r="10" stroke-dasharray="40 60"/></svg>
           {{ triggering ? '触发中…' : (pollingId !== null ? '备份进行中…' : '立即备份') }}
-        </button>
-        <button
-          @click="handleRestore"
-          :disabled="!selectedId || pollingId !== null || restorePollingId !== null"
-          class="btn"
-        >
-          {{ restorePollingId !== null ? '恢复中…' : '数据恢复' }}
         </button>
       </div>
     </div>
@@ -476,9 +356,8 @@ onBeforeUnmount(() => {
         <div style="font-size: 13px; line-height: 1.6; color: var(--text-soft);">
           备份期间不阻塞服务, SQLite 走 WAL online backup, uploads 走流式 tar 压缩后立即 AES-256-CBC 加密。
           <br/>加密文件会上传到独立的 GitHub 备份仓库(<code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 1px 5px; background: var(--bg); border-radius: 3px;">GITHUB_BACKUP_REPO</code>), 密码从服务器 <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 1px 5px; background: var(--bg); border-radius: 3px;">/etc/myblog/myblog.env</code> 读取。
-          <br/><strong style="color: var(--text);">数据恢复</strong>: 在下方列表单选一条 SUCCESS 备份 → 点「数据恢复」 → 服务将停 1-5 分钟 (覆盖式恢复, 期间浏览器可能短暂断线, 自动恢复后会重新连接)。
           <br/><strong style="color: var(--text);">删除记录</strong>: FAILED 直接确认;SUCCESS 需输入 <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 1px 5px; background: var(--bg); border-radius: 3px;">DELETE</code> 字样(同时删 GitHub Release tag);PENDING/RUNNING 不能删。
-          <br/><strong style="color: var(--text);">同时只能运行 1 个备份或恢复任务</strong>, 避免资源争用。
+          <br/><strong style="color: var(--text);">数据恢复</strong>: 请前往「数据恢复」页面选择备份进行恢复。
         </div>
       </div>
     </div>
@@ -494,7 +373,6 @@ onBeforeUnmount(() => {
       <table class="table">
         <thead>
           <tr>
-            <th style="width: 50px;">选择</th>
             <th style="width: 60px;">ID</th>
             <th style="width: 110px;">状态</th>
             <th>Tag</th>
@@ -508,16 +386,7 @@ onBeforeUnmount(() => {
         </thead>
         <tbody>
           <tr v-for="item in list" :key="item.id"
-              :class="{ 'row-polling': pollingId === item.id, 'row-selected': selectedId === item.id }">
-            <td>
-              <input
-                type="radio"
-                :value="item.id"
-                v-model="selectedId"
-                :disabled="item.status !== 'SUCCESS'"
-                :title="item.status !== 'SUCCESS' ? '只能恢复 SUCCESS 状态的备份' : ''"
-              />
-            </td>
+              :class="{ 'row-polling': pollingId === item.id }">
             <td><code style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">#{{ item.id }}</code></td>
             <td>
               <!--
@@ -653,45 +522,6 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 恢复 Dialog (v4.3.0 新增) -->
-    <div v-if="restoreDialog" class="modal-backdrop" @click.self="cancelRestore">
-      <div class="modal" role="dialog" aria-modal="true" aria-label="数据恢复">
-        <div class="modal-header">
-          <div class="modal-title">数据恢复</div>
-          <button @click="cancelRestore" class="modal-close" aria-label="关闭">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-          </button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label">备份</label>
-            <div class="form-control" style="display: flex; align-items: center; gap: 6px; background: var(--bg-soft); cursor: default;">
-              <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">{{ selectedItem?.tag }}</code>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">恢复范围 *</label>
-            <div style="display: flex; flex-direction: column; gap: 6px;">
-              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 10px; border-radius: 6px;">
-                <input type="radio" v-model="restoreScope" value="DB_ONLY" />
-                <span style="font-size: 13px;">仅恢复数据库</span>
-              </label>
-              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 10px; border-radius: 6px;">
-                <input type="radio" v-model="restoreScope" value="DB_UPLOADS" />
-                <span style="font-size: 13px;">恢复数据库 + 上传文件 (uploads)</span>
-              </label>
-            </div>
-          </div>
-          <div style="color: var(--danger); font-size: 13px; line-height: 1.6; padding: 8px 12px; background: rgba(239, 68, 68, 0.08); border-left: 3px solid var(--danger); border-radius: 4px;">
-            ⚠ 恢复期间服务将停止约 1-5 分钟, 浏览器可能短暂掉线。恢复会自动备份当前 db 到 .bak 文件, 失败可手动回退。
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button @click="cancelRestore" class="btn btn-ghost btn-sm">取消</button>
-          <button @click="confirmRestore" class="btn btn-danger btn-sm">确认恢复</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -720,10 +550,6 @@ onBeforeUnmount(() => {
 }
 .row-polling {
   background: var(--bg-soft);
-}
-.row-selected {
-  background: var(--bg-soft);
-  box-shadow: inset 3px 0 0 var(--accent);
 }
 .status-badge {
   display: inline-flex;
