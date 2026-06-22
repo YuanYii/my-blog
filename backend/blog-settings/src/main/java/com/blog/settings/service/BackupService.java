@@ -240,17 +240,40 @@ public class BackupService {
         // stdout/stderr 合并到一个临时日志文件,便于失败时回看
         File logFile = new File(System.getProperty("java.io.tmpdir"), "blog-backup-" + recordId + ".log");
 
+        // 2026-06-22 v4.x polish：把"跑脚本 + 解析 result"抽到独立方法 runScriptCore，
+        //   外层 try/finally 只负责"无论如何都触发 trimOldRecords"，
+        //   消除原"外层 try { 内层 try { 120 行 } finally }"嵌套——原版缩进乱、可读性差。
+        try {  // 外层只包一行：保证无论 runScriptCore 怎么走（return / 异常）都触发 trimOldRecords
+            runScriptCore(recordId, record, pb, logFile);
+        } finally {
+            // 2026-06-20 修 P2: 无论成功/失败/异常, 都触发清理超期备份
+            // 2026-06-20 修 P0-2: 用 self.trimOldRecords 取代 this.trimOldRecords, @Async 才生效
+            try {
+                self.trimOldRecords();
+            } catch (Exception e) {
+                log.warn("trimOldRecords 调度失败(不阻塞): {}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 备份脚本执行主体（拆出来消嵌套 try）—— 跑进程 → 解析 result → 落库
+     * @param recordId  backup_record.id
+     * @param record    已是 RUNNING 状态的 BackupRecord
+     * @param pb        ProcessBuilder（已配 env + 工作目录，调用方构造好）
+     * @param logFile   进程 stdout/stderr 合并重定向文件
+     */
+    private void runScriptCore(Long recordId, BackupRecord record, ProcessBuilder pb, File logFile) {
         int exitCode;
         String outputTail = "";
-        try {  // 2026-06-20: 外层 try/finally 包 runScriptAsync 主体,无论成功/失败/异常都触发 trimOldRecords
-            try {
+        try {
             pb.redirectErrorStream(true);
             pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile));
 
             Process process = pb.start();
             boolean finished = process.waitFor(backupTimeoutSec, TimeUnit.SECONDS);
             if (!finished) {
-                // 2026-06-20 修 P0-2: SIGKILL 不可被 bash trap 捕获, 明文会残留磁盘。
+                // SIGKILL 不可被 bash trap 捕获, 明文会残留磁盘。
                 // 改为先 SIGTERM(给 trap 跑的机会清明文), 等 5s 还活着才 SIGKILL 兜底。
                 process.destroy();
                 boolean gracefulExit = process.waitFor(5, TimeUnit.SECONDS);
@@ -288,11 +311,9 @@ public class BackupService {
         }
 
         // 成功：解析 .result.json
-        // 2026-06-20 修 P0-1 + P1-1：
-        //   1) 路径用 @Value 注入的 backupStageDir(与 shell STAGE_DIR 一致),不再是 java.io.tmpdir 硬编码
-        //   2) 文件名用 .blog-backup-result.$recordId.json(与 shell RESULT_FILE 对齐)
-        //   3) result 在 STAGE_DIR 之外(STAGE_DIR_PARENT),不再被 trap rm -rf 误删
-        //   4) 读完后立即删 result 文件（不留垃圾）
+        // 路径用 @Value 注入的 backupStageDir(与 shell STAGE_DIR 一致),
+        // 文件名用 .blog-backup-result.$recordId.json(与 shell RESULT_FILE 对齐),
+        // result 在 STAGE_DIR 之外(STAGE_DIR_PARENT),不再被 trap rm -rf 误删
         Path stageDirParent = Paths.get(backupStageDir).getParent();
         if (stageDirParent == null) stageDirParent = Paths.get("/tmp");
         Path resultJson = stageDirParent.resolve(".blog-backup-result." + recordId + ".json");
@@ -312,15 +333,12 @@ public class BackupService {
             record.setAssetCount(result.getAssets() == null ? 0 : result.getAssets().size());
 
             // 拼 asset URL 列表
-            // 2026-06-20 修 P1-3: 旧实现用 /expanded_assets/ 是 GitHub 前端懒加载端点(返 HTML 片段),
-            //   后面拼 /<filename> 是 404。正确路径是 /releases/download/<tag>/<filename>
-            //   详见 GitHub Docs: https://docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases
+            // releaseUrl 形如 https://github.com/owner/repo/releases/tag/<tag>
+            // 单文件下载 URL 形如 https://github.com/owner/repo/releases/download/<tag>/<filename
+            // 替换段从 /releases/tag/ 改为 /releases/download/ 即可
             List<String> urls = new ArrayList<>();
             String releaseUrl = result.getReleaseUrl();
             if (releaseUrl != null && !releaseUrl.isEmpty() && result.getAssets() != null) {
-                // releaseUrl 形如 https://github.com/owner/repo/releases/tag/<tag>
-                // 单文件下载 URL 形如 https://github.com/owner/repo/releases/download/<tag>/<filename>
-                // 替换段从 /releases/tag/ 改为 /releases/download/ 即可
                 String downloadBase = releaseUrl.replace("/releases/tag/", "/releases/download/");
                 for (ResultJson.Asset a : result.getAssets()) {
                     urls.add(downloadBase + "/" + a.getName());
@@ -328,7 +346,7 @@ public class BackupService {
             }
             record.setAssetUrls(objectMapper.writeValueAsString(urls));
 
-            // 2026-06-20 修 P1-4: 读 manifest.json 原文存到 manifest_json 列（之前是死代码）
+            // 读 manifest.json 原文存到 manifest_json 列
             // manifest 在 STAGE_DIR 内,会被 trap 删, 所以读完后**立即**拷成临时字符串
             if (result.getManifestFile() != null && !result.getManifestFile().isEmpty()) {
                 Path manifestPath = Paths.get(result.getManifestFile());
@@ -360,16 +378,6 @@ public class BackupService {
                 Files.deleteIfExists(resultJson);
             } catch (IOException ignored) {
                 // best-effort
-            }
-        }
-        } finally {
-            // 2026-06-20 修 P2: 无论成功/失败/异常, 都触发清理超期备份
-            // (成功/失败都会产生 SUCCESS 记录 → 触发 trimOldRecords)
-            // 2026-06-20 修 P0-2: 用 self.trimOldRecords 取代 this.trimOldRecords, @Async 才生效
-            try {
-                self.trimOldRecords();
-            } catch (Exception e) {
-                log.warn("trimOldRecords 调度失败(不阻塞): {}", e.getMessage());
             }
         }
     }
@@ -432,19 +440,30 @@ public class BackupService {
     /**
      * 删 GitHub Release（best-effort，失败返 false 不抛异常）
      * 优先用 gh CLI（项目内已有），fallback curl + REST API
+     *
+     * 安全（2026-06-22 v4.x polish）：
+     * - token 一律走子进程 env（GITHUB_TOKEN / GH_TOKEN / BACKUP_GITHUB_TOKEN），
+     *   不进 bash -c 命令行参数 → ps aux / /proc/<pid>/cmdline 看不到明文
+     * - curl 走 -H @<(printf ...) 把 header 从 stdin 喂进 curl，避免 -H "Auth..." 字面量
+     * - tag 用 bash 单引号 escape + shell 关键字黑名单校验（防御 tag 内嵌反引号/$() 注入）
      */
     private boolean deleteGitHubRelease(String tag) {
         if (githubToken == null || githubToken.isEmpty()
                 || githubBackupRepo == null || githubBackupRepo.isEmpty()) {
             return false;
         }
+        // tag 防御：拒绝任何含 shell 元字符的 tag（项目内 tag 由 blog-backup.sh 生成，
+        // 格式 blog-YYYY-MM-DD-HHMMSS，理论上不可能含元字符；这层只是 defense in depth）
+        if (!isShellSafe(tag)) {
+            log.warn("GitHub Release 删除拒绝: tag 含 shell 元字符 tag-len={}", tag.length());
+            return false;
+        }
         // 1) 优先 gh CLI
-        // 2026-06-20 v4.2.0: gh CLI 强制读 GH_TOKEN env(我们自己的 BACKUP_GITHUB_TOKEN 它不认),
+        // gh CLI 强制读 GH_TOKEN env(我们自己的 BACKUP_GITHUB_TOKEN 它不认),
         //   透传时把值塞给 GH_TOKEN(只影响这个子进程的 gh 调用,不会泄漏到 Spring 主进程)
         try {
             ProcessBuilder pb = new ProcessBuilder("bash", "-c",
-                "gh release delete '" + tag.replace("'", "'\\''") + "' --repo '" +
-                githubBackupRepo + "' --yes 2>&1");
+                "gh release delete '" + tag + "' --repo '" + githubBackupRepo + "' --yes 2>&1");
             pb.environment().put("GH_TOKEN", githubToken);
             Process p = pb.start();
             boolean finished = p.waitFor(30, TimeUnit.SECONDS);
@@ -456,12 +475,16 @@ public class BackupService {
             // gh 不在或失败,fallback curl
         }
         // 2) fallback curl + REST API
+        // token 通过子进程 env (BACKUP_GITHUB_TOKEN) 注入,curl header 通过 process substitution
+        // 从 stdin 喂进去 → bash 命令行 / ps 看不到 token 字符串
         try {
+            String apiBase = "https://api.github.com/repos/" + githubBackupRepo;
             // 先 GET 拿 release id
             ProcessBuilder getPb = new ProcessBuilder("bash", "-c",
-                "curl -fsS -H 'Authorization: token " + githubToken + "' " +
-                "'https://api.github.com/repos/" + githubBackupRepo + "/releases/tags/" + tag + "' " +
+                "curl -fsS -H @<(printf '%s' \"Authorization: token ${BACKUP_GITHUB_TOKEN}\") " +
+                "'" + apiBase + "/releases/tags/" + tag + "' " +
                 "| python3 -c \"import json,sys;print(json.load(sys.stdin)['id'])\"");
+            getPb.environment().put("BACKUP_GITHUB_TOKEN", githubToken);
             Process get = getPb.start();
             // Java 1.8 兼容：用 BufferedReader 代替 InputStream.readAllBytes()(Java 9+)
             StringBuilder idBuf = new StringBuilder();
@@ -475,8 +498,9 @@ public class BackupService {
             }
             // DELETE release
             ProcessBuilder delPb = new ProcessBuilder("bash", "-c",
-                "curl -fsS -X DELETE -H 'Authorization: token " + githubToken + "' " +
-                "'https://api.github.com/repos/" + githubBackupRepo + "/releases/" + idStr + "'");
+                "curl -fsS -X DELETE -H @<(printf '%s' \"Authorization: token ${BACKUP_GITHUB_TOKEN}\") " +
+                "'" + apiBase + "/releases/" + idStr + "'");
+            delPb.environment().put("BACKUP_GITHUB_TOKEN", githubToken);
             Process del = delPb.start();
             del.getOutputStream().close();
             boolean delOk = del.waitFor(15, TimeUnit.SECONDS) && del.exitValue() == 0;
@@ -486,6 +510,22 @@ public class BackupService {
             log.warn("curl release delete {} 失败: {}", tag, e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * shell 元字符黑名单校验（defense in depth）
+     * 允许：字母 / 数字 / `-` / `_` / `.` / `/`（GitHub tag 通常是 v1.2.3 / blog-2024-01-01-...）
+     * 拒绝：单引号 / 双引号 / 反引号 / $ / \ / ; / & / | / < / > / ( / ) / { / } / 换行 / 空格
+     */
+    private static boolean isShellSafe(String s) {
+        if (s == null || s.isEmpty() || s.length() > 200) return false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            boolean ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '/';
+            if (!ok) return false;
+        }
+        return true;
     }
 
     // ============= 3. 工具方法 ==============
