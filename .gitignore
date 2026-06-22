@@ -128,3 +128,7 @@ backend/tmp/
 backend/blog-app/blog.db
 
 frontend/dist
+
+scripts/deploy.env
+scripts/deploy.env.example
+scripts/deploy-server.env.example
