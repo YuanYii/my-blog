@@ -47,7 +47,7 @@ blog:
     # （封禁记录持久化在 ip_ban 表，admin 后台 GET/PUT /admin/ip-bans 可查看/手动解封）
     ip-rate-limit:
       enabled: true
-      max-requests-per-second: 20
+      max-requests-per-second: 40
       ban-duration-minutes: 30
 
 springdoc:
