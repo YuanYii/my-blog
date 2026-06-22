@@ -9,11 +9,18 @@ const { deviceId, deviceName, syncDeviceId } = useDevice()
 // 2026-06-13 修复（BUG-078）：仅 dev 模式预填默认账密方便本地登录，
 // prod 构建会跳过 → 用户必须手输（防占位凭证泄漏到生产）。
 // 注：import.meta 必须在 <script setup> 里求值（不能放 Vue 模板里 → Vite 编译错）。
+// 2026-06-22 优化：三元表达式在 production build 时字面量 'admin'/'123456'
+// 仍可能被 Terser 保留为占位（特别是 sourcemap 开启时）。改成 if 分支让 minifier
+// 更容易识别为 dead code（dev 分支整段不进入 bundle）。
 const form = reactive({
-  username: import.meta.dev ? 'admin' : '',
-  password: import.meta.dev ? '123456' : ''
+  username: '',
+  password: ''
 })
 const isDev = import.meta.dev
+if (isDev) {
+  form.username = 'admin'
+  form.password = '123456'
+}
 const loading = ref(false)
 const error = ref('')
 const pendingDevice = ref<string>('')  // 待授权设备的友好名（PENDING 2001 时用）
