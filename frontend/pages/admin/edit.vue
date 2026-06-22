@@ -49,6 +49,9 @@ const allTags = ref<any[]>([])
 const selectedTags = ref<number[]>([])
 const viewCount = ref(0)
 const createdAt = ref('')
+// 2026-06-22 修复（BUG-XXX 自动保存误触发）：加载已有文章时刻；
+// watch 内 < 2000ms 内的触发全部忽略（来自 Object.assign 的字段级变更，不是用户输入）。
+const loadedAt = ref<number>(0)
 
 const loadMeta = async () => {
   try {
@@ -76,6 +79,11 @@ const loadArticle = async () => {
     selectedTags.value = Array.isArray(a.tagIds) ? [...a.tagIds] : []
     viewCount.value = a.viewCount || 0
     createdAt.value = a.createdAt || ''
+    // 2026-06-22 修复（BUG-XXX 自动保存误触发）：
+    // 上面的 Object.assign 会逐字段触发 watch，3 秒后自动 save(false) 把原文存一遍——
+    // 用户没编辑就写了一次库。
+    // 解决：标记加载完成时刻；watch 内 < 2000ms 一律跳过（人工编辑最慢也得几百毫秒）。
+    loadedAt.value = Date.now()
   } catch (e: any) {
     $toast.error('加载失败：' + (e?.data?.message || e?.message))
   } finally {
@@ -126,6 +134,9 @@ const handlePreview = () => {
 let saveTimer: any = null
 watch([() => form.title, () => form.contentMd, () => form.summary], () => {
   if (!isEdit.value || !form.id) return
+  // 2026-06-22 修复（BUG-XXX 自动保存误触发）：加载完成后 2 秒内的变更视为
+  // Object.assign 字段级联动，不是用户输入；用户手动改一次最慢也要几百 ms。
+  if (loadedAt.value && Date.now() - loadedAt.value < 2000) return
   saveStatus.value = 'saving'
   clearTimeout(saveTimer)
   saveTimer = setTimeout(() => save(false), 3000)

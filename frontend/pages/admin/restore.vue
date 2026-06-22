@@ -151,11 +151,22 @@ const startRestorePolling = (id: number) => {
   }
   const schedule = () => {
     restoreTimer.value = setTimeout(async () => {
-      await tick()
-      if (restorePollingId.value !== null) schedule()
+      // 2026-06-22 修复（BUG-XXX 恢复页首次轮询延迟 2s）：
+      // 之前 schedule() 是 setTimeout 包 await tick()——首次 schedule() 等 2000ms 才 tick。
+      // 对比 backup.vue 的 startPolling 是先 tick() 再 setInterval，立即执行。
+      // 修：先 await tick() 再 schedule()——首次立即查，后续按 backoff 等待。
+      //   - 行为对齐 backup.vue（用户感知：恢复任务进度立即开始更新）
+      //   - backoff 语义保留（连续失败后下次拉得慢一点，给服务端恢复时间）
+      if (restorePollingId.value !== null) {
+        await tick()
+        if (restorePollingId.value !== null) schedule()
+      }
     }, restoreBackoffMs.value)
   }
-  schedule()
+  // 首次立即 tick
+  tick().then(() => {
+    if (restorePollingId.value !== null) schedule()
+  })
 }
 
 const stopRestorePolling = () => {

@@ -156,8 +156,9 @@ onMounted(load)
             <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted);">{{ formatTime(d.approvedAt) }}</td>
             <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted);">
               <!-- 2026-06-13 修复（BUG-067）：后端返完整 deviceId（36 字符 UUID）原 UI 没展示。
-                   截前 8 字符加省略号，hover 提示 title 完整。空值友好显示 "—" -->
-              <span :title="d.approvedBy || '—'">{{ d.approvedBy?.substring(0, 8) || '—' }}…</span>
+                   截前 8 字符加省略号，hover 提示 title 完整。空值友好显示 "—"
+                   2026-06-22 修复：approvedBy 为 null 时不再拼 "...",统一显示 "—" -->
+              <span :title="d.approvedBy || '—'">{{ d.approvedBy ? d.approvedBy.substring(0, 8) + '…' : '—' }}</span>
             </td>
             <td>
               <div class="row-actions">

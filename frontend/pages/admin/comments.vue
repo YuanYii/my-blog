@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// 2026-06-22 抽出 → composables/useMarkdownUtils.ts（统一 number/string 兼容）
+import { formatDateTime } from '~/composables/useMarkdownUtils'
+
 definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
 // 2026-06-16 修复（BUG-076）：之前只解构 { get, put }，handleDelete 调 `del()` 报
@@ -13,7 +16,6 @@ const comments = ref<any[]>([])
 const articles = ref<any[]>([])
 const loading = ref(false)
 const total = ref(0)
-
 const statusMap: Record<number, { label: string; apiValue: number; cls: string }> = {
   0: { label: '待审核', apiValue: 0, cls: 'pending' },
   1: { label: '已通过', apiValue: 1, cls: 'approved' },
@@ -77,25 +79,6 @@ const handleDelete = async (c: any) => {
   } catch (e: any) {
     $toast.error('删除失败：' + (e?.data?.message || e?.message))
   }
-}
-
-// 2026-06-19 修复（BUG-XXX）：原签名 `(s: string)` 假设 createdAt 永远是字符串。
-// 后端 CommentController.create 之前用 Timestamp + setTimestamp 写 SQLite，
-// JDBC 驱动把 java.sql.Timestamp 序列化为 Unix 毫秒 long（INTEGER）落库，
-// 跟 MyBatis-Plus 默认输出的 'yyyy-MM-dd HH:mm:ss' text 混在同一列。
-// 当某条评论 createdAt 是 number 时，`s.replace is not a function` 抛错，
-// 整个 render 失败 → loading.value 永远为 true → "加载中"卡死。
-// 修：兼容 string（ISO / 'yyyy-MM-dd HH:mm:ss'）和 number（Unix ms）两种格式。
-const formatDateTime = (s: any) => {
-  if (s == null) return ''
-  if (typeof s === 'number') {
-    // Unix 毫秒 → 'yyyy-MM-dd HH:mm'
-    const d = new Date(s)
-    if (isNaN(d.getTime())) return ''
-    const pad = (n: number) => n.toString().padStart(2, '0')
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-  }
-  return s.replace('T', ' ').substring(0, 16)
 }
 
 onMounted(async () => {

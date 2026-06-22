@@ -4,7 +4,9 @@
  * 数据获取/状态留在页面层；图表渲染委托 TrafficChart / CategoryChart 子组件；
  * 工具函数从 useDashboardUtils 引入。
  */
-import { fillDays, getThemeColors, formatDateTime, statusLabel } from '~/composables/useDashboardUtils'
+// 2026-06-22 抽出：formatDateTime 改走共享 useMarkdownUtils（避免 5 处实现不一致）
+import { fillDays, getThemeColors, statusLabel } from '~/composables/useDashboardUtils'
+import { formatDateTime } from '~/composables/useMarkdownUtils'
 
 definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
@@ -47,7 +49,89 @@ const loadAll = async () => {
     loading.value = false
   }
   await refreshMeta()
+  // 2026-06-22：站点状态面板（services）改从 /admin/health 真实拉取
+  // 之前 services / trafficSources 全硬编码（见 v4.x 服务日志体系设计前的旧实现）
+  await loadHealth()
 }
+
+// 2026-06-22：services 从 /admin/health 拉数据库大小 / Redis 内存 / SSL 证书到期 / CDN / uptime
+// 设计要点：
+// - 错误隔离：后端任一子系统失败不影响其他项
+// - 轮询：60s 一次，dashboard 长时间打开不显示陈旧数据
+const health = ref<any>(null)
+const healthLoading = ref(false)
+let healthTimer: ReturnType<typeof setInterval> | null = null
+const loadHealth = async () => {
+  healthLoading.value = true
+  try {
+    const res = await get<any>('/admin/health')
+    health.value = res.data || null
+  } catch {
+    health.value = null
+  } finally {
+    healthLoading.value = false
+  }
+}
+
+// services 数组由 health 派生（不直接存硬编码）
+const services = computed(() => {
+  const h = health.value
+  if (!h) return []
+  const out: Array<{ name: string; status: 'success' | 'warning' | 'danger'; value: string }> = []
+
+  // 1. 服务运行（uptime → "X 天"）
+  if (h.uptimeSec != null && h.uptimeSec >= 0) {
+    const d = Math.floor(h.uptimeSec / 86400)
+    const h1 = Math.floor((h.uptimeSec % 86400) / 3600)
+    out.push({ name: '服务运行', status: 'success', value: `正常 · ${d} 天 ${h1} 小时` })
+  } else {
+    out.push({ name: '服务运行', status: 'success', value: '正常' })
+  }
+
+  // 2. 数据库
+  if (h.database && !h.database.error) {
+    const pct = h.database.pct || 0
+    const status = pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : 'success'
+    out.push({ name: '数据库', status, value: `${h.database.sizeHuman} / ${h.database.maxHuman} (${pct}%)` })
+  } else {
+    out.push({ name: '数据库', status: 'danger', value: '查询失败' })
+  }
+
+  // 3. Redis
+  if (h.redis?.connected) {
+    const pct = h.redis.pct || 0
+    const status = pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : 'success'
+    const maxText = h.redis.maxMemoryBytes > 0 ? ` / ${h.redis.maxMemoryHuman}` : ''
+    out.push({ name: 'Redis 缓存', status, value: `${h.redis.usedMemoryHuman}${maxText} (${pct}%)` })
+  } else if (h.redis) {
+    out.push({ name: 'Redis 缓存', status: 'danger', value: '未连接' })
+  } else {
+    out.push({ name: 'Redis 缓存', status: 'danger', value: '查询失败' })
+  }
+
+  // 4. CDN
+  out.push({
+    name: 'CDN',
+    status: h.cdn?.configured ? 'success' : 'warning',
+    value: h.cdn?.configured ? '已启用' : '未配置'
+  })
+
+  // 5. SSL 证书
+  if (h.ssl?.configured && h.ssl.daysLeft != null) {
+    const dl = h.ssl.daysLeft
+    let status: 'success' | 'warning' | 'danger' = 'success'
+    let value = `${dl} 天后到期`
+    if (dl < 0)       { status = 'danger'; value = `已过期 ${-dl} 天` }
+    else if (dl < 30) { status = 'warning' }
+    out.push({ name: 'SSL 证书', status, value })
+  } else if (h.ssl?.configured) {
+    out.push({ name: 'SSL 证书', status: 'warning', value: '证书不可读' })
+  } else {
+    out.push({ name: 'SSL 证书', status: 'warning', value: '未配置' })
+  }
+
+  return out
+})
 
 // 2026-06-21：dashboard 待办"数据备份"项计算"距上次成功备份 N 天"
 // lastBackupAt 为 null → "未备份过";否则按 Date.now() - lastBackupAt 算天数
@@ -104,14 +188,11 @@ const loadRecent = async () => {
   } catch { /* ignore */ }
 }
 
-const services = [
-  { name: '服务运行',  status: 'success', value: '正常 · 36 天' },
-  { name: '数据库',    status: 'success', value: '128 MB / 1 GB' },
-  { name: 'Redis 缓存', status: 'warning', value: '82% 已用' },
-  { name: 'CDN',       status: 'success', value: '已启用' },
-  { name: 'SSL 证书',  status: 'success', value: '78 天后到期' }
-]
-
+// 2026-06-22：services / trafficSources 从硬编码改真实数据
+// - services 改从 /admin/health 拉（见上面 loadHealth + services computed）
+// - trafficSources 暂时仍硬编码——真实流量来源需要 nginx access log 分析或第三方统计，
+//   接入成本与收益不成正比（MVP 阶段仪表盘能展示"有访问"已足够，不需精确占比）。
+//   下一轮评估接入 Plausible/Umami 后再统一替换。
 const trafficSources = [
   { name: 'Google',    pct: 42, color: 'var(--primary)' },
   { name: '直接访问',  pct: 28, color: 'var(--accent)' },
@@ -166,6 +247,17 @@ onMounted(async () => {
   trafficChartRef.value?.renderTrend()
   categoryChartRef.value?.renderCategory()
   renderSparklines()
+  // 2026-06-22：站点状态面板每 60s 轮询一次 /admin/health
+  // 后端只读本地文件 / Redis INFO，无外部依赖，60s 频率完全安全
+  if (healthTimer) clearInterval(healthTimer)
+  healthTimer = setInterval(loadHealth, 60_000)
+})
+
+onBeforeUnmount(() => {
+  if (healthTimer) {
+    clearInterval(healthTimer)
+    healthTimer = null
+  }
 })
 </script>
 

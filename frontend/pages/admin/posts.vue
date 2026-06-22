@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// 2026-06-22 抽出 → composables/useMarkdownUtils.ts
+import { formatDate } from '~/composables/useMarkdownUtils'
+
 definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
 const router = useRouter()
@@ -153,7 +156,6 @@ const thumb = (a: any) => {
 
 const categoryName = (id: number) => categories.value.find(c => c.id === id)?.name || '未分类'
 
-const formatDate = (s: string) => s ? s.substring(0, 10) : ''
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / size.value)))
 
 onMounted(async () => {
