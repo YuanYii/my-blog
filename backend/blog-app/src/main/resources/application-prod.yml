@@ -1,45 +1,51 @@
 # =============================================================
-# 生产环境配置（部署到阿里云 ECS 香港轻量）
-# 所有敏感信息用环境变量注入，不在仓库中明文保存
+# 生产环境配置（部署到洛杉矶 1C2G ECS，无 docker）
+# 2026-06-17 v2.6.0：默认改用 SQLite + 本地 redis（jar 启动 + system redis-server）
+# 切回 MySQL：spring.profiles.active=prod,mysql
+#
+# 启动方式：
+#   1. apt install openjdk-8-jdk redis-server  # 系统服务
+#   2. systemctl start redis-server
+#   3. 跑 schema-sqlite.sql 初始化 /data/blog.db
+#   4. java -jar blog-app.jar --spring.profiles.active=prod
 # =============================================================
+# 注意：profile-specific 文件（application-prod.yml）里不能再写 spring.profiles.active，
+# 否则 Spring Boot 抛 InvalidConfigDataPropertyException。active profile 由启动命令传入。
 
 spring:
-  profiles:
-    active: prod
-
-  # ---------- 数据库（自装 MySQL，跑在 ECS 同机的 Docker 容器里） ----------
+  # ---------- SQLite（生产默认，无 docker） ----------
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${DB_HOST:mysql}:${DB_PORT:3306}/${DB_NAME:blog}?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: ${DB_USER:root}
-    password: ${DB_PASSWORD}
+    driver-class-name: org.sqlite.JDBC
+    # 2026-06-18 性能：开 WAL 让「多读 + 单写」可并发（读不再被写阻塞），
+    #   busy_timeout=10000 让偶发写竞争等待而非立刻抛 SQLITE_BUSY，
+    #   synchronous=NORMAL 在 WAL 下兼顾安全与吞吐。
+    #   有了 WAL + busy_timeout 后连接池才可安全 >1。
+    url: jdbc:sqlite:${SQLITE_PATH:/data/blog.db}?journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL
     hikari:
-      maximum-pool-size: 10
+      # 2026-06-18 性能：WAL 下放开单连接限制，允许并发读（首页 7 个接口不再串行排队）
+      maximum-pool-size: 8
       minimum-idle: 2
       connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
+      pool-name: blog-sqlite-pool
 
-  # ---------- Redis（自装 Redis 7-alpine，docker 网络） ----------
-  # 2026-06-12 修复：Spring Boot 2.7 使用 `spring.redis.*`（Spring Boot 3.x 才是 `spring.data.redis.*`）。
-  # 原 `spring.data.redis` 在 2.7 下完全失效——Spring 走默认 localhost:6379 无密码连接，
-  # 在 docker compose 网络里访问不到 `redis` 服务名 → SiteSettingsService 所有 Redis 操作抛连接异常。
+  # ---------- Redis（apt 装的 redis-server） ----------
+  # 1C2G 无 docker，redis 走系统服务（apt install redis-server）
   redis:
-    host: ${REDIS_HOST:redis}
+    host: ${REDIS_HOST:localhost}
     port: ${REDIS_PORT:6379}
     password: ${REDIS_PASSWORD:}
     database: ${REDIS_DB:0}
     timeout: 5s
     lettuce:
       pool:
-        max-active: 16
-        max-idle: 8
-        min-idle: 2
+        max-active: 8
+        max-idle: 4
+        min-idle: 1
 
-  # ---------- 文件上传（本地存储，容器内 /data/uploads） ----------
+  # ---------- 文件上传 ----------
   servlet:
     multipart:
-      max-file-size: 20MB
+      max-file-size: 10MB
       max-request-size: 50MB
 
   jackson:
@@ -47,16 +53,16 @@ spring:
     time-zone: Asia/Shanghai
 
 # ---------- HTTP Server ----------
+# 1C2G 调小：max-threads=50（每个 ~512KB 栈，50 线程=25MB 栈，留更多给 heap + file cache）
 server:
   port: 8080
   compression:
     enabled: true
     mime-types: application/json,application/xml,text/html,text/plain,text/css
   tomcat:
-    # 2C2G 机器调到 100（每个 Tomcat 线程 ~512KB 栈，200 线程=100MB 栈+512MB heap 接近 1.5GB）
-    max-threads: 100
-    max-connections: 4096
-    accept-count: 100
+    max-threads: 50
+    max-connections: 2048
+    accept-count: 50
     connection-timeout: 5000
 
 # ---------- 业务配置 ----------
@@ -64,15 +70,15 @@ blog:
   # JWT
   jwt:
     secret: ${JWT_SECRET}              # 32+ 位强随机（部署时必须设）
-    expiration-ms: 86400000            # 24h
+    expiration: 7200000               # 2h（2026-06-20 订正：7200000ms=2h，原注释误写 24h；值不变。2026-06-18：原 expiration-ms 与 JwtUtil @Value("blog.jwt.expiration") 不匹配，改 yml 永远不生效）
 
-  # 文件上传配置（**本地存储方案**，容器内路径 /data/uploads）
+  # 文件上传配置（**本地存储**，容器/jar 内路径 /data/uploads）
   upload:
-    provider: local                    # local / oss（首期 local）
+    provider: local
     local:
-      dir: ${UPLOAD_DIR:/data/uploads} # 容器内路径，对应 host volume
-      url-prefix: /uploads/            # nginx 反代路径前缀
-    # oss 配置（**首期不启用**，未来切换时再加）
+      dir: ${UPLOAD_DIR:/data/uploads}
+      url-prefix: /uploads/
+    # oss 配置（首期不启用）
     # oss:
     #   endpoint: ${OSS_ENDPOINT}
     #   bucket: ${OSS_BUCKET}
@@ -82,29 +88,22 @@ blog:
 
   # CORS（**生产环境收紧**，只允许你自己的域名）
   cors:
-    allowed-origins: ${CORS_ORIGINS:https://yourname.com,https://www.yourname.com}
+    allowed-origins: ${CORS_ORIGINS:https://blog.croeyai.cn}
 
   # Swagger（**生产关闭**）
   swagger:
     enabled: false
 
-# 生产环境关闭 springdoc 自动配置（防止 /v3/api-docs 泄露 API 结构）
+# 生产环境关闭 springdoc 自动配置
 springdoc:
   api-docs:
     enabled: false
   swagger-ui:
     enabled: false
 
-# ---------- 日志 ----------
-logging:
-  level:
-    root: INFO
-    com.blog: INFO
-    com.baomidou.mybatisplus: WARN
-  file:
-    name: /var/log/blog/app.log
-    max-size: 100MB
-    max-history: 30
-  pattern:
-    file: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"
-    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"
+# ---------- 日志（REQ-LOG-2026-06-18） ----------
+# appender / 级别 / 滚动 / 路径全部由 logback-spring.xml 统一管理：
+#   - prod 落 /opt/myblog/logs/，按天 + 100MB 滚动，30 天 / 3GB 上限，异步写
+#   - prod **强制关闭 CONSOLE**（FR-6.5）：systemd 把 stdout 重定向到 app.log，
+#     若再开 CONSOLE 会与 Logback 文件双写，绕过 3GB 容量预算
+# 这里不再配 logging.file / logging.level / logging.pattern，避免与 logback-spring.xml 冲突。

@@ -15,7 +15,7 @@ export const useAdminMeta = () => {
     pendingComments: 0,
     draftCount: 0
   }))
-  const { get } = useApi()
+  const { get } = useAdminApi()
 
   const refresh = async () => {
     if (!import.meta.client) return

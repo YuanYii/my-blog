@@ -65,13 +65,17 @@ public class ApiWhitelistService {
     }
 
     /**
-     * 路径匹配：返回第一个 pathPrefix 命中的记录；未命中返回 null
-     * - 缓存按 prefix 长度倒序排（refreshCache 里完成）→ 这里 for-loop 第一个命中即是最长前缀
-     * - 未命中 → AdminAuthFilter 默认放行（防御性，新增接口不被误伤）
+     * 路径匹配（最长前缀优先，带路径边界校验）。
+     * - 缓存按 prefix 长度倒序排（refreshCache 里完成）→ for-loop 第一个命中即是最长前缀
+     * - 未命中由 AdminAuthFilter default-deny 兜底：写操作必鉴权；GET 防遗漏 WARN 后放行
+     * - 路径边界：prefix 必须等于 path 本身，或 path 的下一字符是 '/'，防止 /articles 误匹配 /articlesXXX
      */
     public ApiWhitelist matchPath(String path) {
         for (ApiWhitelist w : cache.get()) {
-            if (path.startsWith(w.getPathPrefix())) return w;
+            String prefix = w.getPathPrefix();
+            if (prefix == null) continue;
+            if (path.equals(prefix)) return w;
+            if (path.startsWith(prefix) && (prefix.endsWith("/") || path.charAt(prefix.length()) == '/')) return w;
         }
         return null;
     }

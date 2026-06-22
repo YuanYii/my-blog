@@ -198,7 +198,14 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
 .table { width: 100%; border-collapse: collapse; }
 .table th, .table td { padding: 12px 16px; text-align: left; font-size: 14px; }
 .table thead { background: var(--bg-soft); }
-.table th { font-weight: 500; color: var(--text-2); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.table th {
+  font-weight: 500; color: var(--text-2); font-size: 12px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  /* 2026-06-21 v4.2.1 polish: 表头之间分隔符 ——
+     last-child 不加边线收尾;用 --line-soft 与现有 tr border-top 视觉统一 */
+  border-right: 1px solid var(--line-soft);
+}
+.table th:last-child { border-right: none; }
 .table tbody tr { border-top: 1px solid var(--line-soft); transition: background 0.15s; }
 .table tbody tr:hover { background: var(--bg-soft); }
 
@@ -1085,6 +1092,11 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
 .kpi-card-delta.down { color: var(--danger); }
 .kpi-card-spark { position: absolute; bottom: 0; right: 0; width: 90px; height: 40px; opacity: 0.5; }
 
+/* 2026-06-16 OPT：kpi-card 内的可点击链接（包住 value + delta 两个 div） */
+.kpi-card-link { display: block; color: inherit; text-decoration: none; cursor: pointer; }
+.kpi-card-link:hover .kpi-card-value { color: var(--primary); }
+.kpi-card-link:hover .kpi-card-delta { opacity: 0.7; }
+
 .dashboard-grid { display: grid; grid-template-columns: 1fr 320px; gap: 16px; margin-bottom: 20px; }
 
 .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
@@ -1180,6 +1192,8 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
   transition: all 0.15s;
 }
 .stat-card:hover { border-color: var(--primary); }
+.stat-card.clickable { cursor: pointer; }
+.stat-card.active { border-color: var(--primary); background: var(--primary-soft); }
 .stat-card-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 .stat-card-value {
   font-family: 'DM Serif Display', serif;
@@ -1639,3 +1653,7 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
 @media (max-width: 900px) {
   .editor-grid { grid-template-columns: 1fr; }
 }
+
+/* 2026-06-15 新增：markdown 编辑器图片上传进度 spinner 动画 */
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.upload-progress { display: inline-flex; align-items: center; gap: 4px; }

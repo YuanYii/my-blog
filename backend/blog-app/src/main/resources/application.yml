@@ -40,6 +40,16 @@ mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
   type-aliases-package: com.blog.**.entity
 
+blog:
+  security:
+    # 全站 IP 限流 + 封禁（2026-06-18 新增，IpRateLimitFilter）
+    # 同一 IP 1 秒内请求数超过 max-requests-per-second → 封禁 ban-duration-minutes 分钟
+    # （封禁记录持久化在 ip_ban 表，admin 后台 GET/PUT /admin/ip-bans 可查看/手动解封）
+    ip-rate-limit:
+      enabled: true
+      max-requests-per-second: 40
+      ban-duration-minutes: 30
+
 springdoc:
   api-docs:
     path: /v3/api-docs

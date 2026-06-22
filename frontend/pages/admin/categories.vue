@@ -2,6 +2,8 @@
 definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
 const { get, post, put, del } = useAdminApi()
+const $toast = useToast()
+const $dialog = useDialog()
 
 const categories = ref<any[]>([])
 const articleCount = ref<Record<number, number>>({})
@@ -47,18 +49,20 @@ const closeModal = () => {
 }
 
 // [Bug fix 2026-06-13] handleSave：补 try/catch，后端返回 1002(slug 重复)/400 时 alert 给用户
+// 2026-06-16 改造：alert → $toast
 const handleSave = async () => {
-  if (!form.name) { alert('请填写名称'); return }
+  if (!form.name) { $toast.warning('请填写名称'); return }
   try {
     if (editing.value?.id) {
       await put(`/articles/categories/${editing.value.id}`, form)
     } else {
       await post('/articles/categories', form)
     }
+    $toast.success('已保存')
     closeModal()
     load()
   } catch (e: any) {
-    alert('保存失败：' + (e?.data?.message || e?.message || '未知错误'))
+    $toast.error('保存失败：' + (e?.data?.message || e?.message || '未知错误'))
   }
 }
 
@@ -66,13 +70,21 @@ const handleSave = async () => {
 // 1) 确认文案修正：后端 deleteCategory 在该分类下仍有文章时会返回 1004 错误并拒绝删除，
 //    而非把文章标记为"未分类"——原文案误导用户以为删除是安全的。
 // 2) 补 try/catch：后端返回 1004 时 del() 抛异常，原代码无 catch → 用户收不到任何反馈。
+// 2026-06-16 改造：confirm → $dialog.confirm，alert → $toast
 const handleDelete = async (c: any) => {
-  if (!confirm(`确认删除分类「${c.name}」？若该分类下仍有文章，后端会拒绝删除。`)) return
+  const { confirmed } = await $dialog.confirm({
+    title: '删除分类',
+    message: `确认删除分类「${c.name}」？若该分类下仍有文章，后端会拒绝删除。`,
+    confirmText: '删除',
+    danger: true
+  })
+  if (!confirmed) return
   try {
     await del(`/articles/categories/${c.id}`)
+    $toast.success('已删除')
     load()
   } catch (e: any) {
-    alert('删除失败：' + (e?.data?.message || e?.message || '未知错误'))
+    $toast.error('删除失败：' + (e?.data?.message || e?.message || '未知错误'))
   }
 }
 

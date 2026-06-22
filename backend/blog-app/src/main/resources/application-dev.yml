@@ -1,14 +1,25 @@
+# 2026-06-17 v2.6.0：dev 默认改用 SQLite（之前是 MySQL）
+# 切回 MySQL：spring.profiles.active=dev,mysql
 spring:
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/blog?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: root
+    # SQLite（dev 默认）
+    # 2026-06-17 v2.6.0-fix：用 ${SQLITE_PATH} 绝对路径（避免 ${user.dir} 在 spring-boot:run / Idea 下指向不同位置）
+    # 2026-06-18：默认直接指 backend/blog.db 绝对路径。Idea Run / mvn spring-boot:run / jar 启动 都能命中同一个文件。
+    #   之前试过 ${user.home}/myblog/... 和 ${user.dir}/../blog.db，在不同启动方式下指向不同位置，反而更乱。
+    #   想用别处 db：export SQLITE_PATH=/your/path/blog.db 覆盖。
+    driver-class-name: org.sqlite.JDBC
+    url: jdbc:sqlite:${SQLITE_PATH:/Users/yuanyi/MyProject/vibeP/my-blog/backend/blog.db}?journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL
+    # 2026-06-18 性能：WAL + busy_timeout，多连接安全（与 prod 一致）
+    # 备选：相对路径 / 容器内绝对路径
+    # url: jdbc:sqlite:/data/blog.db?journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL
+    hikari:
+      # 2026-06-18 性能：WAL 下放开单连接限制，允许并发读
+      maximum-pool-size: 8
+      minimum-idle: 2
+      connection-timeout: 30000
+      pool-name: blog-sqlite-pool
 
-  # 2026-06-12 修复：Spring Boot 2.7 使用 `spring.redis.*` 前缀绑定 RedisProperties，
-  # `spring.data.redis.*` 是 Spring Boot 3.x 才生效——之前写在 spring.data.redis 下的
-  # host/port/password/database/pool 配置全部被静默忽略，Spring 走默认 localhost:6379 无密码。
-  # dev 本机正好是 localhost:6379 → 假装能用，但 prod 容器内 host=redis 也被忽略 → 连不上。
+  # Redis（dev 用本机 docker 起的 redis）
   redis:
     host: localhost
     port: 6379
@@ -24,14 +35,20 @@ spring:
 blog:
   upload:
     local:
-      # 2026-06-12 修复：dev 环境覆盖默认值（默认是容器 /root/blog-uploads，本机写不动 → 500）
-      # 注意：tomcat 的 working dir 不是项目根，相对路径会找不到。dev 用绝对路径写到项目内 tmp/
-      dir: ${UPLOAD_DIR:${user.dir}/tmp/blog-uploads}
+      # dev 用项目内 var/uploads/ 目录（Git ignore）
+      dir: ${UPLOAD_DIR:${user.dir}/var/uploads}
 
-logging:
-  level:
-    root: INFO
-    com.blog: DEBUG
-    com.baomidou.mybatisplus: WARN
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"
+# 2026-06-20 v4.2.0：dev 暴露 BACKUP_* 环境变量入口
+#   - dev profile 之前不引用这些变量 → 启动时 Spring 不会读 shell 里 export 的值
+#   - 加上空默认值 ${VAR:} 后, dev 启动时如果 shell 里 export 了这些变量就能读到;
+#     没 export 也不会报错（triggerBackup 时再做业务校验）
+#   - 真要测备份:export BACKUP_ENCRYPTION_PASSWORD=xxx BACKUP_GITHUB_TOKEN=ghp_xxx GITHUB_BACKUP_REPO=xxx/my-blog-backup && mvn spring-boot:run
+#   - 2026-06-20 重命名: 备份 token 叫 BACKUP_GITHUB_TOKEN (不叫 GITHUB_TOKEN),
+#     跟发布用的 GITHUB_TOKEN 物理隔离, dev shell 里两个能共存不冲突
+BACKUP_ENCRYPTION_PASSWORD: ${BACKUP_ENCRYPTION_PASSWORD:}
+BACKUP_GITHUB_TOKEN: ${BACKUP_GITHUB_TOKEN:}
+GITHUB_BACKUP_REPO: ${GITHUB_BACKUP_REPO:}
+
+# 日志体系（REQ-LOG-2026-06-18）：appender / 级别 / 滚动 / 路径全部由
+# logback-spring.xml 统一管理（dev 落 /tmp/blog-dev-logs，CONSOLE+FILE 双写）。
+# 这里不再配 logging.level / logging.pattern，避免与 logback-spring.xml 冲突。

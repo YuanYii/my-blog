@@ -157,6 +157,14 @@ public class SiteSettingsService {
      *  - 2026-06-12 修复：原 merge 是 read-modify-write 没有任何并发保护，
      *    并发场景 A 写 title、B 写 subtitle 会 lost update
      *  - 修复：Redis 分布式锁 SETNX（10s 超时），CAS 失败抛 409 让前端重试
+     *
+     * 2026-06-22 v4.x polish（trade-off 备忘，不修）：
+     *   锁 TTL=10s 对个人博客量级（get→put→DEL 全链路 <100ms）足够。
+     *   极端 GC 暂停（Stop-The-World >10s）下锁可能过期,第二个请求拿锁覆盖第一个的写入 →
+     *   lost update。当前 settings 改的是非关键配置（title / subtitle / theme）,
+     *   lost update 后果可控(用户重新编辑即可),不需要上续期机制。
+     *   TODO: 若未来 settings 改"评论开关 / 安全策略"等关键配置,加 Redisson lock watchdog 或
+     *         自己实现 1/3 TTL 周期的续期线程。
      */
     public void merge(String section, Map<String, Object> partial) {
         String lockKey = "site_settings_lock:" + section;

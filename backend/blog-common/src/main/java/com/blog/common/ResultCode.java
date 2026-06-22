@@ -31,7 +31,14 @@ public enum ResultCode {
     // REVOKED: 当前设备已被禁止登录
     DEVICE_PENDING(2001, "设备未授权，请联系管理员"),
     DEVICE_REVOKED(2002, "当前设备已被禁止登录"),
-    DEVICE_SELF_REVOKE_FORBIDDEN(2003, "不能吊销当前登录设备");
+    // 2026-06-16 修订：消息文本同时覆盖"吊销/删除"两种自我解绑场景——见 DeviceService.revoke / delete
+    DEVICE_SELF_REVOKE_FORBIDDEN(2003, "不能吊销/删除当前登录设备"),
+
+    // 数据备份（3xxx，REQ-BACKUP-2026-06-20 + REQ-BACKUP-POLISH-2026-06-21）
+    // 3001: 已有 RUNNING 任务,触发新备份被拒
+    BACKUP_CONFLICT(3001, "已有正在执行的备份任务,请等待完成后再试"),
+    // 2026-06-21 v4.2.1 polish 新增: 删除接口校验——PENDING/RUNNING 记录不能删(脚本进程可能在写 db/读 stage)
+    BACKUP_RECORD_RUNNING(3002, "备份任务进行中,无法删除");
 
     private final int code;
     private final String message;

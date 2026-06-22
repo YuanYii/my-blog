@@ -7,7 +7,7 @@
     <parent>
         <groupId>com.blog</groupId>
         <artifactId>blog-parent</artifactId>
-        <version>0.1.0</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>blog-auth</artifactId>
@@ -24,6 +24,12 @@
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-boot-starter</artifactId>
             <version>3.4.3.4</version>
+        </dependency>
+
+        <!-- 2026-06-18 新增：IpBanService 用 StringRedisTemplate 做封禁标记的热路径读写 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
         <dependency>

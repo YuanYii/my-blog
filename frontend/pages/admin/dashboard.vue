@@ -1,4 +1,13 @@
 <script setup lang="ts">
+/**
+ * C（2026-06-20）：dashboard.vue 拆分后的主文件。
+ * 数据获取/状态留在页面层；图表渲染委托 TrafficChart / CategoryChart 子组件；
+ * 工具函数从 useDashboardUtils 引入。
+ */
+// 2026-06-22 抽出：formatDateTime 改走共享 useMarkdownUtils（避免 5 处实现不一致）
+import { fillDays, getThemeColors, statusLabel } from '~/composables/useDashboardUtils'
+import { formatDateTime } from '~/composables/useMarkdownUtils'
+
 definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
 const { get } = useAdminApi()
@@ -7,20 +16,21 @@ const { user } = useAuth()
 
 const loading = ref(true)
 const kpi = ref<any>({})
+// 2026-06-21：dashboard 待办"数据备份"项需要展示"距上次成功备份 N 天"
+// 后端 DashboardController 新增 lastBackup: { lastBackupAt, lastBackupTag }
+const lastBackup = ref<{ lastBackupAt: string | null; lastBackupTag: string | null } | null>(null)
 const categoryDist = ref<any[]>([])
 const publishTrend = ref<any[]>([])
+const visitTrend = ref<any[]>([])
+const visitTrend7 = ref<any[]>([])
+const topArticles = ref<any[]>([])
 
-// 时间感知
 const now = new Date()
 const hour = now.getHours()
 const greeting = hour < 6 ? '凌晨好' : hour < 11 ? '早上好' : hour < 13 ? '中午好' : hour < 18 ? '下午好' : '晚上好'
 const greetingEmoji = hour < 6 ? '🌙' : hour < 11 ? '☀️' : hour < 13 ? '🌤️' : hour < 18 ? '☀️' : '🌙'
 const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
 const dateStr = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日 · ${weekdays[now.getDay()]} · ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-
-// 模拟数据（后端暂未提供）
-const todayPV = ref(0)
-const uvData = ref<number[]>([])
 
 const loadAll = async () => {
   loading.value = true
@@ -29,40 +39,147 @@ const loadAll = async () => {
     kpi.value = res.data?.kpi || {}
     categoryDist.value = res.data?.categoryDistribution || []
     publishTrend.value = res.data?.publishTrend || []
+    visitTrend.value = res.data?.visitTrend || []
+    visitTrend7.value = res.data?.visitTrend7 || []
+    topArticles.value = res.data?.topArticles || []
+    lastBackup.value = res.data?.lastBackup || null
   } catch {
     kpi.value = {}
   } finally {
     loading.value = false
   }
   await refreshMeta()
+  // 2026-06-22：站点状态面板（services）改从 /admin/health 真实拉取
+  // 之前 services / trafficSources 全硬编码（见 v4.x 服务日志体系设计前的旧实现）
+  await loadHealth()
 }
 
-// 待办：从 meta 派生
+// 2026-06-22：services 从 /admin/health 拉数据库大小 / Redis 内存 / SSL 证书到期 / CDN / uptime
+// 设计要点：
+// - 错误隔离：后端任一子系统失败不影响其他项
+// - 轮询：60s 一次，dashboard 长时间打开不显示陈旧数据
+const health = ref<any>(null)
+const healthLoading = ref(false)
+let healthTimer: ReturnType<typeof setInterval> | null = null
+const loadHealth = async () => {
+  healthLoading.value = true
+  try {
+    const res = await get<any>('/admin/health')
+    health.value = res.data || null
+  } catch {
+    health.value = null
+  } finally {
+    healthLoading.value = false
+  }
+}
+
+// services 数组由 health 派生（不直接存硬编码）
+const services = computed(() => {
+  const h = health.value
+  if (!h) return []
+  const out: Array<{ name: string; status: 'success' | 'warning' | 'danger'; value: string }> = []
+
+  // 1. 服务运行（uptime → "X 天"）
+  if (h.uptimeSec != null && h.uptimeSec >= 0) {
+    const d = Math.floor(h.uptimeSec / 86400)
+    const h1 = Math.floor((h.uptimeSec % 86400) / 3600)
+    out.push({ name: '服务运行', status: 'success', value: `正常 · ${d} 天 ${h1} 小时` })
+  } else {
+    out.push({ name: '服务运行', status: 'success', value: '正常' })
+  }
+
+  // 2. 数据库
+  if (h.database && !h.database.error) {
+    const pct = h.database.pct || 0
+    const status = pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : 'success'
+    out.push({ name: '数据库', status, value: `${h.database.sizeHuman} / ${h.database.maxHuman} (${pct}%)` })
+  } else {
+    out.push({ name: '数据库', status: 'danger', value: '查询失败' })
+  }
+
+  // 3. Redis
+  if (h.redis?.connected) {
+    const pct = h.redis.pct || 0
+    const status = pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : 'success'
+    const maxText = h.redis.maxMemoryBytes > 0 ? ` / ${h.redis.maxMemoryHuman}` : ''
+    out.push({ name: 'Redis 缓存', status, value: `${h.redis.usedMemoryHuman}${maxText} (${pct}%)` })
+  } else if (h.redis) {
+    out.push({ name: 'Redis 缓存', status: 'danger', value: '未连接' })
+  } else {
+    out.push({ name: 'Redis 缓存', status: 'danger', value: '查询失败' })
+  }
+
+  // 4. CDN
+  out.push({
+    name: 'CDN',
+    status: h.cdn?.configured ? 'success' : 'warning',
+    value: h.cdn?.configured ? '已启用' : '未配置'
+  })
+
+  // 5. SSL 证书
+  if (h.ssl?.configured && h.ssl.daysLeft != null) {
+    const dl = h.ssl.daysLeft
+    let status: 'success' | 'warning' | 'danger' = 'success'
+    let value = `${dl} 天后到期`
+    if (dl < 0)       { status = 'danger'; value = `已过期 ${-dl} 天` }
+    else if (dl < 30) { status = 'warning' }
+    out.push({ name: 'SSL 证书', status, value })
+  } else if (h.ssl?.configured) {
+    out.push({ name: 'SSL 证书', status: 'warning', value: '证书不可读' })
+  } else {
+    out.push({ name: 'SSL 证书', status: 'warning', value: '未配置' })
+  }
+
+  return out
+})
+
+// 2026-06-21：dashboard 待办"数据备份"项计算"距上次成功备份 N 天"
+// lastBackupAt 为 null → "未备份过";否则按 Date.now() - lastBackupAt 算天数
+// ≥7 天标 urgent(深色高亮),<7 天标 success
+const daysSinceLastBackup = computed(() => {
+  if (!lastBackup.value?.lastBackupAt) return null
+  const t = new Date(lastBackup.value.lastBackupAt).getTime()
+  if (isNaN(t)) return null
+  return Math.floor((Date.now() - t) / 86400000)
+})
+
+const lastBackupDateText = computed(() => {
+  if (!lastBackup.value?.lastBackupAt) return null
+  const d = new Date(lastBackup.value.lastBackupAt)
+  if (isNaN(d.getTime())) return null
+  // YYYY-MM-DD,本地时区
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+})
+
 const todos = computed(() => [
   {
     type: 'urgent',
     title: '待审评论',
     meta: meta.value.pendingComments > 0 ? `需要尽快处理` : '暂无',
     count: meta.value.pendingComments || 0,
-    to: '/admin/comments'
+    to: '/admin/comments?status=0'
   },
   {
     type: 'warning',
     title: '未发布草稿',
     meta: meta.value.draftCount > 0 ? `${meta.value.draftCount} 篇草稿待处理` : '草稿箱已清空',
     count: meta.value.draftCount || 0,
-    to: '/admin/posts'
+    to: '/admin/posts?status=0'
   },
   {
-    type: 'success',
+    type: (daysSinceLastBackup.value === null || daysSinceLastBackup.value >= 7) ? 'urgent' : 'success',
     title: '数据备份',
-    meta: '下次自动备份：明天 03:00',
-    count: '✓',
-    to: '/admin/settings'
+    meta: lastBackup.value?.lastBackupAt
+      ? `上次备份：${lastBackupDateText.value}${daysSinceLastBackup.value! >= 7 ? `（已 ${daysSinceLastBackup.value} 天）` : ''}`
+      : '未备份过',
+    count: (daysSinceLastBackup.value === null || daysSinceLastBackup.value >= 7) ? '!' : '✓',
+    to: '/admin/backup'
   }
 ])
 
-// 最近文章
 const recentPosts = ref<any[]>([])
 const loadRecent = async () => {
   try {
@@ -71,16 +188,11 @@ const loadRecent = async () => {
   } catch { /* ignore */ }
 }
 
-// 站点状态（mock）
-const services = [
-  { name: '服务运行',  status: 'success', value: '正常 · 36 天' },
-  { name: '数据库',    status: 'success', value: '128 MB / 1 GB' },
-  { name: 'Redis 缓存', status: 'warning', value: '82% 已用' },
-  { name: 'CDN',       status: 'success', value: '已启用' },
-  { name: 'SSL 证书',  status: 'success', value: '78 天后到期' }
-]
-
-// 流量来源（mock）
+// 2026-06-22：services / trafficSources 从硬编码改真实数据
+// - services 改从 /admin/health 拉（见上面 loadHealth + services computed）
+// - trafficSources 暂时仍硬编码——真实流量来源需要 nginx access log 分析或第三方统计，
+//   接入成本与收益不成正比（MVP 阶段仪表盘能展示"有访问"已足够，不需精确占比）。
+//   下一轮评估接入 Plausible/Umami 后再统一替换。
 const trafficSources = [
   { name: 'Google',    pct: 42, color: 'var(--primary)' },
   { name: '直接访问',  pct: 28, color: 'var(--accent)' },
@@ -89,131 +201,28 @@ const trafficSources = [
   { name: '其他',      pct: 6,  color: 'var(--muted)' }
 ]
 
-// Chart.js 实例引用
-let trendChart: any = null
-let categoryChart: any = null
+// sparkline 图表（仍在此层管理，轻量）
 let sparkCharts: any[] = []
 
-// 趋势图 tab
-const activeTab = ref('30')
+const trafficChartRef = ref<any>(null)
+const categoryChartRef = ref<any>(null)
 
-// 主题色
-const getThemeColors = () => {
-  if (!import.meta.client) return { primary: '#2f6f5e', accent: '#c97b3f', muted: '#8b8475', text: '#1a1f2e', grid: 'rgba(0,0,0,0.04)' }
-  const isDark = document.documentElement.classList.contains('dark')
-  return {
-    primary: isDark ? '#5fb09a' : '#2f6f5e',
-    accent:  isDark ? '#d99262' : '#c97b3f',
-    text:    isDark ? '#e8e6df' : '#1a1f2e',
-    muted:   isDark ? '#6f6c63' : '#8b8475',
-    line:    isDark ? '#2a3038' : '#e8e4d8',
-    grid:    isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'
-  }
-}
-
-const renderCharts = () => {
+const renderSparklines = () => {
   if (!import.meta.client) return
   const Chart = (window as any).Chart
   if (!Chart) return
-
   const c = getThemeColors()
-  const rand = (min: number, max: number) => Math.random() * (max - min) + min
-
-  // 趋势图
-  const days = activeTab.value === '7' ? 7 : activeTab.value === '30' ? 30 : activeTab.value === '90' ? 90 : 365
-  const trendData = Array.from({ length: days }, () => Math.floor(rand(800, 1500)))
-  if (trendChart) trendChart.destroy()
-  const trendCtx = (document.getElementById('chart-trend') as any)?.getContext('2d')
-  if (trendCtx) {
-    trendChart = new Chart(trendCtx, {
-      type: 'line',
-      data: {
-        labels: Array.from({ length: days }, (_, i) => `${i + 1}`),
-        datasets: [
-          {
-            label: 'PV',
-            data: trendData,
-            borderColor: c.primary,
-            backgroundColor: 'rgba(47, 111, 94, 0.10)',
-            borderWidth: 2,
-            fill: true,
-            tension: 0.35,
-            pointRadius: 0,
-            pointHoverRadius: 5
-          },
-          {
-            label: 'UV',
-            data: trendData.map(d => Math.floor(d * 0.4)),
-            borderColor: c.accent,
-            backgroundColor: 'transparent',
-            borderWidth: 1.5,
-            borderDash: [4, 3],
-            fill: false,
-            tension: 0.35,
-            pointRadius: 0,
-            pointHoverRadius: 5
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top', align: 'end', labels: { boxWidth: 8, boxHeight: 8, usePointStyle: true, font: { size: 11 }, color: c.muted } },
-          tooltip: { backgroundColor: '#1a1f2e', padding: 10, cornerRadius: 8 }
-        },
-        scales: {
-          x: { grid: { display: false }, ticks: { color: c.muted, font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 8 } },
-          y: { grid: { color: c.grid, drawBorder: false }, ticks: { color: c.muted, font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 5 }, beginAtZero: true }
-        },
-        interaction: { mode: 'index', intersect: false }
-      }
-    })
-  }
-
-  // 分类饼图
-  if (categoryChart) categoryChart.destroy()
-  const catCtx = (document.getElementById('chart-category') as any)?.getContext('2d')
-  if (catCtx && categoryDist.value.length) {
-    const labels = categoryDist.value.map(c => c.name)
-    const data = categoryDist.value.map(c => c.cnt)
-    const colors = ['#2f6f5e', '#c97b3f', '#3b82f6', '#8b5cf6', '#94a3b8', '#ec4899', '#10b981']
-    categoryChart = new Chart(catCtx, {
-      type: 'doughnut',
-      data: {
-        labels,
-        datasets: [{
-          data,
-          backgroundColor: labels.map((_, i) => colors[i % colors.length]),
-          borderWidth: 0,
-          spacing: 2
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '70%',
-        plugins: {
-          legend: { position: 'right', labels: { boxWidth: 8, boxHeight: 8, usePointStyle: true, font: { size: 11 }, color: c.text, padding: 8 } }
-        }
-      }
-    })
-  }
-
-  // 4 个 sparkline
-  sparkCharts.forEach(c => c.destroy())
+  sparkCharts.forEach(ch => ch.destroy())
   sparkCharts = []
   const sparkData: Record<string, number[]> = {
-    'spark-pv': Array.from({ length: 14 }, () => rand(800, 1400)),
-    'spark-posts': [1, 1, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-    'spark-comments': [12, 8, 15, 6, 9, 11, 14, 8, 10, 7, 12, 8, 6, 8],
-    'spark-words': Array.from({ length: 14 }, () => rand(200, 800))
+    'spark-pv':       fillDays(visitTrend7.value, 7, 'pv'),
+    'spark-posts':    fillDays(publishTrend.value, 7, 'cnt'),
+    'spark-comments': [12, 8, 15, 6, 9, 11, 14, 8, 10, 7, 12, 8, 6, 8].slice(0, 7),
+    'spark-words':    fillDays(visitTrend7.value, 7, 'pv')
   }
   const sparkColors: Record<string, string> = {
-    'spark-pv': c.primary,
-    'spark-posts': c.primary,
-    'spark-comments': c.accent,
-    'spark-words': c.primary
+    'spark-pv': c.primary, 'spark-posts': c.primary,
+    'spark-comments': c.accent, 'spark-words': c.primary
   }
   Object.entries(sparkData).forEach(([id, data]) => {
     const el = document.getElementById(id) as any
@@ -222,35 +231,33 @@ const renderCharts = () => {
     const grad = ctx.createLinearGradient(0, 0, 0, 40)
     grad.addColorStop(0, sparkColors[id] + '40')
     grad.addColorStop(1, sparkColors[id] + '00')
-    const ch = new Chart(ctx, {
+    sparkCharts.push(new Chart(ctx, {
       type: 'line',
-      data: {
-        labels: data.map((_, i) => i),
-        datasets: [{ data, borderColor: sparkColors[id], backgroundColor: grad, borderWidth: 1.5, fill: true, tension: 0.4, pointRadius: 0 }]
-      },
-      options: {
-        responsive: false,
-        plugins: { legend: { display: false }, tooltip: { enabled: false } },
-        scales: { x: { display: false }, y: { display: false } }
-      }
-    })
-    sparkCharts.push(ch)
+      data: { labels: data.map((_: any, i: number) => i), datasets: [{ data, borderColor: sparkColors[id], backgroundColor: grad, borderWidth: 1.5, fill: true, tension: 0.4, pointRadius: 0 }] },
+      options: { responsive: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } } }
+    }))
   })
 }
-
-const formatDateTime = (s: string) => s ? s.replace('T', ' ').substring(0, 16) : ''
-const formatDate = (s: string) => s ? s.substring(0, 10) : ''
-const statusLabel = (s: number) => ({ 0: '草稿', 1: '已发布', 2: '已归档' }[s] || '未知')
 
 onMounted(async () => {
   await loadAll()
   await loadRecent()
-  // 等待 Chart.js 加载完成
-  setTimeout(renderCharts, 300)
+  const { default: Chart } = await import('chart.js/auto')
+  ;(window as any).Chart = Chart
+  trafficChartRef.value?.renderTrend()
+  categoryChartRef.value?.renderCategory()
+  renderSparklines()
+  // 2026-06-22：站点状态面板每 60s 轮询一次 /admin/health
+  // 后端只读本地文件 / Redis INFO，无外部依赖，60s 频率完全安全
+  if (healthTimer) clearInterval(healthTimer)
+  healthTimer = setInterval(loadHealth, 60_000)
 })
 
-watch(activeTab, () => {
-  if (trendChart) renderCharts()
+onBeforeUnmount(() => {
+  if (healthTimer) {
+    clearInterval(healthTimer)
+    healthTimer = null
+  }
 })
 </script>
 
@@ -260,7 +267,7 @@ watch(activeTab, () => {
     <div class="welcome-bar">
       <div>
         <h1 class="welcome-greeting">
-          {{ greeting }}，<ClientOnly><span>{{ user?.nickname || user?.username || 'Admin' }}</span><template #fallback><span>Yuan Yi</span></template></ClientOnly> <span class="emoji">{{ greetingEmoji }}</span>
+          {{ greeting }}，<ClientOnly><span>{{ user?.nickname || user?.username || 'Admin' }}</span><template #fallback><span>加载中</span></template></ClientOnly> <span class="emoji">{{ greetingEmoji }}</span>
         </h1>
         <div class="welcome-meta">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
@@ -282,87 +289,46 @@ watch(activeTab, () => {
     <!-- KPI -->
     <div class="kpi-grid">
       <div class="kpi-card">
-        <div class="kpi-card-label">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-          今日 PV
-        </div>
-        <div class="kpi-card-value">{{ todayPV.toLocaleString() || '—' }}</div>
-        <div class="kpi-card-delta">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
-          较昨日 +12.4%
-        </div>
+        <div class="kpi-card-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg> 今日 PV / UV</div>
+        <div class="kpi-card-value">{{ (kpi.todayPV || 0).toLocaleString() }}</div>
+        <div class="kpi-card-delta">独立访客 <strong>{{ kpi.todayUV || 0 }}</strong></div>
         <canvas class="kpi-card-spark" id="spark-pv"></canvas>
       </div>
-
       <div class="kpi-card">
-        <div class="kpi-card-label">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-          总文章
-        </div>
-        <div class="kpi-card-value">{{ kpi.totalArticles || 0 }}</div>
-        <div class="kpi-card-delta">+{{ kpi.publishedArticles || 0 }} 已发布</div>
+        <div class="kpi-card-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg> 总文章</div>
+        <NuxtLink to="/admin/posts" class="kpi-card-link">
+          <div class="kpi-card-value">{{ kpi.totalArticles || 0 }}</div>
+          <div class="kpi-card-delta">+{{ kpi.publishedArticles || 0 }} 已发布 · 查看 →</div>
+        </NuxtLink>
         <canvas class="kpi-card-spark" id="spark-posts"></canvas>
       </div>
-
       <div class="kpi-card">
-        <div class="kpi-card-label">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
-          待审评论
-        </div>
-        <div class="kpi-card-value" :style="{ color: meta.pendingComments > 0 ? 'var(--accent)' : 'var(--text)' }">{{ meta.pendingComments }}</div>
-        <div class="kpi-card-delta" :style="{ color: meta.pendingComments > 0 ? 'var(--accent)' : 'var(--success)' }">
-          {{ meta.pendingComments > 0 ? '需要处理' : '已全部处理' }}
-        </div>
+        <div class="kpi-card-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg> 待审评论</div>
+        <NuxtLink to="/admin/comments?status=0" class="kpi-card-link">
+          <div class="kpi-card-value" :style="{ color: meta.pendingComments > 0 ? 'var(--accent)' : 'var(--text)' }">{{ meta.pendingComments }}</div>
+          <div class="kpi-card-delta" :style="{ color: meta.pendingComments > 0 ? 'var(--accent)' : 'var(--success)' }">{{ meta.pendingComments > 0 ? '需要处理 · 去处理 →' : '已全部处理 · 查看 →' }}</div>
+        </NuxtLink>
         <canvas class="kpi-card-spark" id="spark-comments"></canvas>
       </div>
-
       <div class="kpi-card">
-        <div class="kpi-card-label">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
-          总字数
-        </div>
-        <div class="kpi-card-value">{{ Math.round((kpi.totalViewCount || 0) / 100) / 10 }}k</div>
-        <div class="kpi-card-delta">累计阅读 {{ (kpi.totalViewCount || 0).toLocaleString() }}</div>
+        <div class="kpi-card-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg> 总字数</div>
+        <div class="kpi-card-value">{{ (kpi.totalWordCount || 0).toLocaleString() }}</div>
+        <div class="kpi-card-delta">已发布文章累计</div>
         <canvas class="kpi-card-spark" id="spark-words"></canvas>
       </div>
     </div>
 
     <!-- Main grid -->
     <div class="dashboard-grid">
-      <!-- Left: charts -->
       <div style="display: flex; flex-direction: column; gap: 16px;">
-        <div class="panel">
-          <div class="panel-header">
-            <h3 class="panel-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-              访问趋势
-            </h3>
-            <div class="chart-tabs">
-              <button v-for="t in ['7', '30', '90', '今年']" :key="t"
-                class="chart-tab" :class="{ active: activeTab === t }"
-                @click="activeTab = t">{{ t }}{{ t === '今年' ? '' : ' 天' }}</button>
-            </div>
-          </div>
-          <div class="chart-area">
-            <canvas id="chart-trend"></canvas>
-          </div>
-        </div>
+        <!-- 访问趋势图 -->
+        <AdminTrafficChart ref="trafficChartRef" :visit-trend="visitTrend" :visit-trend7="visitTrend7" />
 
         <div class="panel" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <!-- 分类分布饼图 -->
+          <AdminCategoryChart ref="categoryChartRef" :category-dist="categoryDist" />
           <div>
-            <div class="panel-header">
-              <h3 class="panel-title">分类分布</h3>
-              <NuxtLink to="/admin/categories" class="panel-action">管理 →</NuxtLink>
-            </div>
-            <div class="chart-area" style="height: 200px;">
-              <canvas v-if="categoryDist.length" id="chart-category"></canvas>
-              <div v-else style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); font-size: 13px;">暂无数据</div>
-            </div>
-          </div>
-          <div>
-            <div class="panel-header">
-              <h3 class="panel-title">流量来源</h3>
-            </div>
+            <div class="panel-header"><h3 class="panel-title">流量来源</h3></div>
             <div style="display: flex; flex-direction: column; gap: 10px; padding-top: 4px;">
               <div v-for="s in trafficSources" :key="s.name">
                 <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
@@ -378,14 +344,10 @@ watch(activeTab, () => {
         </div>
       </div>
 
-      <!-- Right: todos + status -->
       <div style="display: flex; flex-direction: column; gap: 16px;">
         <div class="panel">
           <div class="panel-header">
-            <h3 class="panel-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-              待办清单
-            </h3>
+            <h3 class="panel-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> 待办清单</h3>
             <span class="panel-action">{{ todos.filter(t => typeof t.count === 'number' && t.count > 0).length }} 项</span>
           </div>
           <div class="todo-list">
@@ -405,19 +367,11 @@ watch(activeTab, () => {
         </div>
 
         <div class="panel">
-          <div class="panel-header">
-            <h3 class="panel-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              站点状态
-            </h3>
-          </div>
+          <div class="panel-header"><h3 class="panel-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 站点状态</h3></div>
           <div style="display: flex; flex-direction: column; gap: 10px;">
             <div v-for="s in services" :key="s.name" style="display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
               <span style="color: var(--text-2); display: flex; align-items: center; gap: 6px;">
-                <span :style="{
-                  width: '6px', height: '6px', borderRadius: '50%',
-                  background: s.status === 'success' ? 'var(--success)' : s.status === 'warning' ? 'var(--accent)' : 'var(--danger)'
-                }"></span>
+                <span :style="{ width: '6px', height: '6px', borderRadius: '50%', background: s.status === 'success' ? 'var(--success)' : s.status === 'warning' ? 'var(--accent)' : 'var(--danger)' }"></span>
                 {{ s.name }}
               </span>
               <span style="font-family: 'JetBrains Mono', monospace; color: var(--text);">{{ s.value }}</span>
@@ -430,23 +384,12 @@ watch(activeTab, () => {
     <!-- Recent posts -->
     <div class="panel" style="margin-top: 4px;">
       <div class="panel-header">
-        <h3 class="panel-title">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-          最近文章
-        </h3>
+        <h3 class="panel-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg> 最近文章</h3>
         <NuxtLink to="/admin/posts" class="panel-action">查看全部 →</NuxtLink>
       </div>
       <div v-if="!recentPosts.length" style="padding: 24px; text-align: center; color: var(--muted); font-size: 13px;">还没有文章</div>
       <table v-else class="recent-table">
-        <thead>
-          <tr>
-            <th>标题</th>
-            <th style="width: 90px;">状态</th>
-            <th style="width: 90px;">浏览</th>
-            <th style="width: 140px;">更新时间</th>
-            <th style="width: 60px;"></th>
-          </tr>
-        </thead>
+        <thead><tr><th>标题</th><th style="width: 90px;">状态</th><th style="width: 90px;">浏览</th><th style="width: 140px;">更新时间</th><th style="width: 60px;"></th></tr></thead>
         <tbody>
           <tr v-for="a in recentPosts" :key="a.id">
             <td>

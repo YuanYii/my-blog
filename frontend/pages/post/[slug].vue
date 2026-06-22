@@ -1,5 +1,12 @@
 <script setup lang="ts">
 import DOMPurify from 'dompurify'
+// 2026-06-22 抽出 → composables/useMarkdownUtils.ts
+// 模板里继续叫 formatDate / formatDateTime — 零改动。renderMarkdown 同理。
+import { formatDate as formatDateShared, formatDateTime as formatDateTimeShared, renderMarkdown } from '~/composables/useMarkdownUtils'
+
+// 2026-06-13 修复（auto_fix BUG-003）：
+// 原 safeMarkdown 在 SSR 阶段调 DOMPurify.sanitize 抛 `default.sanitize is not a function`
+// → 所有 /post/* 500。修复：safeMarkdown 内 import.meta.client 守卫，SSR 走 ssrSafeHtml 兜底。
 
 const route = useRoute()
 const { get, post } = usePublicApi()
@@ -82,55 +89,51 @@ const handleSubmitComment = async () => {
   finally { submitting.value = false }
 }
 
-const formatDate = (d: string) => d ? d.substring(0, 10) : ''
-// 2026-06-13 修复（BUG-068）：后端返的 publishedAt 是 LocalDateTime 序列化（无 'Z'），
-// 直接 new Date("2026-06-13T03:45:00") 会按本地时区解析，与服务端 Asia/Shanghai 差 8h。
-// 统一加 'Z' 表明 UTC，Date 内部按 UTC 解析，getXxx() 自动转本地时区。
-const formatDateTime = (d: string) => {
-  if (!d) return ''
-  const utc = d.endsWith('Z') || d.includes('+') || d.includes('-', 10) ? d : d + 'Z'
-  const date = new Date(utc)
-  if (isNaN(date.getTime())) return d.replace('T', ' ').substring(0, 16)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
+// 2026-06-22 抽出 → composables/useMarkdownUtils.ts
+// 模板里继续叫 formatDate / formatDateTime — 零改动。
+const formatDate = (d: string | number | null | undefined) => formatDateShared(d)
+const formatDateTime = (d: string | number | null | undefined) => formatDateTimeShared(d)
 
-// 简易 markdown 渲染（生产用 marked/remark，这里 MVP 走最简版）
-const renderMarkdown = (md: string) => {
+/**
+ * SSR 阶段的安全 HTML（auto_fix BUG-003）：
+ * - DOMPurify 在 SSR 不可用（默认导出不是函数），会抛 500
+ * - 替代方案：仅过滤危险协议（javascript: / data: / vbscript:），
+ *   再用一个简单的白名单把 <script> / <iframe> / on* 属性剥离。
+ * - 不依赖 DOMPurify，SSR 安全可用。
+ */
+const ssrSafeHtml = (md: string): string => {
   if (!md) return ''
-  let html = md
-  // 代码块
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="lang-$1">$2</code></pre>')
-  // 标题
-  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>')
-  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>')
-  html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>')
-  // 粗体/斜体
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>')
-  // 链接
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
-  // 引用
-  html = html.replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>')
-  // 列表
-  html = html.replace(/^- (.*$)/gim, '<li>$1</li>')
-  html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-  // 段落
-  html = html.split('\n\n').map(p => p.startsWith('<') ? p : `<p>${p}</p>`).join('\n')
+  let html = renderMarkdown(md)
+  // 1. 过滤危险协议
+  html = html.replace(/(href|src)=(["'])\s*(javascript|data|vbscript):/gi, '$1=$2#')
+  // 2. 去掉 <script> / <iframe> / <object> / <embed> 整段
+  html = html.replace(/<(script|iframe|object|embed|style|link|meta)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+  html = html.replace(/<(script|iframe|object|embed|style|link|meta)\b[^>]*\/?>/gi, '')
+  // 3. 去掉 on* 事件属性
+  html = html.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
   return html
 }
 
 /**
- * 安全渲染 markdown：
- * - 先 renderMarkdown 转成 HTML 字符串
- * - 再 DOMPurify.sanitize 过滤掉危险节点/属性
+ * 安全渲染 markdown（auto_fix BUG-003 修复）：
+ * - SSR 阶段：DOMPurify 默认导出不可用会抛 500 → 走 ssrSafeHtml 兜底（协议 + 标签过滤）
+ * - Client 阶段：DOMPurify.sanitize 严格白名单（防御深度）
  * 防止用户文章里写 script 标签或 onerror 属性等触发 XSS
  */
-const safeMarkdown = (md: string) => DOMPurify.sanitize(renderMarkdown(md), {
-  ALLOWED_TAGS: ['p', 'h1', 'h2', 'h3', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'br', 'hr'],
-  ALLOWED_ATTR: ['href', 'target', 'class'],
-  ALLOW_DATA_ATTR: false
-})
+const safeMarkdown = (md: string): string => {
+  if (import.meta.client) {
+    // 客户端：DOMPurify 已就绪（顶层 import 在 client bundle 正常工作）
+    return DOMPurify.sanitize(renderMarkdown(md), {
+      // 2026-06-16 修复（BUG-078）：加 img 标签——之前白名单漏了，图片 markdown 渲染出 <img> 也被净化掉
+      ALLOWED_TAGS: ['p', 'h1', 'h2', 'h3', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'br', 'hr', 'img'],
+      // 2026-06-16 修复（BUG-078）：加 src/alt/loading（与 edit.vue 一致）
+      ALLOWED_ATTR: ['href', 'target', 'class', 'src', 'alt', 'loading'],
+      ALLOW_DATA_ATTR: false
+    })
+  }
+  // SSR：避免 DOMPurify 不可用导致 500
+  return ssrSafeHtml(md)
+}
 
 onMounted(async () => {
   // 评论 + 相关文章是依赖 article.id 的子加载，setup 顶层 useAsyncData 拿不到 dynamic param

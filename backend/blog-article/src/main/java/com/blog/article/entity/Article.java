@@ -1,10 +1,12 @@
 package com.blog.article.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -23,6 +25,7 @@ public class Article {
     private String title;
     private String slug;
     private String summary;
+    @JsonAlias("content")
     private String contentMd;
     private String coverUrl;
     /** 0-草稿 1-已发布 2-已归档 */
@@ -30,7 +33,9 @@ public class Article {
     private Integer viewCount;
     private Long categoryId;
     private LocalDateTime publishedAt;
+    @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
+    @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
     @TableLogic

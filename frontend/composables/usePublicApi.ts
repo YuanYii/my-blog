@@ -4,7 +4,39 @@
  *
  * 2026-06-08 重构拆分：useApi 拆成 usePublicApi + useAdminApi
  * 删除 useApi 时机：所有 page 迁移完成后
+ *
+ * 2026-06-22 修复（BUG-XXX 访客 ID 并发竞态）：
+ * 之前每次 request() 都同步读 localStorage + 懒初始化 vid。
+ * 首页 6-7 个 useAsyncData 并发时，可能多个 request 都看到 localStorage 为空，
+ * 各自分别生成 UUID 并互相覆盖 → 后端按天去重 page_view 失效。
+ * 解决：用 module 级 lazy promise，第一次访问时初始化一次，后续复用。
  */
+const VISITOR_KEY = 'blog_visitor_id'
+let visitorIdPromise: Promise<string> | null = null
+
+function ensureVisitorId(): Promise<string> {
+  if (!import.meta.client) return Promise.resolve('')
+  if (visitorIdPromise) return visitorIdPromise
+  visitorIdPromise = new Promise<string>((resolve) => {
+    try {
+      const existing = localStorage.getItem(VISITOR_KEY)
+      if (existing) {
+        resolve(existing)
+        return
+      }
+      const vid = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : 'v-' + Math.random().toString(36).slice(2) + Date.now().toString(36)
+      localStorage.setItem(VISITOR_KEY, vid)
+      resolve(vid)
+    } catch {
+      // localStorage 不可用（隐私模式 / 第三方 cookie 禁用）—— 退化到内存随机 id
+      resolve('mem-' + Math.random().toString(36).slice(2) + Date.now().toString(36))
+    }
+  })
+  return visitorIdPromise
+}
+
 export const usePublicApi = () => {
   const config = useRuntimeConfig()
   const base = config.public.apiBase
@@ -15,20 +47,26 @@ export const usePublicApi = () => {
       ...(options.headers || {})
     }
     // 公开 API：故意不带 Authorization / X-Device-Id
-    return $fetch<T>(`${base}${path}`, {
-      ...options,
-      headers,
-      onResponse({ response }) {
-        // 业务 code 检查：后端业务错误用 HTTP 200 + body.code=非200 表达
-        const data: any = response._data
-        if (data && typeof data === 'object' && 'code' in data && data.code !== 200) {
-          throw createError({
-            statusCode: response.status,
-            message: data.message,
-            data: data
-          })
+    // 自动带 X-Visitor-Id（公开页访客标识，用于按天去重 page_view）。
+    // module 级 promise 缓存 — 并发 6-7 个 useAsyncData 也只生成一次。
+    const vidPromise = ensureVisitorId()
+    return vidPromise.then((vid) => {
+      if (vid) headers['X-Visitor-Id'] = vid
+      return $fetch<T>(`${base}${path}`, {
+        ...options,
+        headers,
+        onResponse({ response }) {
+          // 业务 code 检查：后端业务错误用 HTTP 200 + body.code=非200 表达
+          const data: any = response._data
+          if (data && typeof data === 'object' && 'code' in data && data.code !== 200) {
+            throw createError({
+              statusCode: response.status,
+              message: data.message,
+              data: data
+            })
+          }
         }
-      }
+      })
     })
   }
 

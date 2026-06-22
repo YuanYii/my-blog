@@ -4,14 +4,14 @@
       <NuxtLink to="/" class="flex items-center gap-2">
         <!-- 2026-06-12 修复：原 logo 文字和首字母圈都硬编码 "Y" / "Yuan Yi"，
              无论 admin 在「站点设置 → 站点信息」改成什么，前台 nav 永远没反应。
-             改成读 /public/settings/blog 拿真实 title；缺省时 fallback 到 "Yuan Yi"。
+             改成读 /public/settings/blog 拿真实 title；缺省时 fallback 到 "加载中"。
              - title 缺省首字母圈
              - 有 logo URL 时优先显示 logo 图片 -->
         <div class="w-7 h-7 rounded-lg flex items-center justify-center text-white text-sm font-semibold overflow-hidden" style="background: var(--color-primary);">
           <img v-if="blog?.logo" :src="blog.logo" alt="logo" class="w-full h-full object-cover" />
-          <span v-else>{{ (blog?.title || 'Yuan Yi')[0] }}</span>
+          <span v-else>{{ (blog?.title || '加载中')[0] }}</span>
         </div>
-        <span class="font-serif-display text-lg">{{ blog?.title || 'Yuan Yi' }}</span>
+        <span class="font-serif-display text-lg">{{ blog?.title || '加载中' }}</span>
       </NuxtLink>
 
       <div class="hidden md:flex items-center gap-1">
@@ -38,9 +38,16 @@
 // 2026-06-12 新增：从公开端点拉站点信息，让 logo / title 反映 admin 在后台保存的值。
 // useAsyncData 用固定 key 'site-blog'——SiteFooter、app.vue 用同一 key 时 Nuxt 自动 dedupe，
 // 整个页面 SSR 只发一次请求。
-const { get, request } = usePublicApi()
-const { data: blogRes } = await useAsyncData('site-blog', () => get<any>('/public/settings/blog'))
-const blog = computed(() => blogRes.value?.data || {})
+//
+// 2026-06-22 修复（BUG-XXX 顶层 await 双倍阻塞）：
+// 之前 NavBar.vue 自己 await useAsyncData('site-blog', ...) 拉同一份数据。
+// Nuxt dedupe 的是 promise（只发一次请求），但**两个 await 都得等 promise resolve**——
+// 组件 setup 都阻塞。后端 /public/settings/blog 超时 → 整页白屏。
+// 修：app.vue 是唯一的"发起方"（顶层 await 一次），NavBar 这里改成 useState 拿 reactive ref。
+const { request } = usePublicApi()
+const blogRef = useState<any>('site-blog-data', () => ({}))
+// 在 script 里用 blogRef.value / template 用 blog（ref 自动 unwrap）
+const blog = computed(() => blogRef.value || {})
 
 // 2026-06-12 安全：后台管理入口图标只对「已授权设备」可见——
 // 未授权设备（陌生访客 / 未在 admin_device 白名单 approved）连入口都看不到。

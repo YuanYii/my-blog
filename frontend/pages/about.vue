@@ -79,7 +79,11 @@ const experiences = computed(() => {
     <!-- Hero -->
     <header class="about-hero">
       <div class="about-hero-inner">
-        <div class="avatar">Y</div>
+        <!-- 2026-06-16 修复：about 页头像硬编码 'Y' 跟 index.vue 一样走 profile.avatar 优先 + 首字母兜底 -->
+        <div class="avatar">
+          <img v-if="profile.avatar" :src="profile.avatar" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" />
+          <span v-else>{{ profile.nickname?.[0] || 'Y' }}</span>
+        </div>
         <div class="about-hero-text">
           <h1>关于我</h1>
           <p class="hero-desc">{{ profile.bio || '后端工程师，在上海工作。日常写 Java / Spring Boot，偶尔折腾前端。喜欢把学到的东西写下来——这个博客就是写给自己的笔记。' }}</p>

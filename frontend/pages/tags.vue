@@ -1,16 +1,22 @@
 <script setup lang="ts">
+// 2026-06-22 抽出 → composables/useMarkdownUtils.ts（统一 formatDate）
+import { formatDate } from '~/composables/useMarkdownUtils'
+
 const { get } = usePublicApi()
 
 const tags = ref<any[]>([])
-// 2026-06-13 修复（BUG-049）：去掉 articles 全表拉取，tag 计数改用 t.articleCount 字段。
-// "点击 tag 看该 tag 下文章" 列表需求暂时关闭——产品决策：标签云是导航入口，
-// 真正要浏览某个 tag 的文章应通过后端 /articles?tagId= 查询。
 const activeTag = ref<number | null>(null)
 const loading = ref(true)
 
-// 2026-06-13 修复（BUG-049）：原代码同时调 /articles/tags 和 /articles/archives（后者 LIMIT 1000）
-// 自己 reduce 算 tag 计数。后端 /articles/tags 已经返回了 articleCount 字段（基于 article_tag 表
-// COUNT(*)，准确无遗漏），前端直接用即可，避免多发一次全表拉取 + 超过 1000 篇文章时计数错。
+// 2026-06-13 修复（BUG-049）：去掉 articles 全表拉取，tag 计数改用 t.articleCount 字段。
+// 2026-06-22 修复（BUG-XXX "点击 tag 看到的是空列表"）：
+// 之前 filteredArticles 永远返回 []，因为产品决策"标签云是导航入口"关闭了，
+// 但模板 line 55 又写了"点击查看相关文章"——文案与实现矛盾。
+// 改：activeTag 变化时主动调 /articles?tagId=<id> 拉该 tag 下文章（后端 ArticleController
+// line 31 早就支持 tagId 参数，详见 ArticleService.list:67-69 的实现）。
+const filteredArticles = ref<any[]>([])
+const tagArticlesLoading = ref(false)
+
 const loadAll = async () => {
   try {
     const t = await get<any>('/articles/tags')
@@ -18,6 +24,24 @@ const loadAll = async () => {
   } catch { /* ignore */ }
   finally { loading.value = false }
 }
+
+// 2026-06-22 新增：activeTag 变化 → 拉该 tag 下文章（取消选择时清空）
+watch(activeTag, async (newTag, oldTag) => {
+  if (newTag === oldTag) return
+  if (newTag == null) {
+    filteredArticles.value = []
+    return
+  }
+  tagArticlesLoading.value = true
+  try {
+    const res = await get<any>('/articles', { tagId: newTag, size: 50 })
+    filteredArticles.value = res.data?.records || []
+  } catch {
+    filteredArticles.value = []
+  } finally {
+    tagArticlesLoading.value = false
+  }
+})
 
 // 每个 tag 的文章数（直接用后端返回的 articleCount）
 const tagCount = (tagId: number) => {
@@ -36,14 +60,6 @@ const tagSize = (count: number) => {
   if (count < 7) return '19px'
   return '22px'
 }
-
-const filteredArticles = computed(() => {
-  if (!activeTag.value) return []
-  // 不再维护 articles 全表，筛选该 tag 的文章需要 articles 列表
-  // ——公开 tags 页只展示"标签云 + 文章数"，进文章详情才看具体文章
-  // 如确实要"点击 tag 看该 tag 下文章列表"，需要后端加 /articles?tagId= 端点（已存在）
-  return []
-})
 
 onMounted(loadAll)
 </script>
@@ -84,11 +100,12 @@ onMounted(loadAll)
         <h3 class="font-serif" style="font-size: 18px; margin-bottom: 12px;">
           标签「{{ tags.find(t => t.id === activeTag)?.name }}」下的文章
         </h3>
-        <div v-if="!filteredArticles.length" style="padding: 20px; text-align: center; color: var(--muted);">暂无文章</div>
+        <div v-if="tagArticlesLoading" style="padding: 20px; text-align: center; color: var(--muted);">加载中…</div>
+        <div v-else-if="!filteredArticles.length" style="padding: 20px; text-align: center; color: var(--muted);">该标签下还没有文章</div>
         <ul v-else style="list-style: none; padding: 0;">
           <li v-for="a in filteredArticles" :key="a.id" style="padding: 10px 0; border-bottom: 1px dashed var(--line-soft);">
             <NuxtLink :to="`/post/${a.slug}`" style="color: var(--text); font-size: 15px;">{{ a.title }}</NuxtLink>
-            <span style="margin-left: 12px; color: var(--muted); font-size: 12px;">{{ (a.publishedAt || a.createdAt)?.substring(0, 10) }}</span>
+            <span style="margin-left: 12px; color: var(--muted); font-size: 12px;">{{ formatDate(a.publishedAt || a.createdAt) }}</span>
           </li>
         </ul>
       </div>

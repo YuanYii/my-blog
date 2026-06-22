@@ -1,5 +1,6 @@
 package com.blog.common;
 
+import com.blog.common.web.TraceIdUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,11 +22,16 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /** 业务异常 */
+    /**
+     * 业务异常（FR-4.1）：已知业务异常输出 WARN。
+     * 2026-06-21 v4.2.1 polish: 拼 traceId 后缀到 response message,与 handleAny 行为一致,
+     * 前端 toast 业务错也能看到 traceId,owner 排查日志方便。
+     * 日志行 traceId 由 logback pattern %X{traceId} 自动带,无需手工拼。
+     */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Result<Void>> handleBusiness(BusinessException e) {
         log.warn("业务异常: code={} msg={}", e.getCode(), e.getMessage());
-        return ResponseEntity.ok(Result.error(e.getCode(), e.getMessage()));
+        return ResponseEntity.ok(Result.error(e.getCode(), TraceIdUtil.withTraceId(e.getMessage())));
     }
 
     /** @Valid 参数校验失败 (RequestBody) */
@@ -85,6 +91,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.ok(Result.error(400, "缺少文件字段: " + e.getRequestPartName()));
     }
 
+    /** 2026-06-15 修复（BUG-NEW-5）：请求不带 multipart 头（如 form-data 缺 boundary）
+     *  Spring 抛 MultipartException "Current request is not a multipart request" →
+     *  之前进 @ExceptionHandler 兜底返 500 不友好；补 400 提示。
+     *  触发场景：客户端用 fetch 但没设 Content-Type: multipart/form-data，或 curl 没 -F。
+     */
+    @ExceptionHandler(org.springframework.web.multipart.MultipartException.class)
+    public ResponseEntity<Result<Void>> handleMultipart(org.springframework.web.multipart.MultipartException e) {
+        log.warn("非 multipart 请求: {}", e.getMessage());
+        return ResponseEntity.ok(Result.error(400, "请求格式错误：请用 multipart/form-data 上传文件"));
+    }
+
     /** 2026-06-12 新增：缺少 @RequestParam 必填参数
      *  Spring 抛 MissingServletRequestParameterException，避免 500
      */
@@ -103,11 +120,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.ok(Result.error(400, "参数 " + e.getName() + " 类型错误"));
     }
 
-    /** 兜底 */
+    /**
+     * 兜底（FR-4.2/4.3）：未预期异常输出 ERROR（含完整 stacktrace），日志带 traceId（MDC pattern）。
+     * 同时把 traceId 回写到响应 message，方便用户/owner 即使不看响应头也能复制编号定位（US-3）。
+     * 2026-06-21 v4.2.1 polish: 改用 TraceIdUtil.withTraceId 抽出去,与 handleBusiness / AdminAuthFilter / IpRateLimitFilter 共用一份逻辑
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleAny(Exception e) {
         log.error("未预期异常", e);
+        String message = TraceIdUtil.withTraceId(ResultCode.INTERNAL_ERROR.getMessage());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Result.error(ResultCode.INTERNAL_ERROR));
+                .body(Result.error(ResultCode.INTERNAL_ERROR.getCode(), message));
     }
 }

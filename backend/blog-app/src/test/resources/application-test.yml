@@ -1,0 +1,32 @@
+spring:
+  datasource:
+    driver-class-name: org.sqlite.JDBC
+    # file::memory:?cache=shared —— 同进程内所有连接共享同一内存库
+    # pool-size=1 避免写锁竞争（内存 SQLite 写仍串行）
+    url: jdbc:sqlite:file::memory:?cache=shared
+    hikari:
+      maximum-pool-size: 1
+      minimum-idle: 1
+      connection-timeout: 5000
+    # schema + seed 由 TestSchemaConfig#testDataSource 在 DataSource bean 创建时执行，
+    # 保证早于所有 @PostConstruct（见 TestSchemaConfig 注释）。
+
+  # Redis bean 由 @MockBean StringRedisTemplate 替换，这里只是占位（Lettuce 不会建连）
+  redis:
+    host: localhost
+    port: 6379
+
+server:
+  servlet:
+    context-path: /   # 测试中置空：MockMvc 请求路径与 @RequestMapping 直接对齐，无 /api/v1 前缀问题
+
+blog:
+  jwt:
+    secret: blog-default-secret-key-please-change-in-production-32bytes
+    expiration: 86400000
+  upload:
+    local:
+      dir: /tmp/test-uploads
+  security:
+    ip-rate-limit:
+      enabled: false   # 测试不走 IP 限流，避免 Redis 依赖干扰

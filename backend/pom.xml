@@ -13,7 +13,7 @@
 
     <groupId>com.blog</groupId>
     <artifactId>blog-parent</artifactId>
-    <version>0.1.0</version>
+    <version>${revision}</version>
     <packaging>pom</packaging>
     <name>blog-parent</name>
     <description>Personal blog backend - parent pom (multi-module, Java 8 / Spring Boot 2.7)</description>
@@ -28,6 +28,10 @@
     </modules>
 
     <properties>
+        <!-- CI-friendly 版本号:所有子模块用 ${revision} 引用父 POM,升级只改这一行 -->
+        <!-- 2026-06-20: 4.1.0 → 4.2.0,核心增量见 docs/changelogs/2026-06-20-v4.2.0-data-backup.md (REQ-BACKUP-2026-06-20 数据备份) -->
+        <revision>4.2.0</revision>
+
         <java.version>1.8</java.version>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>

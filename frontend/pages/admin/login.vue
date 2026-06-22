@@ -9,11 +9,18 @@ const { deviceId, deviceName, syncDeviceId } = useDevice()
 // 2026-06-13 修复（BUG-078）：仅 dev 模式预填默认账密方便本地登录，
 // prod 构建会跳过 → 用户必须手输（防占位凭证泄漏到生产）。
 // 注：import.meta 必须在 <script setup> 里求值（不能放 Vue 模板里 → Vite 编译错）。
+// 2026-06-22 优化：三元表达式在 production build 时字面量 'admin'/'123456'
+// 仍可能被 Terser 保留为占位（特别是 sourcemap 开启时）。改成 if 分支让 minifier
+// 更容易识别为 dead code（dev 分支整段不进入 bundle）。
 const form = reactive({
-  username: import.meta.dev ? 'admin' : '',
-  password: import.meta.dev ? '123456' : ''
+  username: '',
+  password: ''
 })
 const isDev = import.meta.dev
+if (isDev) {
+  form.username = 'admin'
+  form.password = '123456'
+}
 const loading = ref(false)
 const error = ref('')
 const pendingDevice = ref<string>('')  // 待授权设备的友好名（PENDING 2001 时用）
@@ -77,7 +84,7 @@ const handleSubmit = async () => {
     <div class="auth-card">
       <div class="auth-logo">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary);"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-        <span>Yuan Yi</span>
+        <span>加载中</span>
       </div>
       <h1 class="auth-title">欢迎回来 👋</h1>
       <p class="auth-subtitle">登录后台管理你的博客</p>
@@ -96,7 +103,6 @@ const handleSubmit = async () => {
         <div v-if="pendingDevice" style="background: var(--accent); color: white; font-size: 13px; padding: 12px 14px; border-radius: 10px; margin-bottom: 12px; line-height: 1.6;">
           <div style="font-weight: 600; margin-bottom: 4px;">⏳ 设备未授权</div>
           <div style="opacity: 0.95;">设备「<strong>{{ pendingDevice }}</strong>」未授权，请联系管理员在「设备管理 → 待授权」中批准后再次登录。</div>
-          <div style="opacity: 0.85; margin-top: 6px; font-size: 12px;">💡 首次部署？如尚无已授权设备，请通过 <code style="background: rgba(255,255,255,0.15); padding: 1px 5px; border-radius: 3px;">SSH + MySQL</code> 直接将该设备 status 置为 <code style="background: rgba(255,255,255,0.15); padding: 1px 5px; border-radius: 3px;">approved</code>。</div>
         </div>
 
         <div v-if="error" style="color: var(--danger); font-size: 13px; margin-bottom: 12px;">{{ error }}</div>

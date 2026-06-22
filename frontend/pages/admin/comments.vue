@@ -1,13 +1,21 @@
 <script setup lang="ts">
+// 2026-06-22 抽出 → composables/useMarkdownUtils.ts（统一 number/string 兼容）
+import { formatDateTime } from '~/composables/useMarkdownUtils'
+
 definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
-const { get, put } = useAdminApi()
+// 2026-06-16 修复（BUG-076）：之前只解构 { get, put }，handleDelete 调 `del()` 报
+// ReferenceError: del is not defined → catch 弹"删除失败：del is not defined"。
+// 物理删除后端 DELETE /comments/{id} 早就实现了，缺的是前端 del 解构。
+const { get, put, del } = useAdminApi()
+const route = useRoute()
+const $toast = useToast()
+const $dialog = useDialog()
 const filter = ref<number>(0)
 const comments = ref<any[]>([])
 const articles = ref<any[]>([])
 const loading = ref(false)
 const total = ref(0)
-
 const statusMap: Record<number, { label: string; apiValue: number; cls: string }> = {
   0: { label: '待审核', apiValue: 0, cls: 'pending' },
   1: { label: '已通过', apiValue: 1, cls: 'approved' },
@@ -49,25 +57,34 @@ const handleAction = async (c: any, action: 'approve' | 'reject') => {
     await put(`/comments/${c.id}/status`, { status })
     load()
   } catch (e: any) {
-    alert('操作失败：' + (e?.data?.message || e?.message))
+    $toast.error('操作失败：' + (e?.data?.message || e?.message))
   }
 }
 
 // 2026-06-13 修复（BUG-074）：admin/comments 之前无物理删除入口，
 // 后端 DELETE /comments/{id} 已实现但前端未暴露；垃圾评论/广告只能"拒绝"留在库里。
+// 2026-06-16 改造：confirm → $dialog.confirm；alert → $toast
 const handleDelete = async (c: any) => {
-  if (!confirm(`确认删除 ${c.nickname} 的这条评论？此操作不可撤销。`)) return
+  const { confirmed } = await $dialog.confirm({
+    title: '删除评论',
+    message: `确认删除 ${c.nickname} 的这条评论？此操作不可撤销。`,
+    confirmText: '删除',
+    danger: true
+  })
+  if (!confirmed) return
   try {
     await del(`/comments/${c.id}`)
+    $toast.success('已删除')
     load()
   } catch (e: any) {
-    alert('删除失败：' + (e?.data?.message || e?.message))
+    $toast.error('删除失败：' + (e?.data?.message || e?.message))
   }
 }
 
-const formatDateTime = (s: string) => s ? s.replace('T', ' ').substring(0, 16) : ''
-
 onMounted(async () => {
+  // 支持从仪表盘带 ?status=0 跳转直达「待审核」（0 待审/1 已通过/2 已拒绝）
+  const q = route.query.status
+  if (q !== undefined && q !== '' && statusMap[Number(q)]) filter.value = Number(q)
   await loadArticles()
   await load()
 })
