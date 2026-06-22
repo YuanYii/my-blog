@@ -55,9 +55,9 @@ my-blog/
 │   │   ├── deploy-server.env.example  # deploy env 模板
 │   │   ├── deploy.env                 # deploy env（不入库）
 │   │   └── sudoers-myblog-restore.example  # 恢复 sudoers 白名单
-│   ├── sql/                           # 数据库脚本（v2.6.0 整合后 2 个 schema）
-│   │   ├── schema-mysql.sql           # MySQL 完整 schema + seed data（13 张表）
-│   │   └── schema-sqlite.sql          # SQLite 完整 schema + seed data（dev/prod 默认，14 张表）
+│   ├── sql/                           # 数据库脚本（v2.6.0 整合后 2 个 schema；2026-06-22 复核：schema-sqlite 15 张 / schema-mysql 13 张，MySQL 缺 restore_record/about_section 是已知遗留，详见 README §3.5）
+│   │   ├── schema-mysql.sql           # MySQL 完整 schema + seed data（13 张表，含 backup_record + ip_ban；缺 restore_record + about_section）
+│   │   └── schema-sqlite.sql          # SQLite 完整 schema + seed data（dev/prod 默认，15 张表）
 │   ├── docker/                        # 历史 docker-compose（v2.5 之前用，v2.6+ 不再推荐）
 │   ├── nginx/                         # Nginx 反向代理配置（nginx.conf / nginx-https.conf）
 │   ├── 设计文档/                      # 设计方案
@@ -183,17 +183,19 @@ backend/
     └── src/main/
         ├── java/com/blog/
         │   ├── BlogApplication.java # 启动类
+        │   ├── common/                            # ⚠️ 2026-06-22 复核确认实际路径是 com.blog.common（不是 README 早期误写的 com.blog.security）
+        │   │   ├── {Result, ResultCode, BusinessException, GlobalExceptionHandler, PageRequest, PageResult, TrustedProxyUtil}.java
+        │   │   └── security/                     # Filter 链
+        │   │       ├── AdminAuthFilter.java      # JWT 每请求鉴权 + 设备白名单校验（HIGHEST_PRECEDENCE+2）
+        │   │       └── IpRateLimitFilter.java    # IP 限流封禁（v4.0.0，Redis + DB，HIGHEST_PRECEDENCE+1）
         │   ├── config/
-        │   │   ├── CorsConfig.java     # CORS 跨域（读 yml 环境变量）
+        │   │   ├── CorsConfig.java               # CORS 跨域（读 yml 环境变量）
         │   │   ├── MybatisPlusConfig.java
-        │   │   ├── OpenApiConfig.java   # Swagger
-        │   │   └── StaticResourceConfig.java # 静态资源映射
-        │   ├── security/
-        │   │   ├── AdminAuthFilter.java # JWT 每请求鉴权 + 设备白名单校验
-        │   │   └── IpRateLimitFilter.java # IP 限流封禁（v4.0.0，Redis + DB）
+        │   │   ├── OpenApiConfig.java            # Swagger
+        │   │   └── StaticResourceConfig.java     # 静态资源映射
         │   └── controller/
         │       ├── HelloController.java
-        │       ├── DashboardController.java # 仪表盘聚合（KPI + 30 天趋势 + 热门）
+        │       ├── DashboardController.java       # 仪表盘聚合（KPI + 30 天趋势 + 热门）
         │       └── ApiWhitelistController.java
         └── resources/
             ├── application-dev.yml      # dev 配置（v2.6.0 默认 SQLite）
@@ -379,28 +381,35 @@ blog-app（启动类，唯一可执行 jar）
 
 详见 `docs/接口契约审计报告.md`。
 
-### 3.5 数据库设计（14 张表）
+### 3.5 数据库设计（schema-sqlite 实际 15 张 / schema-mysql 实际 13 张）
 
-| 表名 | 说明 | 关键字段 |
-|------|------|----------|
-| `user` | 管理员账号 | username / password_hash (BCrypt) / nickname / email / avatar / bio / location / role |
-| `article` | 文章 | title / slug / summary / content_md / cover_url / status / view_count / category_id / deleted |
-| `category` | 分类 | name / slug / description / sort / visible |
-| `tag` | 标签 | name / slug |
-| `article_tag` | 文章-标签关联 | article_id / tag_id |
-| `comment` | 评论 | content / article_id / parent_id / nickname / email / website / ip / user_agent / status (0待审/1通过/2屏蔽) |
-| `article_view_log` | 历史表（v2.5.0 之前的访问日志，0 数据保留 schema 兼容） | article_id / view_date / view_count |
-| `site_settings` | 站点设置（按 section 存整段 JSON，v2.1 新增，v2.3 扩到 8 section） | section (blog/social/preferences/theme/advanced + techstack/experience) / data (JSON) |
-| `admin_device` | 设备白名单（v2.2 新增） | device_id / status (pending/approved/revoked) |
-| `api_whitelist` | API 路由白名单（AdminAuthFilter 用，v2.2 新增） | path_prefix / type (public/admin) / enabled / description |
-| `page_view` | 访问统计（v2.5.0 新增，v2.6.0 业务层去重） | visitor / url / visit_date / ua / ip |
-| `ip_ban` | IP 封禁记录（v4.0.0 新增，限流超阈值时落库 + 手动解封） | ip / expires_at / unbanned / created_at |
-| `backup_record` | 备份记录（v4.2.0 新增，异步备份状态 + GitHub Release tag） | status / tag / started_at / finished_at / error_stage / operator_name |
-| `restore_record` | 恢复记录（v4.3.0 新增，异步恢复状态） | status / source_tag / scope / started_at / finished_at / error_stage |
+> **2026-06-22 复核确认**：dev/prod 默认 SQLite 实际 **15 张表**（含 `restore_record`），MySQL schema 实际 **13 张表**（含 `backup_record`，**缺 `restore_record` + `about_section`**）。MySQL schema 缺这两张是**已知遗留**，下次切回 MySQL profile 前需要补 DDL（参考 schema-sqlite.sql 的同段 SQL）。下表按"代码实际涉及"的 15 张列，标注哪些 MySQL schema 暂未建。
 
-**SQL 文件**（v2.6.0 整合后，2 个 schema 替代 8 个散文件；v4.3.0 起 14 张表）：
-- `docs/sql/schema-sqlite.sql` — **dev/prod 默认**，14 张表 + seed data
-- `docs/sql/schema-mysql.sql` — MySQL 可选 profile，13 张表 + seed data
+| 表名 | 说明 | 关键字段 | schema-sqlite | schema-mysql |
+|------|------|----------|---------------|--------------|
+| `user` | 管理员账号 | username / password_hash (BCrypt) / nickname / email / avatar / bio / location / role | ✅ | ✅ |
+| `article` | 文章 | title / slug / summary / content_md / cover_url / status / view_count / category_id / deleted | ✅ | ✅ |
+| `category` | 分类 | name / slug / description / sort / visible | ✅ | ✅ |
+| `tag` | 标签 | name / slug | ✅ | ✅ |
+| `article_tag` | 文章-标签关联 | article_id / tag_id | ✅ | ✅ |
+| `comment` | 评论 | content / article_id / parent_id / nickname / email / website / ip / user_agent / status (0待审/1通过/2屏蔽) | ✅ | ✅ |
+| `article_view_log` | 历史表（v2.5.0 之前的访问日志，0 数据保留 schema 兼容） | article_id / view_date / view_count | ✅ | ✅ |
+| `site_settings` | 站点设置（按 section 存整段 JSON，v2.1 新增，v2.3 扩到 8 section） | section (blog/social/preferences/theme/advanced + techstack/experience) / data (JSON) | ✅ | ✅ |
+| `admin_device` | 设备白名单（v2.2 新增） | device_id / status (pending/approved/revoked) | ✅ | ✅ |
+| `api_whitelist` | API 路由白名单（AdminAuthFilter 用，v2.2 新增） | path_prefix / type (public/admin) / enabled / description | ✅ | ✅ |
+| `page_view` | 访问统计（v2.5.0 新增，v2.6.0 业务层去重） | visitor / url / visit_date / ua / ip | ✅ | ✅ |
+| `ip_ban` | IP 封禁记录（v4.0.0 新增，限流超阈值时落库 + 手动解封） | ip / expires_at / unbanned / created_at | ✅ | ✅ |
+| `backup_record` | 备份记录（v4.2.0 新增，异步备份状态 + GitHub Release tag） | status / tag / started_at / finished_at / error_stage / operator_name | ✅ | ✅ |
+| `restore_record` | 恢复记录（v4.3.0 新增，异步恢复状态） | status / source_tag / scope / started_at / finished_at / error_stage | ✅ | **❌ 待补** |
+| `about_section` | 关于页 section（v2.3 设计意图，DDL 见 `docs/设计文档/博客系统设计方案.md` §5.2.4） | section_key / data / sort / enabled | **❌ 设计意图未落地**（复用 site_settings.techstack/experience） | **❌ 设计意图未落地** |
+
+**SQL 文件**（v2.6.0 整合后，2 个 schema 替代 8 个散文件）：
+- `docs/sql/schema-sqlite.sql` — **dev/prod 默认**，15 张表 + seed data（含 `restore_record`）
+- `docs/sql/schema-mysql.sql` — MySQL 可选 profile，13 张表 + seed data（**缺 `restore_record` + `about_section`**）
+
+> **schema-mysql 待补清单（TODO，下次切回 MySQL profile 前修复）**：
+> - 补 `restore_record` 表（参考 `schema-sqlite.sql` 第 12 段，需要把 `INTEGER PRIMARY KEY AUTOINCREMENT` 改为 `BIGINT AUTO_INCREMENT`，并加 `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4` 引擎声明；MySQL 8.0 不支持 SQLite 的 partial unique index `WHERE status = 'RUNNING'`，需改用 `status` 字段建单列 unique + 应用层兜底，参考 `schema-mysql.sql` 里 backup_record 的写法）
+> - `about_section` 表按当前事实不需要补（设计意图未落地，前台 `/about` 走 `site_settings.techstack`/`site_settings.experience`）
 
 ### 3.6 配色契约
 
@@ -548,8 +557,8 @@ Nginx (:80 → 443)         ← apt 装 nginx（系统服务）
 
 | 资源       | 规格                           | 成本     |
 |----------|------------------------------|--------|
-| VPS 洛杉矶 | 1C2G / 30G SSD / 3M 带宽       | ~¥70/年 |
-| 域名       | `coreyai.com`                | ¥55/年  |
+| VPS 洛杉矶 | 1C2G / 30G SSD / 3M 带宽       | Vultr 1C2G 约 $5/月 ≈ ¥35/月 ≈ ¥420/年（2026-06-22 复核：README 早期误写 ¥70/年、设计文档误写 ¥30/月，本表以 Vultr 官网当前公开价为准） |
+| 域名       | `coreyai.cn`                 | ¥55/年  |
 | SSL 证书   | Let's Encrypt (certbot 自动续期) | ¥0     |
 
 > v2.7.0 释放前端 150-250MB 内存后，JVM heap 可从 256MB 提到 384MB（详见 `docs/scripts/deploy-server.sh`）。
@@ -655,10 +664,11 @@ bash docs/scripts/verify-sqlite.sh
 所有敏感信息通过环境变量注入，不在仓库中明文保存：
 
 ```bash
-# 复制模板
-cp .env.prod.example .env.prod
-chmod 600 .env.prod
-# 填入实际值：DB_PASSWORD / REDIS_PASSWORD / JWT_SECRET / CORS_ORIGINS 等
+# 复制模板（2026-06-22: 改用 docs/scripts/deploy-server.env.example,早期 .env.prod.example 已删）
+cp docs/scripts/deploy-server.env.example docs/scripts/deploy-server.env
+# 编辑真实值后 ssh 上传到服务器 /etc/myblog/myblog.env:
+#   scp docs/scripts/deploy-server.env myblog@<ecs-ip>:/tmp/myblog.env
+#   ssh myblog@<ecs-ip> 'sudo mv /tmp/myblog.env /etc/myblog/myblog.env && sudo chmod 600 /etc/myblog/myblog.env'
 ```
 
 关键生产改造（`docs/项目部署解决方案.md` §七）：
@@ -760,7 +770,7 @@ sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%
 
 | 文档 | 说明                                         |
 |------|--------------------------------------------|
-| [`docs/设计文档/博客系统设计方案.md`](docs/设计文档/博客系统设计方案.md) | 完整需求与架构设计（v3.1，含 v2.6.0/v2.7.0/v4.0.0 变更记录）       |
+| [`docs/设计文档/博客系统设计方案.md`](docs/设计文档/博客系统设计方案.md) | 完整需求与架构设计（v4.2.1 增量更新：v3.1 之前的快照保留作为历史，v4.0.0~v4.3.0 走 §11 v4.x 增量变更记录段 + 各子设计文档）       |
 | [`docs/项目部署解决方案.md`](docs/项目部署解决方案.md) | 部署解决方案（VPS 1C2G，无 docker，v4.0.0 配套） |
 | [`docs/项目部署操作手册.md`](docs/项目部署操作手册.md) | 部署操作手册（v4.0.0+ 一步步操作）              |
 | [`docs/接口契约审计报告.md`](docs/接口契约审计报告.md) | API 契约 100% 一致性审计（v4.0.0 快照：13 Controller / 60 端点，v4.2.0+ 新增备份/恢复端点待补） |
