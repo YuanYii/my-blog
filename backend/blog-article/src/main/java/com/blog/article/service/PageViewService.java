@@ -56,30 +56,24 @@ public class PageViewService {
             LocalDate today = LocalDate.now();
             LocalDateTime dayStart = today.atStartOfDay();
 
-            // 业务层去重（替代 SQL IGNORE）
-            Integer exists = jdbc.queryForObject(
-                    "SELECT COUNT(*) FROM page_view WHERE visitor = ? AND path = ? AND visit_date = ?",
-                    Integer.class, visitor, path, today);
-            if (exists != null && exists > 0) {
-                return;  // 当天已记录
-            }
-
-            // 2026-06-17 v2.6.0-fix：直接用 JdbcTemplate 写（不经过 MyBatis-Plus BaseMapper.insert）
-            // 原因：MyBatis-Plus 在 SQLite 下用 IdType.AUTO 调 getGeneratedKeys()，
-            //       SQLite 默认不返回 generated keys，导致异常被吞、SQL 不真执行
-            int rows = jdbc.update(
-                    "INSERT INTO page_view (path, article_id, visitor, ip, user_agent, referer, created_at, visit_date) " +
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    truncate(path, 200),
-                    articleId,
-                    visitor,
-                    ip,
-                    truncate(userAgent, 200),
-                    truncate(referer, 500),
-                    dayStart,
-                    today);
-            if (rows == 0) {
-                log.warn("[PageView] INSERT 影响 0 行（可能 UK 冲突）: visitor={}, path={}", visitor, path);
+            // 2026-06-22 v4.x polish：去掉"先 SELECT COUNT 再 INSERT"的 TOCTOU 模式——
+            // 两请求并发都过 COUNT=0，第二个 INSERT 撞 UK 抛异常未 catch 会冒到日志当 ERROR。
+            // 直接 INSERT + catch DataIntegrityViolationException：少一次 round-trip、并发幂等。
+            // 同 path+visitor+visit_date 已在 uk_page_view_dedup 唯一索引上,DIV 异常即"重复",吞掉即可。
+            try {
+                jdbc.update(
+                        "INSERT INTO page_view (path, article_id, visitor, ip, user_agent, referer, created_at, visit_date) " +
+                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        truncate(path, 200),
+                        articleId,
+                        visitor,
+                        ip,
+                        truncate(userAgent, 200),
+                        truncate(referer, 500),
+                        dayStart,
+                        today);
+            } catch (org.springframework.dao.DataIntegrityViolationException dup) {
+                // 同 visitor+path+day 当天已记录，幂等忽略（不记日志——这是高频路径，避免日志爆炸）
             }
         } catch (Exception e) {
             // 统计写库失败绝不能影响业务（已在 filter 之外的异步线程，这里兜底）

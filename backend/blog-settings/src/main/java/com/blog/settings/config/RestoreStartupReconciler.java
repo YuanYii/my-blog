@@ -98,14 +98,27 @@ public class RestoreStartupReconciler {
                 try {
                     ResultJson result = objectMapper.readValue(resultPath.toFile(), ResultJson.class);
                     applyResult(r, result);
-                    if ("SUCCESS".equalsIgnoreCase(result.status)) successCount++;
+                    String finalStatus = r.getStatus();
+                    if ("SUCCESS".equalsIgnoreCase(finalStatus)) successCount++;
                     else failedCount++;
                     log.info("[RestoreReconciler] 回填 record {} → {} (从 result.json)",
-                        r.getId(), result.status);
+                        r.getId(), finalStatus);
                 } catch (Exception e) {
-                    log.warn("[RestoreReconciler] 读 result.json 失败: record={} err={}",
+                    // 2026-06-22 v4.x polish：原实现 catch (Exception e) 只 log.warn 不动 record——
+                    //   record 会继续留在 RUNNING,直到 30min 后被孤儿逻辑标 UNKNOWN,
+                    //   错失 result.json 里已有的 stage/message 字段（如果只是部分字段缺失或 status=null）。
+                    //   修复：解析/校验失败也按 FAILED 标,把 e.getMessage() 写到 errorMessage,
+                    //   下次 reconcile 不再重复处理(已非 RUNNING)。
+                    log.warn("[RestoreReconciler] 读 result.json 失败(按 FAILED 兜底): record={} err={}",
                         r.getId(), e.getMessage());
-                    // 解析失败不删 result, 下次再试, 避免误删后丢信息
+                    r.setStatus("FAILED");
+                    r.setFinishedAt(now);
+                    r.setErrorStage("RESULT_PARSE_FAILED");
+                    r.setErrorMessage(truncate(
+                        "result.json 解析失败: " + e.getClass().getSimpleName() + ": " + e.getMessage(), 500));
+                    mapper.updateById(r);
+                    failedCount++;
+                    // 解析失败不删 result.json,保留现场供运维排查;下次 reconcile 该 record 已非 RUNNING 不会重复进
                 }
             } else if (r.getStartedAt() != null
                     && r.getStartedAt().isBefore(now.minusMinutes(orphanThresholdMin))) {
@@ -136,13 +149,36 @@ public class RestoreStartupReconciler {
      * 应用 result.json 内容到 record
      * stage 字段: 写入 errorStage（SUCCESS 时为空, 不覆盖）
      * verifyDiff 单独存
+     *
+     * 2026-06-22 v4.x polish：原实现直接 result.status.toUpperCase()——若脚本崩溃写一半
+     *   .result.json（status 字段缺失）→ NPE → 被外层 catch 吞 → record 永久卡 RUNNING
+     *   （直到 30min 后被孤儿逻辑标 UNKNOWN,错失 stage/message 字段）。
+     *   修复：status 为 null/空时按 FAILED 处理,errorStage=RESULT_INVALID,不再 NPE。
      */
     private void applyResult(RestoreRecord r, ResultJson result) {
-        r.setStatus(result.status.toUpperCase());
+        String status = result.status;
+        if (status == null || status.trim().isEmpty()) {
+            // status 缺失：脚本写了一半 .result.json。按 FAILED 处理,保留现有 stage/message（如果有）。
+            r.setStatus("FAILED");
+            r.setErrorStage(result.stage != null && !result.stage.isEmpty() ? result.stage : "RESULT_INVALID");
+            if (result.message != null && !result.message.isEmpty()) {
+                r.setErrorMessage(truncate(result.message, 500));
+            } else {
+                r.setErrorMessage(".result.json 缺少 status 字段,判定为不完整,按 FAILED 处理");
+            }
+            r.setFinishedAt(LocalDateTime.now());
+            if (result.verifyDiff != null && !result.verifyDiff.isEmpty()) {
+                r.setVerifyDiff(truncate(result.verifyDiff, 500));
+            }
+            mapper.updateById(r);
+            return;
+        }
+
+        r.setStatus(status.toUpperCase());
         r.setFinishedAt(LocalDateTime.now());
 
         // SUCCESS: 不填 errorStage
-        if (!"SUCCESS".equalsIgnoreCase(result.status)) {
+        if (!"SUCCESS".equalsIgnoreCase(status)) {
             r.setErrorStage(result.stage);
             if (result.message != null && !result.message.isEmpty()) {
                 r.setErrorMessage(truncate(result.message, 500));
