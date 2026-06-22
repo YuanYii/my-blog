@@ -158,8 +158,13 @@ public class SettingsController {
         String newPwd = body.get("newPassword");
         if (oldPwd == null || oldPwd.isEmpty()) return Result.error(400, "旧密码不能为空");
         if (newPwd == null || newPwd.isEmpty()) return Result.error(400, "新密码不能为空");
-        if (newPwd.length() < 6) return Result.error(400, "新密码至少 6 个字符");
-        if (newPwd.length() > 50) return Result.error(400, "新密码不能超过 50 个字符");
+        // 2026-06-22 v4.x polish：统一密码强度策略——admin 后台改密与 /auth/me/password 改密
+        //   保持完全一致：8-64 位（避开 BCrypt 72 字节截断边界，留 8 字节余量）。
+        //   原"6-50"是早期简化阈值，admin 后台策略松于用户自主改密既无业务理由也有混淆，
+        //   统一到 8 位起，统一文案。
+        if (newPwd.length() < 8 || newPwd.length() > 64) {
+            return Result.error(400, "新密码长度须在 8-64 位之间");
+        }
         User user = userMapper.selectById(1L);
         if (user == null) return Result.error(1005, "用户不存在");
         // 2026-06-12 修复：原逻辑硬编码比对明文 "123456"，新密码直接 setPasswordHash(newPwd) 明文落库
