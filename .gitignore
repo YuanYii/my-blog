@@ -63,7 +63,8 @@ package-lock.json.bak
 .env
 .env.local
 .env.*.local
-.env.prod.example
+# 2026-06-22: 早期 docker 部署时代残留,已删
+# .env.prod.example → 部署配置统一走 docs/scripts/deploy-server.env.example
 
 # 部署脚本的本地环境（含 GitHub token）—— 永远不要 commit
 docs/scripts/deploy.env
@@ -96,8 +97,8 @@ docs/scripts/*.env.local
 *.log
 logs/
 
-# 注：.env.prod.example / .env.example 等带后缀的 example 文件**不**匹配
-# 上面的 .env 系列规则，会正常提交（作为模板给团队）。
+# 注：docs/scripts/deploy-server.env.example 是部署模板（不入库,本地运维用）
+# .env.prod.example 早期 docker 时代残留,2026-06-22 已删。
 
 # 临时脚本 / 报告（不要 commit 过程文件）
 /tmp/

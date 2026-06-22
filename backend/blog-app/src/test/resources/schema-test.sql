@@ -169,7 +169,8 @@ CREATE TABLE IF NOT EXISTS backup_record (
   error_stage     VARCHAR(16),
   error_message   TEXT,
   operator_id     BIGINT,
-  operator_name   VARCHAR(64)
+  operator_name   VARCHAR(64),
+  trace_id        VARCHAR(64)
 );
 CREATE INDEX IF NOT EXISTS idx_backup_record_started_at ON backup_record(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_backup_record_status ON backup_record(status);
