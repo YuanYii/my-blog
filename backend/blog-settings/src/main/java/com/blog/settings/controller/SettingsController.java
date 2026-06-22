@@ -14,21 +14,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
-import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.PostConstruct;
-import javax.servlet.http.HttpServletRequest;
 import java.io.File;
-import java.io.IOException;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.Arrays;
+import java.util.*;
 
 /**
  * 设置 + 上传 + 文件管理
@@ -402,75 +392,6 @@ public class SettingsController {
         return Result.success(siteSettingsService.get(SiteSettingsService.SECTION_EXPERIENCE));
     }
 
-    // ========== 文件上传 ==========
-
-    @PostMapping("/upload")
-    public Result<Map<String, Object>> upload(@RequestParam(value = "file", required = false) MultipartFile file, HttpServletRequest request) throws IOException {
-        if (file == null || file.isEmpty()) return Result.error(400, "文件为空");
-        if (file.getSize() > 5 * 1024 * 1024) {
-            return Result.error(400, "文件大小不能超过 5MB");
-        }
-        String original = file.getOriginalFilename();
-        String ext = original != null && original.contains(".")
-                ? original.substring(original.lastIndexOf('.')).toLowerCase() : "";
-        if (!ext.matches("\\.(png|jpg|jpeg|gif|webp|bmp|ico)")) {
-            return Result.error(400, "不支持的文件类型，仅允许图片格式 (png/jpg/jpeg/gif/webp/bmp/ico)");
-        }
-        // 2026-06-12 修复：原 upload 只校验扩展名，没校验文件 magic bytes，攻击者可上传 "evil.png"（实际是 HTML/JS）伪装图片
-        // 修复：读前 12 字节验证 magic bytes
-        byte[] head = new byte[12];
-        try {
-            int read = file.getInputStream().read(head);
-            if (read < 8) return Result.error(400, "文件格式异常或文件过小");
-        } catch (IOException e) {
-            return Result.error(400, "文件读取失败");
-        }
-        if (!isImageMagicBytes(head, ext)) {
-            return Result.error(400, "文件内容与扩展名不符，请上传真正的图片");
-        }
-        String filename = UUID.randomUUID().toString().replace("-", "") + ext;
-        String monthDir = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM"));
-        File dir = new File(uploadDir, monthDir);
-        if (!dir.exists()) dir.mkdirs();
-        File dest = new File(dir, filename);
-        file.transferTo(dest);
-        Map<String, Object> data = new HashMap<>();
-        data.put("url", "/uploads/" + monthDir + "/" + filename);
-        data.put("filename", filename);
-        data.put("size", file.getSize());
-        return Result.success(data);
-    }
-
-    /**
-     * 2026-06-12 新增：图片 magic bytes 校验——按扩展名匹配前几个字节
-     * PNG: 89 50 4E 47 0D 0A 1A 0A
-     * JPEG: FF D8 FF
-     * GIF: 47 49 46 38 (GIF8)
-     * WEBP: 52 49 46 46 ?? ?? ?? ?? 57 45 42 50 (RIFF....WEBP)
-     * BMP: 42 4D
-     * ICO: 00 00 01 00
-     */
-    private boolean isImageMagicBytes(byte[] head, String ext) {
-        if (head == null || head.length < 4) return false;
-        switch (ext) {
-            case ".png":
-                return head[0] == (byte)0x89 && head[1] == (byte)0x50 && head[2] == (byte)0x4E && head[3] == (byte)0x47;
-            case ".jpg":
-            case ".jpeg":
-                return head[0] == (byte)0xFF && head[1] == (byte)0xD8 && head[2] == (byte)0xFF;
-            case ".gif":
-                return head[0] == (byte)0x47 && head[1] == (byte)0x49 && head[2] == (byte)0x46 && head[3] == (byte)0x38;
-            case ".bmp":
-                return head[0] == (byte)0x42 && head[1] == (byte)0x4D;
-            case ".ico":
-                return head[0] == 0x00 && head[1] == 0x00 && head[2] == 0x01 && head[3] == 0x00;
-            case ".webp":
-                // RIFF + 4 bytes size + WEBP
-                return head[0] == (byte)0x52 && head[1] == (byte)0x49 && head[2] == (byte)0x46 && head[3] == (byte)0x46
-                    && head.length >= 12
-                    && head[8] == (byte)0x57 && head[9] == (byte)0x45 && head[10] == (byte)0x42 && head[11] == (byte)0x50;
-            default:
-                return false;
-        }
-    }
+    // 2026-06-21 清理：原 POST /admin/settings/upload 端点已删除——前端所有上传（avatar/cover/markdown）
+    // 全部走 UploadController(/admin/uploads)，本方法无任何调用方。唯一上传入口。
 }

@@ -216,10 +216,6 @@ public class AdminAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (log.isInfoEnabled()) {
-            log.info("admin 鉴权通过：username={} uid={} deviceId={} method={} path={} ip={}",
-                    username, uid, deviceId, method, path, ip);
-        }
         // 2026-06-21 v4.2.1 polish: 透传 username 到 AuthContext,业务日志/操作人字段不再 "uid:xxx"
         com.blog.common.web.AuthContext.set(request, uid, deviceId, username);
         chain.doFilter(request, response);

@@ -98,7 +98,6 @@ public class RestoreStartupReconciler {
                 try {
                     ResultJson result = objectMapper.readValue(resultPath.toFile(), ResultJson.class);
                     applyResult(r, result);
-                    Files.deleteIfExists(resultPath);
                     if ("SUCCESS".equalsIgnoreCase(result.status)) successCount++;
                     else failedCount++;
                     log.info("[RestoreReconciler] 回填 record {} → {} (从 result.json)",

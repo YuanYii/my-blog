@@ -205,8 +205,8 @@ public class RestoreService {
 
     /**
      * 异步执行 blog-restore.sh
-     * v4 关键: 用 sudo systemd-run --scope --slice=myblog-restore
-     *          --uid=myblog --gid=myblog /bin/bash <script>
+     * 宿主机: sudo systemd-run --scope 启动独立 cgroup
+     * Docker: 直接 /bin/bash（容器内无 sudo/systemd）
      * pb.start() 后立刻 return, 状态由 RestoreStartupReconciler 双轨回填
      */
     @Async
@@ -221,16 +221,22 @@ public class RestoreService {
         record.setStatus("RUNNING");
         restoreRecordMapper.updateById(record);
 
-        log.info("开始执行恢复脚本: record_id={} script={}", recordId, restoreScriptPath);
+        boolean inDocker = new File("/.dockerenv").exists();
+        log.info("开始执行恢复脚本: record_id={} script={} inDocker={}", recordId, restoreScriptPath, inDocker);
 
-        ProcessBuilder pb = new ProcessBuilder(
-            "sudo", "-n", "systemd-run",
-            "--scope",
-            "--slice=myblog-restore",
-            "--unit=blog-restore-" + recordId,
-            "--uid=myblog", "--gid=myblog",
-            "/bin/bash", restoreScriptPath
-        );
+        ProcessBuilder pb;
+        if (inDocker) {
+            pb = new ProcessBuilder("/bin/bash", restoreScriptPath);
+        } else {
+            pb = new ProcessBuilder(
+                "sudo", "-n", "systemd-run",
+                "--scope",
+                "--slice=myblog-restore",
+                "--unit=blog-restore-" + recordId,
+                "--uid=myblog", "--gid=myblog",
+                "/bin/bash", restoreScriptPath
+            );
+        }
         pb.directory(new File(installDir));
 
         // 透传 env（密码/token 走 env, 不进 ps）
@@ -256,8 +262,8 @@ public class RestoreService {
             // 异常由 RestoreStartupReconciler 双轨回填兜底
             // JDK 1.8 兼容: 不取 process.pid()（Java 9+ 才有）
             pb.start();
-            log.info("恢复脚本已启动: record_id={} (systemd-run --scope, 立刻 return)",
-                recordId);
+            log.info("恢复脚本已启动: record_id={} mode={} (立刻 return)",
+                recordId, inDocker ? "docker-direct" : "systemd-run --scope");
         } catch (Exception e) {
             // v4.3.1: pb.start() 抛异常 = 脚本根本没启动 (如 sudoers 没配 / systemd-run 不可用)
             // 不会有 .result.json, 直接标 FAILED 让用户立刻看到 (不等 30min 标 UNKNOWN)
