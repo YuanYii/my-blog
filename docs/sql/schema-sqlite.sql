@@ -310,24 +310,29 @@ CREATE INDEX IF NOT EXISTS idx_ip_ban_unbanned ON ip_ban(unbanned);
 -- =====================================================
 
 -- 默认 admin（密码 123456）
-INSERT OR IGNORE INTO user (id, username, password_hash, nickname, role)
-VALUES (1, 'admin', '$2a$10$RiTjk3eJcUBN2xKUE4FAQ.4xzURKOSUrpbgvou1uGjEV7tQ70fpJW', 'Corey', 'ADMIN');
+INSERT OR IGNORE INTO user (id, username, password_hash, nickname, role, created_at, updated_at)
+VALUES (1, 'admin', '$2a$10$RiTjk3eJcUBN2xKUE4FAQ.4xzURKOSUrpbgvou1uGjEV7tQ70fpJW', 'Corey', 'ADMIN', datetime('now', 'localtime'), datetime('now', 'localtime'));
 
 -- API 白名单
-INSERT OR IGNORE INTO api_whitelist (path_prefix, type, enabled, description) VALUES
-  ('/auth/login', 'public', 1, '登录'),
-  ('/auth/me/password', 'public', 1, '改密（自身鉴权）'),
-  ('/public/', 'public', 1, '公开端点'),
-  ('/articles', 'public', 1, '文章公开端点'),
-  ('/comments', 'public', 1, '评论公开端点'),
-  ('/health', 'public', 1, '健康检查'),
-  ('/v3/api-docs', 'public', 1, 'Swagger API 文档（生产可关）'),
-  ('/swagger-ui', 'public', 1, 'Swagger UI（生产可关）'),
-  ('/admin/', 'admin', 1, '所有 admin/* 路径必须鉴权'),
-  ('/auth/me', 'admin', 1, '获取当前用户信息'),
-  ('/auth/logout', 'admin', 1, '登出'),
-  ('/auth/devices', 'admin', 1, '设备管理'),
-  ('/uploads', 'admin', 1, '文件上传（multipart）');
+-- 2026-06-22 修复 [BUG-LOGIN-401]：v4.1.0 把 created_at/updated_at 的 DEFAULT 去掉后，
+-- 这条裸 INSERT 没传时间 → NOT NULL 约束失败 + OR IGNORE 静默吞掉 → api_whitelist 整张表空
+-- → AdminAuthFilter.matchPath 拿不到 /auth/login → 401 拒绝登录。
+-- 修复：显式给 created_at/updated_at，datetime('now', 'localtime') 取本地时间。
+-- 业务路径（MyBatis-Plus entity + MetaObjectHandler）不受影响，仍由 Java 填北京时间。
+INSERT OR IGNORE INTO api_whitelist (path_prefix, type, enabled, description, created_at, updated_at) VALUES
+  ('/auth/login', 'public', 1, '登录', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/auth/me/password', 'public', 1, '改密（自身鉴权）', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/public/', 'public', 1, '公开端点', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/articles', 'public', 1, '文章公开端点', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/comments', 'public', 1, '评论公开端点', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/health', 'public', 1, '健康检查', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/v3/api-docs', 'public', 1, 'Swagger API 文档（生产可关）', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/swagger-ui', 'public', 1, 'Swagger UI（生产可关）', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/admin/', 'admin', 1, '所有 admin/* 路径必须鉴权', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/auth/me', 'admin', 1, '获取当前用户信息', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/auth/logout', 'admin', 1, '登出', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/auth/devices', 'admin', 1, '设备管理', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/uploads', 'admin', 1, '文件上传（multipart）', datetime('now', 'localtime'), datetime('now', 'localtime'));
 
 -- 站点设置（SQLite 无 JSON_OBJECT 函数 → 直接写 JSON 字符串字面量）
 INSERT OR IGNORE INTO site_settings (section, data) VALUES
