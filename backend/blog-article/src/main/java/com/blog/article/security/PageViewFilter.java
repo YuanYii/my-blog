@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.Order;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -14,6 +15,8 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -55,12 +58,36 @@ public class PageViewFilter extends OncePerRequestFilter {
     private String contextPath;
 
     /** 文章详情 slug → articleId 缓存（用 ConcurrentHashMap 简易缓存，避免每个详情请求都查 DB） */
-    private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Long>> SLUG_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, ConcurrentHashMap<String, Long>> SLUG_CACHE = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 5 * 60 * 1000L;
     /** 负缓存 TTL：slug 不存在时缓存 1 分钟（防爬虫狂打随机 slug 导致 DB 反复查 + map 膨胀） */
     private static final long NEG_CACHE_TTL_MS = 60 * 1000L;
     /** 负缓存哨兵值（ConcurrentHashMap 不允许 null value，用 -1 标识"slug 不存在"） */
     private static final long NEG_CACHE_SENTINEL = -1L;
+    /**
+     * 2026-06-22 v4.x polish：SLUG_CACHE 周期清理（防内存泄漏）
+     * 原实现负缓存 1 分钟 / 正缓存 5 分钟的"逻辑过期"——过期 entry 仍在 map 里占位。
+     * 一个爬虫遍历几万随机 slug，map 外层 key 永久积累，每条 ~200B 也能吃几百 MB。
+     * 修法：@Scheduled 每 5 分钟扫一遍，删掉内层 bucket 已过期的外层 slug。
+     * 内存安全但低开销——SLUG_CACHE 是 ConcurrentHashMap 静态，进程生命周期内只一份。
+     */
+    @Scheduled(fixedDelay = 5 * 60 * 1000L, initialDelay = 5 * 60 * 1000L)
+    void evictExpiredSlugCache() {
+        long now = System.currentTimeMillis();
+        int removed = 0;
+        for (Map.Entry<String, ConcurrentHashMap<String, Long>> e : SLUG_CACHE.entrySet()) {
+            ConcurrentHashMap<String, Long> bucket = e.getValue();
+            Long exp = bucket.get("exp");
+            if (exp == null || exp <= now) {
+                if (SLUG_CACHE.remove(e.getKey(), bucket)) {
+                    removed++;
+                }
+            }
+        }
+        if (removed > 0) {
+            log.info("[PageViewFilter] SLUG_CACHE 周期清理: removed={} remaining={}", removed, SLUG_CACHE.size());
+        }
+    }
 
     private static final Pattern ARTICLE_DETAIL = Pattern.compile("/articles/([^/]+)$");
 

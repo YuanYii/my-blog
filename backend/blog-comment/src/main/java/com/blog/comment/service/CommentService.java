@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementCreator;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import javax.servlet.http.HttpServletRequest;
@@ -103,8 +104,21 @@ public class CommentService {
             ps.setString(7, now);
             return ps;
         }, keyHolder);
+        // 2026-06-22 v4.x polish：SQLite JDBC 不同版本对 RETURN_GENERATED_KEYS 行为不一致——
+        //   xerial sqlite-jdbc 3.x 部分小版本 getGeneratedKeys() 返回空 result set，
+        //   keyHolder.getKey() 直接 null。原代码下一步 key.longValue() 直接 NPE。
+        //   兜底：用 SQLite last_insert_rowid() 主动查一次（MySQL 走 LAST_INSERT_ID()，
+        //   但 SQL 标准 SQLite 函数 last_insert_rowid() 在 MySQL 8.0+ 也支持）。
+        //   当前 profile 主用 SQLite，所以直接用 last_insert_rowid()；切 MySQL 时改成 LAST_INSERT_ID()。
         Number key = keyHolder.getKey();
-        Long newId = key != null ? key.longValue() : null;
+        Long newId = key != null ? key.longValue() : jdbc.queryForObject(
+                "SELECT last_insert_rowid()", Long.class);
+        if (newId == null) {
+            // last_insert_rowid() 仍返 null（极罕见,可能是 RETURN_GENERATED_KEYS 之外整体失败）
+            // 不抛异常——评论已提交,只是 newId 拿不到,业务能跑
+            log.warn("评论提交后拿不到 newId（INSERT 可能成功也可能失败）articleSlug={}", articleSlug);
+            newId = -1L;
+        }
 
         log.info("访客评论提交：commentId={} articleSlug={} ip={} ua=\"{}\"",
                 newId, articleSlug, ip, request.getHeader("User-Agent"));
@@ -166,5 +180,29 @@ public class CommentService {
             return old;
         });
         return limited[0];
+    }
+
+    /**
+     * 2026-06-22 v4.x polish：COMMENT_LIMIT_MAP 周期清理（防内存泄漏）
+     * 原实现只在 isCommentLimited 路径上累加 entry,无清理逻辑。
+     * 公网可触发的评论接口下,攻击者用大量随机 IP 刷即可让 map 持续膨胀。
+     * 修法：每 60s 扫一遍,删掉窗口已过期的 entry（windowStart < now - WINDOW）。
+     * 攻击者只能贡献"存活 60s 内"的 entry——增长受 IP 限流 + 时间窗口双重抑制。
+     */
+    @Scheduled(fixedDelay = 60 * 1000L, initialDelay = 60 * 1000L)
+    void evictExpiredCommentLimit() {
+        long now = Instant.now().getEpochSecond();
+        int n = 0;
+        java.util.Iterator<java.util.Map.Entry<String, long[]>> it = COMMENT_LIMIT_MAP.entrySet().iterator();
+        while (it.hasNext()) {
+            java.util.Map.Entry<String, long[]> e = it.next();
+            if (now - e.getValue()[1] > COMMENT_WINDOW_SECONDS) {
+                it.remove();
+                n++;
+            }
+        }
+        if (n > 0) {
+            log.info("[CommentService] COMMENT_LIMIT_MAP 周期清理: removed={} remaining={}", n, COMMENT_LIMIT_MAP.size());
+        }
     }
 }

@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -270,6 +271,29 @@ public class AdminAuthFilter extends OncePerRequestFilter {
             return old;
         });
         return allowed[0];
+    }
+
+    /**
+     * 2026-06-22 v4.x polish：warnRateMap 周期清理（防内存泄漏）
+     * 原实现只在 checkAndIncrementWarnRate 路径上累加 entry,无清理逻辑。
+     * 攻击者扫各种未登记路径 → warnRateMap 持续膨胀。
+     * 修法：每 60s 扫一遍,删掉窗口已过期的 entry。
+     */
+    @Scheduled(fixedDelay = 60 * 1000L, initialDelay = 60 * 1000L)
+    void evictExpiredWarnRate() {
+        long now = Instant.now().getEpochSecond();
+        int n = 0;
+        java.util.Iterator<java.util.Map.Entry<String, long[]>> it = warnRateMap.entrySet().iterator();
+        while (it.hasNext()) {
+            java.util.Map.Entry<String, long[]> e = it.next();
+            if (now - e.getValue()[1] > 60) {
+                it.remove();
+                n++;
+            }
+        }
+        if (n > 0) {
+            log.info("[AdminAuthFilter] warnRateMap 周期清理: removed={} remaining={}", n, warnRateMap.size());
+        }
     }
 
     private void writeUnauthorized(HttpServletResponse response, int code, String message) throws IOException {
