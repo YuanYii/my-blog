@@ -15,16 +15,12 @@ export const usePublicApi = () => {
       ...(options.headers || {})
     }
     // 公开 API：故意不带 Authorization / X-Device-Id
-    // 2026-06-16 v2.5.0 新增：自动带 X-Visitor-Id（公开页访客标识，用于按天去重 page_view）
-    // 2026-06-16 v2.5.0-fix：直接同步读 localStorage，不依赖 useVisitor().visitorId ref 时序
-    //   原因：composable 初始化时 ref 写入是异步的（顶层 client 分支），首次发请求时 ref 可能
-    //         还是空字符串，导致 X-Visitor-Id 漏发 → 后端 visitor 缺失 → PageViewService 直接跳过。
-    //   改法：每次 request 同步读 localStorage，**同时确保 localStorage 一定有 visitorId**（懒初始化）。
+    // 自动带 X-Visitor-Id（公开页访客标识，用于按天去重 page_view）。
+    // 每次 request 同步读 localStorage + 懒初始化，避免 composable ref 时序坑导致漏发。
     if (import.meta.client) {
       const VISITOR_KEY = 'blog_visitor_id'
       let vid = localStorage.getItem(VISITOR_KEY)
       if (!vid) {
-        // 懒初始化：useVisitor 还没跑过（极端情况下，比如 SSR 后首次发请求）
         vid = (typeof crypto !== 'undefined' && crypto.randomUUID)
           ? crypto.randomUUID()
           : 'v-' + Math.random().toString(36).slice(2) + Date.now().toString(36)
