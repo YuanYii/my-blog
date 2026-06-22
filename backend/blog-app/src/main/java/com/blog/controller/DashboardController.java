@@ -143,6 +143,13 @@ public class DashboardController {
      * - schema 改动 = 改表 + 改 entity + 改 mapper + 改所有写路径
      * - 当前文章量（个位数～几十）量级下，每秒 dashboard 调用成本可控
      * - 后续如文章量 >1000，再加 word_count 字段（写时计算 + 增量更新）即可
+     *
+     * 2026-06-22 v4.x polish：明确"全量加载 content_md"的量级边界——
+     *   假设单文章平均 10KB markdown、1000 篇 = 10MB 一次性进 JVM 堆。SQLite 单连接串行读
+     *   也至少 1-2 秒。当前个人博客量级（个位数～几十）远低于此，但**禁止无脑迁移量级**。
+     *   触发迁移条件（任一）：文章数 >200 / 平均 content_md >50KB / dashboard P99 >3s。
+     *   迁移路径：article 表加 word_count 列 + 文章 insert/update 钩子里算并写库，
+     *            dashboard 改 SELECT SUM(word_count) FROM article WHERE status=1。
      */
     private long computeTotalWordCount() {
         List<String> mds = jdbc.queryForList(
