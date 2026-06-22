@@ -8,6 +8,9 @@ import org.apache.ibatis.reflection.MetaObject;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 
 /**
@@ -16,11 +19,42 @@ import java.time.LocalDateTime;
 @Configuration
 public class MybatisPlusConfig {
 
+    /**
+     * 2026-06-22 v4.x polish：分页方言按实际 DataSource 决定，不再写死 DbType.MYSQL。
+     * 原实现 pageSize > 0 时分页拦截器按 MySQL 语法追加 LIMIT，但项目主用 SQLite
+     * （dev/prod 默认，v2.6.0+），虽然恰好兼容，未来切 SQL Server / PostgreSQL /
+     * Oracle 会直接报语法错误。按 Connection metadata 动态选 DbType 才是稳的做法。
+     */
     @Bean
-    public MybatisPlusInterceptor mybatisPlusInterceptor() {
+    public MybatisPlusInterceptor mybatisPlusInterceptor(DataSource dataSource) {
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
-        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
+        DbType dbType = resolveDbType(dataSource);
+        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(dbType));
         return interceptor;
+    }
+
+    /**
+     * 从 DataSource 取一条连接，查 DatabaseProductName 映射到 MyBatis-Plus DbType。
+     * 取完即关，不占池——只是 metadata 查询，开销 < 1ms。
+     */
+    private DbType resolveDbType(DataSource ds) {
+        try (Connection c = ds.getConnection()) {
+            String name = c.getMetaData().getDatabaseProductName();
+            if (name == null) return DbType.MYSQL;  // 兜底
+            String upper = name.toUpperCase();
+            if (upper.contains("SQLITE")) return DbType.SQLITE;
+            if (upper.contains("MYSQL") || upper.contains("MARIADB")) return DbType.MYSQL;
+            if (upper.contains("POSTGRES")) return DbType.POSTGRE_SQL;
+            if (upper.contains("ORACLE")) return DbType.ORACLE;
+            if (upper.contains("MICROSOFT") || upper.contains("SQL SERVER")) return DbType.SQL_SERVER;
+            if (upper.contains("H2")) return DbType.H2;
+            if (upper.contains("DM")) return DbType.DM;
+            // 未识别：返回 MYSQL 兜底（与历史行为一致，分页 LIMIT 子句多数方言仍兼容）
+            return DbType.MYSQL;
+        } catch (SQLException e) {
+            // DataSource 暂不可用（如启动早期）：兜底 MYSQL，不阻塞 bean 初始化
+            return DbType.MYSQL;
+        }
     }
 
     /**

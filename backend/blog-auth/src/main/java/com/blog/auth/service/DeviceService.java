@@ -154,6 +154,8 @@ public class DeviceService {
         // 用 approved_by='system' 作为"系统迁移通道"标识；用 status=approved 确保只复用通过的
         QueryWrapper<AdminDevice> qw = new QueryWrapper<>();
         qw.eq("status", STATUS_APPROVED).eq("approved_by", "system");
+        // 2026-06-22 v4.x polish: .last("LIMIT 1") 绕过方言,SQLite/MySQL 兼容;
+        //   TODO: 切 SQL Server / Oracle 时改为方言感知（见 ArticleService.archives 同款注释）
         qw.last("LIMIT 1");
         AdminDevice existing = deviceMapper.selectOne(qw);
         if (existing != null) {
@@ -319,6 +321,8 @@ public class DeviceService {
      */
     private boolean isDeviceTableEmpty() {
         QueryWrapper<AdminDevice> qw = new QueryWrapper<>();
+        // 2026-06-22 v4.x polish: .last("LIMIT 1") 绕过方言,SQLite/MySQL 兼容;
+        //   TODO: 切 SQL Server / Oracle 时改为方言感知（见 ArticleService.archives 同款注释）
         qw.select("id").last("LIMIT 1");
         return deviceMapper.selectOne(qw) == null;
     }
