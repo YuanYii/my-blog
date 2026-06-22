@@ -1,40 +1,19 @@
 #!/bin/bash
-# my-blog 静态文件重新生成脚本
-# 用途：每日 cron 跑一次，把新发布的文章生成静态 HTML
-# 适用：my-blog v2.7.0+ 全静态部署（nginx serve .output/public/）
+# my-blog 静态文件重新生成脚本（每日 cron 用）
+# 适用：v2.7.0+ 全静态部署（nginx serve .output/public/）
 #
-# 工作流程：
-#   1. 拉最新代码（可选）
-#   2. 跑 nuxt generate → .output/public/
-#   3. rsync 替换 /var/www/blog/
-#   4. nginx reload（已经指向新文件，但保险起见 reload）
-#   5. 写日志
+# 用法：sudo -u deploy bash /opt/myblog/scripts/rebuild-static.sh
+# 定时：0 3 * * * bash /opt/myblog/scripts/rebuild-static.sh
 #
-# 前置：
-#   1. nginx 已配置 root 指向 /var/www/blog/（或者你自定义的 STATIC_DIR）
-#   2. deploy 用户对 /opt/myblog/frontend 和 $STATIC_DIR 有写权限
-#
-# 用法：
-#   # 单次跑
-#   sudo -u deploy bash /opt/myblog/scripts/rebuild-static.sh
-#
-#   # crontab -e（deploy 用户视角）
-#   0 3 * * * bash /opt/myblog/scripts/rebuild-static.sh
-#
-# 环境变量覆盖（可放 /opt/myblog/.env.rebuild）：
-#   API_BASE        - 后端 API 地址（默认 https://yourname.com/api/v1）
-#   FRONTEND_DIR    - frontend 目录（默认 /opt/myblog/frontend）
-#   STATIC_DIR      - nginx 服务的静态目录（默认 /var/www/blog）
-#   NGINX_RELOAD    - 是否 reload nginx（默认 yes）
-#   LOG_FILE        - 日志文件（默认 /var/log/myblog-rebuild.log）
-#   KEEP_BUILDS     - 保留最近几次构建产物（默认 3）
+# 环境变量（可放 /opt/myblog/.env.rebuild）：
+#   API_BASE / FRONTEND_DIR / STATIC_DIR / NGINX_RELOAD / LOG_FILE / KEEP_BUILDS
 
 set -e
 
 # ============ 默认配置 ============
 API_BASE="${API_BASE:-https://yourname.com/api/v1}"
 FRONTEND_DIR="${FRONTEND_DIR:-/opt/myblog/frontend}"
-STATIC_DIR="${STATIC_DIR:-/var/www/blog}"
+STATIC_DIR="${STATIC_DIR:-/opt/myblog/frontend}"
 NGINX_RELOAD="${NGINX_RELOAD:-yes}"
 LOG_FILE="${LOG_FILE:-/var/log/myblog-rebuild.log}"
 KEEP_BUILDS="${KEEP_BUILDS:-3}"

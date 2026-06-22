@@ -112,13 +112,11 @@ fi
 
 # 给公开 page_view 加一行（验证业务）
 test_endpoint "page_view 写入"  GET   /articles ""
-# 再访问一次（应该被业务层去重，不增加行数）
 test_endpoint "page_view 去重"  GET   /articles ""
 
 echo
 echo "=== 业务层去重验证（直接 curl 带 X-Visitor-Id 刷 5 次）==="
-# 注：page_view 业务层去重必须 X-Visitor-Id 头存在才生效
-# 浏览器走 Nuxt → usePublicApi 自动加；这里 curl 显式带
+# curl 需显式带 X-Visitor-Id（浏览器由 usePublicApi 自动加）
 VID="verify-$(date +%s)"
 for i in 1 2 3 4 5; do
     curl -s -H "X-Visitor-Id: $VID" $BASE/articles > /dev/null

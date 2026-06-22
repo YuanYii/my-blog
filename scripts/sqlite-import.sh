@@ -6,8 +6,8 @@
 #
 # 用法:
 #   bash docs/scripts/sqlite-import.sh /path/to/target.db /path/to/dump.sql.gz.enc
-#   bash docs/scripts/sqlite-import.sh /opt/myblog/blog.db /tmp/blog-20260618.sql.gz.enc
-#   bash docs/scripts/sqlite-import.sh --remote myblog@1.2.3.4 /opt/myblog/blog.db /tmp/blog.sql.gz.enc
+#   bash docs/scripts/sqlite-import.sh /opt/myblog/db/blog.db /tmp/blog-20260618.sql.gz.enc
+#   bash docs/scripts/sqlite-import.sh --remote myblog@1.2.3.4 /opt/myblog/db/blog.db /tmp/blog.sql.gz.enc
 #
 # 算法:AES-256-CBC + PBKDF2 100k 迭代 + salt(与 export 配对)
 #
@@ -226,8 +226,7 @@ else
     DB_EXISTED=0
 fi
 
-# Force confirm (prevent accidental overwrites)
-# FORCE_IMPORT=1 skips interactive prompt (deployment needs this, stdin is not a tty)
+# FORCE_IMPORT=1 跳过 y/N 确认（部署场景 stdin 非 tty）
 if [[ "$DB_EXISTED" == "1" ]]; then
     echo
     echo -e "${YELLOW}About to overwrite:${NC} $TARGET_DB"
@@ -236,12 +235,10 @@ if [[ "$DB_EXISTED" == "1" ]]; then
     if [[ "${FORCE_IMPORT:-0}" == "1" ]]; then
         info "FORCE_IMPORT=1, skipping y/N confirm (deploy scenario)"
     elif [[ ! -t 0 ]]; then
-        # Non-interactive + no FORCE_IMPORT: clear exit 3 to avoid silent "fake success"
         error "stdin is not a tty and FORCE_IMPORT=1 not set (deploy-server.sh auto-adds it)"
     else
         read -p "Confirm import? [y/N] " -n 1 -r
         echo
-        # Cancellation gets non-zero exit (3) so upstream PIPESTATUS check detects it
         [[ $REPLY =~ ^[Yy]$ ]] || { warn "Cancelled (temp SQL file will be cleaned by trap)"; exit 3; }
     fi
 fi

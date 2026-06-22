@@ -6,22 +6,8 @@
 # → (可选)恢复 uploads → 启服 → 健康检查 + 数据校验 → 写 .result.json
 #
 # 关键设计依据: docs/设计文档/博客数据恢复方案设计.md
-#
-# 调用方式:
-#   1. 生产环境: 由 RestoreService.runRestoreAsync 通过
-#      `sudo systemd-run --scope --slice=myblog-restore --unit=blog-restore-<id>
-#       --uid=myblog --gid=myblog /bin/bash <本脚本>` 启动
-#      → 脚本在独立 cgroup (myblog-restore.slice) + myblog 身份运行
-#      → systemctl stop myblog 杀不到本脚本
-#      → RestoreService pb.start() 后立刻 return (不 waitFor)
-#      → 状态由 RestoreStartupReconciler 双轨回填
-#
-#   2. 手动应急(脚本独立调试): 必须 export 全部 env 后 bash 跑
-#      BACKUP_ENCRYPTION_PASSWORD=xxx BACKUP_GITHUB_TOKEN=ghp_xxx GITHUB_BACKUP_REPO=owner/repo
-#      RESTORE_RECORD_ID=1 RESTORE_SOURCE_TAG=backup-20260620-153022 RESTORE_SCOPE=DB_ONLY
-#      FORCE_RESTORE=1 RESTORE_RESULT_DIR=/var/lib/myblog/restore-results
-#      bash blog-restore.sh
-#
+# 调用方式: 由 RestoreService 通过 systemd-run 启动（独立 cgroup，不被 systemctl stop 杀到）
+#   手动调试: export 全部 env 后 bash 跑
 # 算法: 与 sqlite-export.sh 对称 (AES-256-CBC + PBKDF2 100k + salt)
 #       通过 sqlite-import.sh 解密导入, 不重新实现加密层
 #
@@ -62,9 +48,7 @@ log_step() {
 }
 
 # ============= 写 result 函数 =============
-# v4.3.1: 用 jq 生成 JSON 而非 here-doc 拼字符串, 修复 verify_diff 含换行/引号/反斜杠时
-#   JSON 被破坏 → Jackson 解析失败 → 永远标 UNKNOWN 的致命问题
-# jq 已被预检查 (line ~99 预检段), 这里直接用
+# v4.3.1: 用 jq 生成 JSON，避免 verify_diff 含特殊字符时破坏格式
 write_result() {
     local status="$1"
     local stage="$2"
@@ -200,7 +184,7 @@ cleanup_on_exit() {
     exit $rc
 }
 trap cleanup_on_exit EXIT
-# v4.3.1: INT/TERM 不传参, cleanup_on_exit 用 $? 取退出码 (传 1 是无效的, 1 会变成 $1 但函数没用 $1)
+# INT/TERM 不传参，cleanup_on_exit 用 $? 取退出码
 trap cleanup_on_exit INT TERM
 
 # ============= 3. 清理旧 .bak + 备份当前 db =============
@@ -271,8 +255,7 @@ if [[ "$USE_GH" == "1" ]]; then
     fi
 else
     # curl 兜底: 拉 release 元信息 → 解析 asset URL → 逐个下载
-    # v4.3.1: 用 process substitution `< <(...)` 替代 `... | while` 管道,
-    #   让 while 循环在当前 shell 而不是子 shell 跑, exit 21 才能真正退出脚本
+    # 用 process substitution 避免 while 在子 shell 运行
     RELEASE_JSON=$(mktemp)
     if ! curl -fsS \
             -H "Authorization: token $BACKUP_GITHUB_TOKEN" \
@@ -458,8 +441,7 @@ info "健康检查通过"
 
 # 数据完整性校验 (对比 manifest.table_stats_exact vs 实际行数)
 # 差异仅记录不阻断 (写 verify_diff 进 result.json 供前端展示)
-# v4.3.2: 空表防护 — 如果 db 里没有任何业务表, ACTUAL_COUNTS 必须输出 {} 而非 {\n}
-#   否则 paste -sd ',' - 空输入 → output "" → {echo '{'; cat; echo '}'} → "{\n}" 不是合法 JSON
+# 空表时 awk 输出合法 JSON {}，避免 paste 产无效 `\n`
 log_step "VERIFY"
 ACTUAL_COUNTS=$(sqlite3 "$SQLITE_PATH" "
     SELECT name FROM sqlite_master

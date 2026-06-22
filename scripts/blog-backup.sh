@@ -28,12 +28,7 @@
 #   BACKUP_ENCRYPTION_PASSWORD   加密密码(8+ 位,绝不打日志)
 #   BACKUP_GITHUB_TOKEN          GitHub PAT(repo 权限, **只**给 my-blog-backup 仓库用)
 #   GITHUB_BACKUP_REPO           备份仓库(私有,owner/my-blog-backup)
-#
-# 为什么叫 BACKUP_GITHUB_TOKEN 而不是 GITHUB_TOKEN:
-#   - 发布/部署链路也用 GITHUB_TOKEN(指向 my-blog-prov),命名分开:
-#     1) 两个 repo 可用两个 Fine-grained PAT, **互不交叉授权**
-#     2) 轮换备份 token 不影响发布 token
-#     3) 排查时一眼能看出"这是给备份的"还是"这是给发布的"
+# 命名分开：备份 token 与发布 token 互不交叉授权
 #
 # 可选环境变量:
 #   BACKUP_STAGE_DIR             明文中转目录(默认 /tmp/blog-backup-stage)
@@ -136,8 +131,7 @@ fi
 
 # 校验 gh CLI / curl / jq
 # gh 优先(不需要 jq),curl 兜底(需要 jq 解析 create-release 的 upload_url)
-# 2026-06-21 修 STEP-UPLOAD 422：myblog-sim 容器没装 jq,curl -d 收到空 body 导致 GitHub 报
-#   "links/0/schema, nil is not an object"。此处自装 jq,装不上再报错退出(退出码 17)
+# v4.2.2：容器没装 jq 导致 curl 分支 422，此处自装 jq
 if [[ "${DRY_RUN:-0}" != "1" ]]; then
     if command -v gh >/dev/null 2>&1; then
         USE_GH=1
@@ -205,12 +199,7 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 TAG="backup-$TIMESTAMP"
 info "TAG = $TAG"
 
-# 2026-06-20 修 P0-1：.result.json 写到 STAGE_DIR **之外**（与 STAGE_DIR 的父目录同级），
-# 否则 trap cleanup_on_exit EXIT → rm -rf "$STAGE_DIR" 会把 .result.json 一起删掉，
-# Java 侧读不到 → 把"已成功的备份"误判为 FAILED。
-# 路径：$STAGE_DIR_PARENT/.blog-backup-result.$BACKUP_RECORD_ID.json
-#   - STAGE_DIR_PARENT = $(dirname "$STAGE_DIR")
-#   - BACKUP_RECORD_ID 来自 Java 侧 @Value 注入,没传则 fallback 到 $$ (pid, 不安全但比没强)
+# v4.2.0：.result.json 写到 STAGE_DIR 外，避免被 trap 清理掉
 STAGE_DIR_PARENT="$(dirname "$STAGE_DIR")"
 RESULT_RECORD_ID="${BACKUP_RECORD_ID:-$$}"
 RESULT_FILE="$STAGE_DIR_PARENT/.blog-backup-result.$RESULT_RECORD_ID.json"

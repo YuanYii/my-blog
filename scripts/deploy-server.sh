@@ -18,7 +18,7 @@
 #   INSTALL_DIR=/opt/myblog      部署目录(默认)
 #   SERVER_PORT=8080             Spring Boot 端口
 #   PUBLIC_PORT=80               nginx 端口
-#   DB_FILE=/opt/myblog/blog.db  SQLite 文件位置
+#   DB_FILE=/opt/myblog/db/blog.db  SQLite 文件位置
 #   SKIP_DEPS=0                  设为 1 跳过依赖安装(已装过的话)
 #   OPEN_FIREWALL=1              设为 1 自动 firewalld/ufw 放行 PUBLIC_PORT(默认 1)
 #   DEPLOY_MODE=full             部署模式(默认 full)
@@ -29,13 +29,7 @@
 #                                 设为 1 后从交互式输入密码,调 sqlite-import.sh 解密导入
 #                                 产物:dev-blog-dump.sql.gz.enc (publish-release.sh 加 EXPORT_DB=1 才有)
 #
-# 部署模式组合示例:
-#   默认发版:           ./deploy-server.sh v4.1.0
-#   只装代码(保留 db):  DEPLOY_MODE=code ./deploy-server.sh v4.1.0
-#   只导入数据:          DEPLOY_MODE=data IMPORT_DB=1 ./deploy-server.sh v4.1.0
-#   代码+数据全装:      IMPORT_DB=1 ./deploy-server.sh v4.1.0
-# 语义约束:
-#   DEPLOY_MODE=data + IMPORT_DB=0  →  报错退出(语义矛盾)
+# 语义约束: DEPLOY_MODE=data + IMPORT_DB=0 → 报错退出(语义矛盾)
 
 set -euo pipefail
 
@@ -333,19 +327,7 @@ info "[OK] Static files deployed to $INSTALL_DIR/frontend"
 
 # ============= 7. 写 application 配置 =============
 # 策略:脚本生成的 application.yml 通过 --spring.config.additional-location 叠加在 jar 之上
-# 必须显式声明 spring.profiles.active: prod 覆盖 jar 内 application.yml 的 dev 默认值.
-#
-# 历史踩坑(2026-06-18 真实案例):
-#   1. jar 内 application.yml 写死 spring.profiles.active: dev
-#   2. 旧版脚本注释认为 "application-prod.yml 文件命名 = 隐式激活 prod" → 错的
-#   3. 实际结果:服务跑 dev profile, 连本地 ./blog.db 相对路径, DB 路径配置全失效
-#   4. 修复:在 additional-location 的 application.yml 顶部显式写 active: prod
-#
-# Spring Boot 配置加载顺序(重要):
-#   jar:application.yml (含 active: dev)        ← 基础
-#   jar:application-{dev,prod,mysql}.yml        ← 按 active 加载 profile-specific
-#   additional-location:application.yml          ← 这里覆盖 active
-# 叠加规则:后面的覆盖前面的；profile-specific 文件的 spring.profiles.active 会被 Spring 校验报错(不在我们这层)
+# 历史坑：jar 内 active: dev 需由 additional-location 显式覆盖，否则跑 dev profile
 info "=== 7. Writing Spring Boot config ==="
 APP_YML="$INSTALL_DIR/application.yml"
 cat > "$APP_YML" <<EOF
@@ -461,12 +443,8 @@ fi
 info "=== 8. Writing service config (LOCAL_SIM=$LOCAL_SIM) ==="
 if [ "$LOCAL_SIM" = "1" ]; then
     # ---------- LOCAL_SIM: supervisord ----------
-    # 关键设计（修复 #2 + #3）：
-    #   1. 生成 run-myblog.sh（被 supervisord.conf [program:myblog] 调用）
-    #   2. run-myblog.sh 内 set -a; source env 文件; set +a → exec java
-    #      （替代 systemd EnvironmentFile，env 变量全部注入）
-    #   3. 写到 /etc/supervisor/conf.d/myblog.conf（注意：supervisord.conf 必须 [include] conf.d）
-    #   4. supervisorctl reread/update/restart myblog
+    # LOCAL_SIM: 生成 run-myblog.sh（supervisord 调用）+ myblog.conf
+    # run-myblog.sh 内 source env 文件注入环境变量（替代 systemd EnvironmentFile）
     info "LOCAL_SIM=1, writing supervisord program + run-myblog.sh"
     
     # 1) 生成 run-myblog.sh —— supervisord 的 [program:myblog] command 指向这个文件
@@ -614,11 +592,7 @@ if [ "$IMPORT_DB" = "1" ]; then
         info "Calling $INSTALL_DIR/scripts/sqlite-import.sh to decrypt + import"
         info "  .enc: $ENC_FILE"
         info "  target: $DB_FILE"
-        # [WARN] 必须用 PIPESTATUS[0] 拿 sqlite-import.sh 的真实退出码:
-        #   1. pipe 末尾的 sed 退出码盖住了前面
-        #   2. sqlite-import.sh 在 y/N 门不答时 exit 0(当作"已取消")
-        #      旧版只看 $? 永远拿 0, 会打印"[OK] 数据导入完成"假成功
-        # 部署期 stdin 不是终端,必须显式传 FORCE_IMPORT=1 跳过交互确认门
+        # 必须用 PIPESTATUS[0] 拿真实退出码（pipe 会被 sed 掩盖）
         FORCE_IMPORT=1 bash "$INSTALL_DIR/scripts/sqlite-import.sh" "$DB_FILE" "$ENC_FILE" 2>&1 | sed 's/^/    /'
         IMPORT_RC=${PIPESTATUS[0]}
         
@@ -690,15 +664,8 @@ EOF
 # Debian/Ubuntu:/etc/nginx/sites-enabled/default(含 listen 80 default_server)
 # CentOS/RHEL:/etc/nginx/nginx.conf 的 http {} 里直接有个 server { listen 80 default_server; ... }
 # 两种都要处理, 否则 nginx -t 会报 "duplicate default server" 部署中断.
-#
-# [WARN] 不能用 perl 块级正则去注释整段 server ——  块内嵌套的 location / error_page 让非贪婪 `.*?^\s*\}`
-#    在第一个 location 的 `}` 就截断, 而且 `$1` 前面加 `#` 只注释第一行, 剩下的 listen / server_name / root
-#    全部悬空在 http{} 里, nginx -t 报语法错直接挂掉(Debian 没事因为 perl 空跑没匹配到).
-#
-# 正确做法:只摘掉自带 listen 行上的 `default_server` 关键字.
-# 规则:只要**任何 server 显式声明 default_server**, 它就是默认.我们的 conf.d/myblog.conf 已带 default_server, 
-# 把自带的删掉后, 自带 server 变成普通 server(不抢默认), 我们的站点稳定成为默认, 不会再有 duplicate 报错.
-# 唯一副作用:自带 server 与我们的 server_name _ 重名, nginx 会打一条 conflicting server name 的 warning(非致命, nginx -t 通过).
+# 摘除自带 server 的 default_server 关键字，避免与 conf.d/myblog.conf 冲突
+# 不用 perl 块级正则（嵌套 location 会截断），只摘 listen 行上的关键字
 rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 if [ -f /etc/nginx/nginx.conf ]; then
     # 摘 default_server 关键字(IPv4 `listen 80 default_server;` 和 IPv6 `listen [::]:80 default_server;` 都覆盖)

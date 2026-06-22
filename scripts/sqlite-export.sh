@@ -36,10 +36,7 @@ warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
 error() { echo -e "${RED}[ERR]${NC} $*"; exit 1; }
 
 # ---- 密码函数(两遍输入确认)----
-# [WARN] 必须用全局变量 PASSWORD 传递密码,不能用 `PASSWORD=$(...)` 命令替换:
-#    $() 会创建子 shell,子 shell 的 stdin 是 pipe 不是 tty,
-#    read -rs 拿空值 → 两次空值"不一致"循环死锁(屏幕看着像卡住)
-# 重要:所有提示文字走 stderr(>&2),echo 密码到 stdout(老 API,保留)
+# 必须用全局变量传密码（$() 子 shell 拿不到 tty）
 prompt_password_twice() {
     # 2026-06-20 v4.2.0 新增:env 密码模式(非交互自动化场景,如 blog-backup.sh)
     # 当 BACKUP_ENCRYPTION_PASSWORD 或 DB_EXPORT_PASSWORD 环境变量已设置,
@@ -201,14 +198,8 @@ done
 command -v sqlite3 >/dev/null 2>&1 || error "sqlite3 not installed, install: brew install sqlite"
 command -v openssl >/dev/null 2>&1 || error "openssl not installed"
 
-# ---- sqlite3 包装:统一加 .timeout,避免与生产 SQLite(delete 模式 + busy_timeout=0)撞锁 ----
-# 2026-06-21 BUG 修复:
-#   触发场景:本地 docker 部署下,prod 容器 PRAGMA journal_mode=delete / busy_timeout=0 / pool-size=1
-#            (原因见 deploy-server.sh step 7 仍是 v2.6.0 旧配置),Spring 端 page_view 异步写
-#            持 PENDING 锁时,backup 进程 .schema 拿新 SHARED 锁被拒 → "database is locked"
-#   修复:所有 sqlite3 调用走本函数,内部 .timeout 30000 → SQLITE_BUSY 时等待最多 30s 而非立即报错。
-#   配合 deploy-server.sh 同步打开 WAL+busy_timeout=10000+pool=8 才算根治(治本),本函数是治标
-#   ——即使部署端配置没改,backup 也不会秒炸。
+# sqlite3 包装:统一加 .timeout,避免与生产 SQLite 撞锁
+# 2026-06-21：所有 sqlite3 调用走本函数，治标（治本需部署端开 WAL）
 SQLITE_TIMEOUT_MS="${SQLITE_TIMEOUT_MS:-30000}"
 
 # 用法:sqlite3_with_timeout <db_path> <sql_or_dotcmd...>
@@ -311,12 +302,7 @@ echo "=== Exporting plain SQL to temp file ==="
 } > "$TMP_SQL"
 
 # 2. Schema(过滤 sqlite_sequence,这是 SQLite 内部表不能手动 INSERT)
-# 2026-06-21 v4.2.2 加固:.schema 失败时保留 TMP_SQL + 打最后几行,方便下次出错时定位是哪张表
-# (之前 dump 阶段报 "Error: near 'UNION': syntax error" 无法复现,无现场信息)
-#
-# 2026-06-21 v4.2.2 增强:单张表 dump 加 4 次退避重试(间隔 0/1/2/4s),覆盖偶发 SQLITE_BUSY
-# 即使部署端 journal_mode=delete + busy_timeout=0 (v2.6.0 旧配置),脚本端也能扛过偶发锁竞争。
-# 注意:sqlite3 CLI 进程每次调用都是新进程,需要每次都设 .timeout → 已由 sqlite3_with_timeout 封装。
+# 2026-06-21 v4.2.2：.schema 失败保留现场 + 单表 dump 4次退避重试
 schema_dump_failed=0
 for tbl in "${EXPORT_TABLES[@]}"; do
     attempt=0
@@ -355,13 +341,7 @@ if [[ $schema_dump_failed -eq 1 ]]; then
 fi
 
 # 3. 数据(INSERT)
-# [WARN] 不能用 `sqlite3 ... .mode insert $tbl; SELECT *` —— sqlite 3.50+ (2025-05-29 起)
-#    对非 ASCII 字符(中文/换行)会自动包成 unistr('...\u000a...'),但生产 ECS 的系统
-#    sqlite3 是 3.22/3.31/3.37(< 3.50),没有 unistr() 函数 → import 时报
-#    "no such function: unistr" 一连串错.
-# 改用 Python 直接生成 SQL:只把单引号转义成 ''(SQL 标准),换行/制表符等空白原样内嵌进
-# 字符串字面量(SQLite 字面量允许多行,等同官方 .dump)——任意 sqlite 版本都能正确 import。
-# (历史坑:曾把换行 escape 成字面 '\n' 两字符,SQLite 不解析反斜杠转义 → 导入后正文换行全坏)
+# 不用 .mode insert（旧版 sqlite3 无 unistr 函数），改由 Python 生成 SQL
 if [[ "$SCHEMA_ONLY" != "true" ]]; then
     # 排除表清单 → 数组给 Python(逗号分隔字符串)
     EXCLUDE_PY=$(printf "'%s'," "${EXPORT_TABLES[@]}")
@@ -447,8 +427,6 @@ info "Compressed: $GZ_SIZE"
 # ---- 步骤 2:AES-256-CBC 加密(强制要求密码)----
 echo
 echo "=== AES-256-CBC + PBKDF2 encryption ==="
-# [WARN] 不要用 PASSWORD=$(prompt_password_twice)——$() 创建子 shell,stdin 不是 tty,
-#    read -rs 拿不到密码,会死循环.改成函数副作用写 PROMPT_PASSWORD 全局变量.
 PROMPT_PASSWORD=""
 prompt_password_twice
 PROMPT_RC=$?

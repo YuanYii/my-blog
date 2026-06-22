@@ -74,16 +74,9 @@ if [ -z "${GITHUB_REPO:-}" ]; then
     exit 1
 fi
 
-# 决定 tag：前两位从 pom.xml 的 <revision> 读，第三位按 GitHub release 自动 +1
-# 规则：
-#   1. MAJOR.MINOR 从 backend/pom.xml 的 <revision> 读（如 4.0.0 → 4.0）
-#   2. 拉 GitHub 上所有 release 的 tag_name，过滤出 vMAJOR.MINOR.* 的
-#   3. 找该前缀下最大的 patch，+1 = 新 tag
-#   4. 该前缀无 release 时首发 vMAJOR.MINOR.1
-#   5. 脚本不回写 pom（第三位仅作开发期标记，发版记录由开发者手动维护）
-# 例：pom=4.0.5，GitHub 上 v4.0.* 最大是 4.0.9 → 发 v4.0.10
-#     pom=4.0.0，GitHub 上 v4.0.* 最大是 4.0.5 → 发 v4.0.6
-#     pom=5.0.0，GitHub 上无 v5.0.*           → 发 v5.0.1
+# tag = pom 前两位 + GitHub 同前缀最大 patch +1；不接受手动指定
+# 例：pom=4.0.5，GitHub v4.0.* 最大 4.0.9 → 发 v4.0.10
+#     pom=5.0.0，GitHub 无 v5.0.*          → 发 v5.0.1
 if [ -n "${1:-}" ]; then
     err "本脚本版本号完全自动（前两位从 pom 读，第三位从 GitHub 算），不接受手动指定"
     err "  传参 '$1' 被忽略"
@@ -237,13 +230,8 @@ if [ "${EXPORT_DB:-0}" = "1" ]; then
         warn "  (EXPORT_DB=1 要求 dev 库存在)"
     else
         # 调 sqlite-export.sh,密码从 stdin 读(交互式 read -s)
-        # ⚠️ 必须用 process substitution 而不是 `| sed`,否则 pipe 会偷走 export 的 stdin,
-        #    read -rs 拿空值 → 两次空值"不一致"循环死锁(屏幕看着像卡住)
-        #    FORCE_EXPORT=1 让 export 跳过"非交互拒绝"门,密码必须操作员手输
-        # page_view 不再用 --exclude 整表剔除（那会连 CREATE TABLE 一起丢，IMPORT_DB=1
-        # 销毁式重建后应用读 page_view 的后台仪表盘 no such table 500）。
-        # 改由 sqlite-export.sh 的 --clear-tables 显式清空(保留表结构、只清数据)。
-        # 2026-06-21:这是发布链路(IMPORT_DB=1 触发)→ 全量部署场景必须清,显式传参
+        # 用 process substitution 避免 pipe 偷走 stdin（read -s 拿不到密码）
+        # page_view 不用 --exclude（会丢表结构），改用 --clear-tables
         FORCE_EXPORT=1 bash "$ROOT_DIR/docs/scripts/sqlite-export.sh" \
             "$ROOT_DIR/backend/blog.db" \
             --clear-tables=admin_device,page_view \
@@ -291,9 +279,7 @@ README_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token 
 
 if [ "$README_EXISTS" != "200" ]; then
     info "仓库是空的（或无 README.md），自动补一个初始 README 解锁 release..."
-    # ⚠️ base64 必须去换行！Linux 的 GNU base64 默认按 76 列折行（macOS 不折），
-    # 折行产生的 \n 进了 JSON 字符串字面量就是非法 JSON，GitHub Contents API 400/422。
-    # 通用兜底：base64 后 | tr -d '\n'，单行输出。
+    # GNU base64 默认折行，必须 tr -d '\n' 产合法 JSON
     README_CONTENT=$(printf '# my-blog-prov\n\nmy-blog 部署专用仓库。\n\n本仓只放 GitHub Release assets（jar / static / sql / 部署脚本），代码仓在 [YuanYii/my-blog](https://github.com/YuanYii/my-blog)。\n\n## 部署方式\n\n参见每个 release 的 assets：\n- `deploy-bundle-vX.Y.Z.zip` 冷部署包（推荐，1 个文件拉完）\n- `blog-app.jar` Spring Boot fat jar\n- `frontend-static.tar.gz` Nuxt 生成的静态文件\n- `schema-sqlite.sql` SQLite 初始化\n- `deploy-server.sh` 服务器端一键部署脚本\n- `SHA256SUMS` 校验文件\n\n服务器端：\n```bash\nexport GITHUB_REPO=YuanYii/my-blog-prov\nsudo ./deploy-server.sh v4.1.0\n```\n' | base64 | tr -d '\n')
     # 用 Contents API 创建 README.md（base64 编码 + commit message）
     INITIAL_PAYLOAD=$(printf '{"message":"chore: initial README (unlock release for empty repo)","content":"%s"}' "$README_CONTENT")
