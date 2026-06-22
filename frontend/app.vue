@@ -4,9 +4,19 @@ const config = useRuntimeConfig()
 // 2026-06-12 新增：从站点设置拉 blog.title / blog.description 注入 <head>。
 // 之前浏览器 tab 标题、SEO description 都硬编码在 nuxt.config.ts，admin 在后台改 blog.title 完全不生效。
 // useAsyncData key 与 NavBar / SiteFooter 一致 → Nuxt SSR 自动 dedupe，整页只发一次。
+//
+// 2026-06-22 修复（BUG-XXX 顶层 await 双倍阻塞）：
+// 之前 NavBar.vue 也自己 await useAsyncData('site-blog', ...) 拉同一份数据。
+// Nuxt dedupe 的是 promise（只发一次请求），但**两个 await 都得等 promise resolve**——
+// 组件 setup 都阻塞。后端 /public/settings/blog 超时 → 整页白屏。
+// 修：app.vue 顶层 await 一次（仍然在 root setup 里，Nuxt 会注入到 SSR payload）；
+// 其它组件用 useState 拿 reactive ref，不再二次 await。
 const { get } = usePublicApi()
 const { data: blogRes } = await useAsyncData('site-blog', () => get<any>('/public/settings/blog'))
-const blog = computed(() => blogRes.value?.data || {})
+// 全局共享 reactive 引用 —— NavBar / SiteFooter 通过 useState 拿同一个 ref
+const blogShared = useState<any>('site-blog-data', () => blogRes.value?.data || {})
+watch(blogRes, (v) => { blogShared.value = v?.data || {} }, { immediate: true })
+const blog = blogShared
 
 // 让 <title> 跟 blog.title 联动；description 用 computed 覆盖 nuxt.config.ts 里的静态默认值
 const siteTitle = computed(() => blog.value?.title || '加载中')
@@ -42,6 +52,19 @@ useHead({
 //
 // client only：SSR 阶段 document/navigator 不存在；favicon 是浏览器行为，SSR 注入没意义。
 onMounted(async () => {
+  // 2026-06-22 修复（BUG-XXX favicon 全链 try-catch）：
+  // 之前各分支（loadImageWithCors / imageToDataUrl / renderLetterIcon）内部各自 try-catch，
+  // 但外层 onMounted 没有 try-catch——getComputedStyle(documentElement) 失败、
+  // canvas.toDataURL() 在极旧浏览器抛异常等情况下，整个 onMounted 静默失败。
+  // 加外层 try-catch：失败仅 console.warn，不影响页面其他功能。
+  try {
+    await renderFavicon()
+  } catch (e) {
+    console.warn('[favicon] 渲染失败，使用浏览器默认 favicon:', e)
+  }
+})
+
+async function renderFavicon() {
   const title = blog.value?.title || '加载中'
   const logoUrl = blog.value?.logo
   let dataUrl: string | null = null
@@ -70,7 +93,7 @@ onMounted(async () => {
     document.head.appendChild(link)
   }
   link.href = dataUrl
-})
+}
 
 /** 加载图片（处理 CORS：图床若带 Access-Control-Allow-Origin 就能直接画） */
 function loadImageWithCors(url: string): Promise<HTMLImageElement> {

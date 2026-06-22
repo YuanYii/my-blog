@@ -2,12 +2,16 @@
 // 2026-06-12 修复：原 footer 把版权、RSS / GitHub / 邮箱链接全部硬编码——
 // admin 在「站点设置 → 站点信息 / 社交账号」改完根本不会反映到前台 footer。
 // useAsyncData 与 NavBar / app.vue 共享同一组 key，整页 SSR 共三次请求即可。
+//
+// 2026-06-22 修复（BUG-XXX 顶层 await 双倍阻塞）：
+// blog 数据跟 NavBar 一样改 useState 拿（app.vue 是唯一发起方）；
+// social 没有跨组件共用，仍走 useAsyncData（Nuxt SSR 自动 dedupe promise）。
 const { get } = usePublicApi()
-const [{ data: blogRes }, { data: socialRes }] = await Promise.all([
-  useAsyncData('site-blog', () => get<any>('/public/settings/blog')),
+const [{ data: socialRes }] = await Promise.all([
   useAsyncData('site-social', () => get<any>('/public/settings/social'))
 ])
-const blog = computed(() => blogRes.value?.data || {})
+const blogRef = useState<any>('site-blog-data', () => ({}))
+const blog = computed(() => blogRef.value || {})
 const social = computed(() => socialRes.value?.data || {})
 const mailHref = computed(() => social.value?.emailPublic ? `mailto:${social.value.emailPublic}` : '')
 </script>

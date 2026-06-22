@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// 2026-06-22 抽出 → composables/useMarkdownUtils.ts
+import { formatDate } from '~/composables/useMarkdownUtils'
+
 const { get } = usePublicApi()
 
 // 拉取首页所需数据
@@ -60,7 +63,6 @@ const avatarLetter = computed(() => profile.value?.nickname?.[0] || profile.valu
 const githubHandle = computed(() => social.value?.github ? '@' + (social.value.github.split('/').filter(Boolean).pop() || '') : '')
 const twitterHandle = computed(() => social.value?.twitter ? '@' + (social.value.twitter.split('/').filter(Boolean).pop() || '') : '')
 
-const formatDate = (s: string) => s ? s.substring(0, 10) : ''
 const formatViews = (n: number) => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
 
 // 切页：边界判断 + 平滑滚到列表

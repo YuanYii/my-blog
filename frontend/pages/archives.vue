@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// 2026-06-22 抽出 → composables/useMarkdownUtils.ts（formatMonthDay: 'MM-DD'）
+import { formatMonthDay as formatDate } from '~/composables/useMarkdownUtils'
+
 const { get } = usePublicApi()
 const articles = ref<any[]>([])
 const loading = ref(true)
@@ -21,8 +24,6 @@ onMounted(async () => {
   } catch { /* ignore */ }
   finally { loading.value = false }
 })
-
-const formatDate = (d: string) => d ? d.substring(5, 10) : ''
 </script>
 
 <template>

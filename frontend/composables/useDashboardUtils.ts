@@ -1,5 +1,11 @@
 /**
  * C（2026-06-20）：Dashboard 工具函数，从 dashboard.vue 抽出。
+ *
+ * 2026-06-22：formatDateTime / formatDate 不再在此处定义，统一走 composables/useMarkdownUtils.ts。
+ * （之前 5 处实现不一致已制造过"editor 修过图片语法但 post 页漏改"的历史 bug）
+ * 注意：dashboard.vue 之前 import `formatDateTime` 自本文件 —— 改用 auto-import 后
+ * 直接拿 useMarkdownUtils 版本，无需在本文件 re-export（re-export 会导致 Nuxt auto-import
+ * 报"重复导入"警告，参考上次 prepare 的输出）。
  */
 
 export function fillDays(data: any[], days: number, key = 'pv'): number[] {
@@ -33,6 +39,4 @@ export function getThemeColors() {
   }
 }
 
-export const formatDateTime = (s: string) => s ? s.replace('T', ' ').substring(0, 16) : ''
-export const formatDate = (s: string) => s ? s.substring(0, 10) : ''
 export const statusLabel = (s: number) => ({ 0: '草稿', 1: '已发布', 2: '已归档' }[s] || '未知')

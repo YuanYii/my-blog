@@ -4,6 +4,10 @@
  * 包含工具栏 + textarea（支持图片粘贴/拖拽）+ 实时预览双栏。
  */
 import DOMPurify from 'dompurify'
+// 2026-06-22 抽出 renderMarkdown → composables/useMarkdownUtils.ts
+// 之前 MarkdownEditor 与 post/[slug].vue 各有一份独立实现，已制造过
+// "editor 修过图片语法但 post 页漏改" 的历史 bug（2026-06-16 BUG-078）。
+import { renderMarkdown } from '~/composables/useMarkdownUtils'
 
 const props = defineProps<{
   modelValue: string
@@ -82,25 +86,6 @@ const insertImagePrompt = async () => {
     if (!confirmed || !value) return
     insertMarkdown(`![`, `](${value})`, 'alt 文本')
   }
-}
-
-const renderMarkdown = (md: string) => {
-  if (!md) return ''
-  let html = md
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="lang-$1">$2</code></pre>')
-  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>')
-  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>')
-  html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>')
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>')
-  html = html.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, '<img src="$2" alt="$1" loading="lazy" />')
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
-  html = html.replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>')
-  html = html.replace(/^- (.*$)/gim, '<li>$1</li>')
-  html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-  html = html.replace(/^\d+\. (.*$)/gim, '<li>$1</li>')
-  html = html.split('\n\n').map(p => p.startsWith('<') ? p : `<p>${p}</p>`).join('\n')
-  return html
 }
 
 const safeMarkdown = (md: string) => DOMPurify.sanitize(renderMarkdown(md), {

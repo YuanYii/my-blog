@@ -17,7 +17,7 @@ function loadPrerenderRoutes() {
     console.log(`[nuxt.config] 加载 ${routes.length} 条 prerender 路由`)
     return routes
   } catch (e) {
-    console.warn(`[nuxt.config] 加载 .routes.json 失败: ${e.message}，使用 fallback`)
+    console.warn(`[nuxt.config] 加载 .routes.json 失败: ${(e as Error).message}，使用 fallback`)
     return fallback
   }
 }

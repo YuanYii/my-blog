@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import DOMPurify from 'dompurify'
+// 2026-06-22 抽出 → composables/useMarkdownUtils.ts
+// 模板里继续叫 formatDate / formatDateTime — 零改动。renderMarkdown 同理。
+import { formatDate as formatDateShared, formatDateTime as formatDateTimeShared, renderMarkdown } from '~/composables/useMarkdownUtils'
 
 // 2026-06-13 修复（auto_fix BUG-003）：
 // 原 safeMarkdown 在 SSR 阶段调 DOMPurify.sanitize 抛 `default.sanitize is not a function`
@@ -86,62 +89,10 @@ const handleSubmitComment = async () => {
   finally { submitting.value = false }
 }
 
-const formatDate = (d: string) => d ? d.substring(0, 10) : ''
-// 2026-06-13 修复（BUG-068）：后端返的 publishedAt 是 LocalDateTime 序列化（无 'Z'），
-// 直接 new Date("2026-06-13T03:45:00") 会按本地时区解析，与服务端 Asia/Shanghai 差 8h。
-// 统一加 'Z' 表明 UTC，Date 内部按 UTC 解析，getXxx() 自动转本地时区。
- // 2026-06-19 修复（BUG-XXX 配套）：兼容 number（Unix ms）和 string 两种 createdAt 形态。
- // 之前 d.endsWith('Z') 在 number 上会抛 "endsWith is not a function"。
- const formatDateTime = (d: any) => {
-  if (d == null || d === '') return ''
-  // number：Unix 毫秒
-  if (typeof d === 'number') {
-    const date = new Date(d)
-    if (isNaN(date.getTime())) return ''
-    const pad = (n: number) => String(n).padStart(2, '0')
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-  }
-  // string：尝试 ISO 解析，失败再走 replace 兜底
-  const utc = d.endsWith('Z') || d.includes('+') || d.includes('-', 10) ? d : d + 'Z'
-  const date = new Date(utc)
-  if (isNaN(date.getTime())) return d.replace('T', ' ').substring(0, 16)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-// 简易 markdown 渲染（生产用 marked/remark，这里 MVP 走最简版）
-// 2026-06-16 修复（BUG-078）：原实现只处理普通链接 `[text](url)`，没处理图片 `![alt](url)`。
-// 后果：文章详情页把 `![alt](url)` 显示成 `<p>!<a href="url">alt</a></p>`——"图片链接"而非图片。
-// 同样的 bug 之前在 admin/edit.vue 修过（2026-06-15 v2.2.0 §12.10），
-// 但 post/[slug].vue 漏改——admin 编辑器预览正确 ≠ 详情页正确，两边 markdown 渲染器独立。
-// 修法：与 edit.vue 保持完全一致——在普通链接正则之前先匹配图片语法。
-const renderMarkdown = (md: string) => {
-  if (!md) return ''
-  let html = md
-  // 代码块
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="lang-$1">$2</code></pre>')
-  // 标题
-  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>')
-  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>')
-  html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>')
-  // 粗体/斜体
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>')
-  // 图片语法：必须在普通链接前匹配（图片也是 ![](url) 形式，正则覆盖普通链接的话会先匹配错）
-  // alt 文本里允许空：![](url)，url 允许双引号包起来：![alt]( "url" )
-  html = html.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
-    '<img src="$2" alt="$1" loading="lazy" />')
-  // 链接
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
-  // 引用
-  html = html.replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>')
-  // 列表
-  html = html.replace(/^- (.*$)/gim, '<li>$1</li>')
-  html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-  // 段落
-  html = html.split('\n\n').map(p => p.startsWith('<') ? p : `<p>${p}</p>`).join('\n')
-  return html
-}
+// 2026-06-22 抽出 → composables/useMarkdownUtils.ts
+// 模板里继续叫 formatDate / formatDateTime — 零改动。
+const formatDate = (d: string | number | null | undefined) => formatDateShared(d)
+const formatDateTime = (d: string | number | null | undefined) => formatDateTimeShared(d)
 
 /**
  * SSR 阶段的安全 HTML（auto_fix BUG-003）：
