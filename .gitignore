@@ -89,7 +89,7 @@ docs/scripts/*.env.local
 .vscode/
 *.swp
 *.swo
-.DS_Store
+**/.DS_Store
 
 # 日志
 *.log
@@ -98,14 +98,19 @@ logs/
 # 注：docs/scripts/deploy-server.env.example 是部署模板（不入库,本地运维用）
 # .env.prod.example 早期 docker 时代残留,2026-06-22 已删。
 
-# 临时脚本 / 报告（不要 commit 过程文件）
-/tmp/
-docs/scripts/.tmp/
+# 运行时数据（不入库）
+var/
+!var/.gitkeep
+# 保留 var/ 下的子目录结构
+!var/backups/.gitkeep
+!var/tmp/.gitkeep
+!var/uploads/.gitkeep
 
 # Agent / Claude 工具配置（不要进仓库）
 .audit/
 .claude/
 .cursor/
+.codebuddy
 .workbuddy
 .aider*
 
@@ -121,6 +126,5 @@ backend/blog.db-wal
 backend/blog.db-shm
 backend/tmp/
 backend/blog-app/blog.db
-backups
 
 frontend/dist

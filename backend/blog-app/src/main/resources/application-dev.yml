@@ -35,8 +35,8 @@ spring:
 blog:
   upload:
     local:
-      # dev 用项目内 tmp/ 目录（Git ignore）
-      dir: ${UPLOAD_DIR:${user.dir}/tmp/blog-uploads}
+      # dev 用项目内 var/uploads/ 目录（Git ignore）
+      dir: ${UPLOAD_DIR:${user.dir}/var/uploads}
 
 # 2026-06-20 v4.2.0：dev 暴露 BACKUP_* 环境变量入口
 #   - dev profile 之前不引用这些变量 → 启动时 Spring 不会读 shell 里 export 的值

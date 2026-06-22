@@ -26,14 +26,14 @@
   - `middleware/admin-auth.ts` — **SSR-safe 鉴权**（v2.7.0 全静态化后 `import.meta.server` 恒为 `false`，SSR 判断已删）
   - `composables/` — `useApi` / `useAuth` / `useAdminApi` / `usePublicApi` / `useDialog` / `useToast` / `useDevice` / `useAdminMeta`
   - `components/` / `plugins/` / `nuxt.config.ts` / `scripts/fetch-routes.js`（build 前拉公开页路由）
-- `docs/scripts/` — 部署/验证/迁移/rebuild（2026-06-18 由 `scripts/` 迁移至此）
+- `scripts/` — 部署/验证/迁移/rebuild（2026-06-22 由 `scripts/` 迁移至根目录）
   - `deploy-server.sh` — 服务器端一键部署（`DEPLOY_MODE=full|code|data` + `IMPORT_DB=1`）
   - `publish-release.sh` — 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子）
   - `sqlite-export.sh` — **加密导出** dev db（`AES-256-CBC + PBKDF2 100k`，交互式密码两次输入；产出 `.sql.gz.enc`）
   - `sqlite-import.sh` — **解密导入** 到目标 db（密码一次输入；支持本地 + `--remote user@host` 远端模式；错密码不碰目标 db）
   - `rebuild-static.sh` — 每日 cron 重建前端静态文件
   - `verify-sqlite.sh` — 端到点验证脚本（v2.6.0 29 端点；v4.0.0 已扩到 60 端点）
-- `docs/` — `需求文档/`（实际只含 `https配置文档.md`） / `设计文档/`（`博客系统设计方案.md` + `IP限流封禁方案设计.md` + `服务日志体系设计.md`） / `接口契约审计报告.md` / `changelogs/`（v2.0.0 → v4.0.0）/ `sql/`（v2.6.0 整合后 2 个 schema）/ `docker/` / `nginx/` + **`项目部署操作手册.md`** + **`项目部署解决方案.md`**
+- `docs/` — `requirements/`（含 `https配置文档.md`） / `design/`（`博客系统设计方案.md` + `IP限流封禁方案设计.md` + `服务日志体系设计.md`） / `接口契约审计报告.md` / `changelogs/`（v2.0.0 → v4.2.1）/ `sql/`（v2.6.0 整合后 2 个 schema）/ `deployment/`（`docker/` + `nginx/` 合并）/ `prompts/` + **`项目部署操作手册.md`** + **`项目部署解决方案.md`**
 - `README.md` / `AGENTS.md`（本文件）
 
 ---
@@ -85,14 +85,14 @@ dev/prod 默认 **SQLite**（一文件 0 内存占用）；MySQL 8.0 降级为�
 - 切回 MySQL：`spring.profiles.active=dev,mysql` 或 `prod,mysql`
 - **SQLite 写并发（2026-06-18 起开 WAL）**：prod 用 `journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL`，Hikari `maximum-pool-size` 已由 1 放开到 **8**（WAL 下「多读+单写」可并发，`busy_timeout` 让偶发写竞争等待而非立刻 `SQLITE_BUSY`）。**未开 WAL 时不要把 pool-size 设 >1**
 - 业务 SQL 跨方言已统一（38 处）——`PageViewService` / `ArticleController` / `DashboardController` 用 `LocalDate` / `LocalDateTime` 传参替代 MySQL 特有函数（`CURDATE()` / `DATE_SUB` / `NOW()` / `INSERT IGNORE` → 业务层去重）
-- 旧 8 个散 SQL 文件（`blog.sql` + 5 migrations + 2 migration-*.sql）已整合删除；v2.6.0 时代用 `docs/scripts/migrate-mysql-to-sqlite-direct.py` 做 MySQL → SQLite 数据迁移（pymysql 直连版，123/123 行导入）。**2026-06-18 v4.0.0 起该脚本已被 `sqlite-export.sh` / `sqlite-import.sh` 加密链路取代；原 `migrate-mysql-to-sqlite-direct.py` 文件已删除**（如需 MySQL → SQLite 一次性迁移，重新生成脚本或改用 `mysqldump` → `sqlite3` 手工链路）
+- 旧 8 个散 SQL 文件（`blog.sql` + 5 migrations + 2 migration-*.sql）已整合删除；v2.6.0 时代用 `scripts/migrate-mysql-to-sqlite-direct.py` 做 MySQL → SQLite 数据迁移（pymysql 直连版，123/123 行导入）。**2026-06-18 v4.0.0 起该脚本已被 `sqlite-export.sh` / `sqlite-import.sh` 加密链路取代；原 `migrate-mysql-to-sqlite-direct.py` 文件已删除**（如需 MySQL → SQLite 一次性迁移，重新生成脚本或改用 `mysqldump` → `sqlite3` 手工链路）
 - MyBatis-Plus 3.4.3.4 `IdType.AUTO` 自动适配 MySQL / SQLite，9 个 `@TableName` 实体各有 1 处 `@TableId(type = IdType.AUTO)`，合计 **9 处注解**（不要把 Service 类注释里出现的 `IdType.AUTO` 字符串误算成第 10 处注解）**不动**
 
 ### 4.6 前端全静态化（v2.7.0，**不要回退**）
 `nuxt generate` 产出 `.output/public/`，nginx:alpine 直接 serve。
 - 公开页 SEO 预渲染：`nitro.prerender.routes`（由 `scripts/fetch-routes.js` 拉后端所有公开页 slug 生成 `.routes.json`）+ `crawlLinks: true` + `failOnError: false`
 - admin 路由不预渲染（`ignore: '/admin/**'` + `'/api/**'`）
-- 新文章延迟：每日凌晨 3 点 cron `docs/scripts/rebuild-static.sh` rebuild（构建 ~60s，吃 200-300MB 临时内存）
+- 新文章延迟：每日凌晨 3 点 cron `scripts/rebuild-static.sh` rebuild（构建 ~60s，吃 200-300MB 临时内存）
 - `import.meta.server` 永远是 `false`（全静态化后），不要回退 `useAuth.ts` 的 SSR cookie 读取代码（v2.7.0 已删）
 - 镜像：node 20-alpine build → nginx:alpine runtime（~50MB vs v2.6 之前的 ~200MB）
 
@@ -112,7 +112,7 @@ dev/prod 默认 **SQLite**（一文件 0 内存占用）；MySQL 8.0 降级为�
 - **降噪规则**：`PageViewFilter` / `PageViewService` / `view_count` 自增 等高频路径**禁止** INFO 级（会爆磁盘）
 - **prod console**：FR-6.5 强制 prod profile **必须关闭 CONSOLE appender**（避免 systemd 重定向的 app.log 与 Logback 文件双写，绕过 3GB 预算）
 - **systemd 重定向文件**：`/opt/myblog/logs/app.log` + `app-error.log` 由 logrotate 单独管（按天切，保留 7 天）
-- **完整需求**：见 `docs/设计文档/服务日志体系设计.md`（原计划落 `docs/需求文档/REQ-LOG-2026-06-18.md`，该路径未建文件，2026-06-18 复核确认统一收口到设计文档）
+- **完整需求**：见 `docs/design/服务日志体系设计.md`（原计划落 `docs/requirements/REQ-LOG-2026-06-18.md`，该路径未建文件，2026-06-18 复核确认统一收口到设计文档）
 
 ---
 
@@ -141,13 +141,13 @@ curl http://localhost:8080/api/v1/health
 # 期望 {"code":200,"data":{"status":"UP",...}}
 
 # 5. 端到端验证（29 端点）
-bash docs/scripts/verify-sqlite.sh
+bash scripts/verify-sqlite.sh
 
 # ============ Prod（v2.6.0/v2.7.0：无 docker）============
 # 上传 jar + schema + 脚本到 ECS
 scp backend/blog-app/target/blog-app.jar myblog@<ecs-ip>:/tmp/
 scp docs/sql/schema-sqlite.sql myblog@<ecs-ip>:/tmp/
-scp docs/scripts/deploy-server.sh myblog@<ecs-ip>:/tmp/
+scp scripts/deploy-server.sh myblog@<ecs-ip>:/tmp/
 
 # ECS 一键部署（v4.0.0 起标准方式：DEPLOY_MODE=full/code/data + IMPORT_DB=1 钩子）
 sudo DEPLOY_MODE=full bash /opt/myblog/scripts/deploy-server.sh
@@ -160,7 +160,7 @@ sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%
 
 # ============ Dev → Prod 加密数据迁移(2026-06-18 起)============
 # 1. dev 导出加密 dump(交互式输两次密码)
-bash docs/scripts/sqlite-export.sh --exclude page_view -o /tmp/migration.sql.gz.enc
+bash scripts/sqlite-export.sh --exclude page_view -o /tmp/migration.sql.gz.enc
 
 # 2. 上传到生产(走任意介质:scp/邮件附件/OSS——加密态下不敏感)
 scp /tmp/migration.sql.gz.enc myblog@<ecs-ip>:/tmp/
@@ -170,10 +170,10 @@ ssh myblog@<ecs-ip> "sudo bash /opt/myblog/scripts/sqlite-import.sh /opt/myblog/
 # 注:scp + ssh 走 SSH 加密通道,但加 .enc 是**第二道防线**——dump 落到本地磁盘/U 盘/OSS 时也安全
 
 # 4. publish-release + deploy-server 集成(两个外置开关,默认关)
-EXPORT_DB=1 ./docs/scripts/publish-release.sh          # dev:数据加密导出到 release
-IMPORT_DB=1 sudo ./docs/scripts/deploy-server.sh v3.x.x # prod:自动下载+解密导入
-DEPLOY_MODE=code sudo ./docs/scripts/deploy-server.sh v3.x.x   # 只装代码,不动 db
-DEPLOY_MODE=data IMPORT_DB=1 sudo ./docs/scripts/deploy-server.sh v3.x.x   # 只导入数据,跳过 jar/schema/前端
+EXPORT_DB=1 ./scripts/publish-release.sh          # dev:数据加密导出到 release
+IMPORT_DB=1 sudo ./scripts/deploy-server.sh v3.x.x # prod:自动下载+解密导入
+DEPLOY_MODE=code sudo ./scripts/deploy-server.sh v3.x.x   # 只装代码,不动 db
+DEPLOY_MODE=data IMPORT_DB=1 sudo ./scripts/deploy-server.sh v3.x.x   # 只导入数据,跳过 jar/schema/前端
 # ⚠️ DEPLOY_MODE=data 但 IMPORT_DB=0 → 报错退出(语义矛盾)
 ```
 
@@ -217,7 +217,7 @@ DEPLOY_MODE=data IMPORT_DB=1 sudo ./docs/scripts/deploy-server.sh v3.x.x   # 只
 |---|---|
 | **8.1 需求跟踪文档 / 报告：先看后写** | 涉及 BUG/OPT/DEV 项时，**先在对话里展示完整内容**，等用户确认后再落盘 |
 | **8.2 提示词优化：不落盘** | "优化提示词"任务**只在对话里输出**——不写文件（无论是否提示"输出为 MD"） |
-| **8.3 过程文件：放项目目录** | 主动写的 draft / 临时分析 / 截图 / 比对资料一律写到**对应项目目录下**（docs/、docs/scripts/、.audit/、tmp/、screenshots/ 等），或只输出在对话里。**不写到 `~/`、`~/Desktop/`、`~/.mavis/` 等家目录**。mavis 系统自管文件（scratchpad / memory / session log）不受此约束 |
+| **8.3 过程文件：放项目目录** | 主动写的 draft / 临时分析 / 截图 / 比对资料一律写到**对应项目目录下**（docs/、scripts/、.workbuddy/、var/tmp/、screenshots/ 等），或只输出在对话里。**不写到 `~/`、`~/Desktop/`、`~/.mavis/` 等家目录**。mavis 系统自管文件（scratchpad / memory / session log）不受此约束 |
 | **8.4 git commit 默认不自动** | 默认不自动 git commit —— 改完代码停留在工作区，等用户显式说"提交"才执行；触发词必须是用户原话 |
 | **8.5 本地 docker 服务报错 → 查 `myblog-sim` 容器日志** | 用户说"本地 docker 服务报错"（含 traceId / 5xx / 接口异常等）时，**直接进 `myblog-sim` 容器查日志**：`docker logs myblog-sim 2>&1 \| grep <traceId>` + 容器内 `/opt/myblog/logs/blog.log` 配套；不要先查 dev 本地文件日志（`/tmp/blog-dev-logs/`）或 host 上其它路径——`myblog-sim` 才是本地 docker 部署的运行实例。仅本项目适用 |
 
@@ -252,23 +252,23 @@ DEPLOY_MODE=data IMPORT_DB=1 sudo ./docs/scripts/deploy-server.sh v3.x.x   # 只
 | 路径 | 用途 | 优先级 |
 |---|---|---|
 | `README.md` | 项目门面（v4.0.0 同步刷新） | 🔴 必读 |
-| `docs/设计文档/博客系统设计方案.md` | 完整设计 v0.3（含 v2.6.0/v2.7.0/v4.0.0 变更记录） | 🔴 必读 |
+| `docs/design/博客系统设计方案.md` | 完整设计 v0.3（含 v2.6.0/v2.7.0/v4.0.0 变更记录） | 🔴 必读 |
 | `docs/项目部署操作手册.md` | **部署操作手册**（v4.0.0+ 一步步怎么操作） | 🟠 重要 |
 | `docs/项目部署解决方案.md` | **部署解决方案**（设计决策 / 成本预算 / ADR） | 🟠 重要 |
 | `frontend/middleware/admin-auth.ts` | SSR-safe 鉴权（**不要回退 BUG-001 修复**） | 🔴 必读 |
 | `frontend/layouts/admin.vue` | admin 布局 + 鉴权兜底 + 全局 Toast/Dialog 容器 | 🔴 必读 |
 | `frontend/nuxt.config.ts` | v2.7.0 全静态 prerender 配置（routes / crawlLinks / failOnError / ignore） | 🔴 必读 |
 | `backend/blog-app/src/main/resources/application-{dev,prod,mysql}.yml` | v2.6.0 拆 4 profile 矩阵（dev / dev,mysql / prod / prod,mysql） | 🔴 必读 |
-| `docs/scripts/rebuild-static.sh` | 每日 cron 重建前端静态文件 | 🔴 必读 |
-| `docs/scripts/verify-sqlite.sh` | 端到端 29 端点验证脚本 | 🟠 重要 |
-| `docs/scripts/sqlite-export.sh` | dev 加密导出 db（**只支持加密**，无明文兜底） | 🟠 重要 |
-| `docs/scripts/sqlite-import.sh` | prod 解密导入 db（**只支持 .enc**，错密码不碰目标 db） | 🟠 重要 |
-| `docs/scripts/blog-backup.sh` | 备份脚本（db+uploads 加密打包 → 推 GitHub Release） | 🟠 重要 |
-| `docs/scripts/blog-restore.sh` | 恢复脚本（systemd-run --scope 独立 cgroup + myblog 身份，13 步流程） | 🔴 必读 |
-| `docs/scripts/sudoers-myblog-restore.example` | sudoers 白名单（5 条精确命令，**无通配符**） | 🔴 必读 |
-| `docs/设计文档/博客数据恢复方案设计.md` | 恢复功能设计稿（v5 设计稿，5 轮迭代） | 🟠 重要 |
-| `docs/scripts/publish-release.sh` | 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子） | 🟠 重要 |
-| `docs/scripts/deploy-server.sh` | 服务器端一键部署（`DEPLOY_MODE=full\|code\|data` + `IMPORT_DB=1`） | 🟠 重要 |
+| `scripts/rebuild-static.sh` | 每日 cron 重建前端静态文件 | 🔴 必读 |
+| `scripts/verify-sqlite.sh` | 端到端 29 端点验证脚本 | 🟠 重要 |
+| `scripts/sqlite-export.sh` | dev 加密导出 db（**只支持加密**，无明文兜底） | 🟠 重要 |
+| `scripts/sqlite-import.sh` | prod 解密导入 db（**只支持 .enc**，错密码不碰目标 db） | 🟠 重要 |
+| `scripts/blog-backup.sh` | 备份脚本（db+uploads 加密打包 → 推 GitHub Release） | 🟠 重要 |
+| `scripts/blog-restore.sh` | 恢复脚本（systemd-run --scope 独立 cgroup + myblog 身份，13 步流程） | 🔴 必读 |
+| `scripts/sudoers-myblog-restore.example` | sudoers 白名单（5 条精确命令，**无通配符**） | 🔴 必读 |
+| `docs/design/博客数据恢复方案设计.md` | 恢复功能设计稿（v5 设计稿，5 轮迭代） | 🟠 重要 |
+| `scripts/publish-release.sh` | 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子） | 🟠 重要 |
+| `scripts/deploy-server.sh` | 服务器端一键部署（`DEPLOY_MODE=full\|code\|data` + `IMPORT_DB=1`） | 🟠 重要 |
 | `docs/changelogs/` | 版本变更记录（v2.0.0 → v2.7.0） | 🟠 重要 |
 | `docs/接口契约审计报告.md` | API 100% 一致 | 🟠 重要 |
 | `AGENTS.md` | **本文件** | 🔴 必读 |
@@ -297,17 +297,17 @@ DEPLOY_MODE=data IMPORT_DB=1 sudo ./docs/scripts/deploy-server.sh v3.x.x   # 只
 | 文件 | 位置 | 说明 |
 |---|---|---|
 | `backend/pom.xml` | line 32 `<revision>` | 🔴 唯一入口，改这个其他全跟着同步 |
-| `docs/scripts/deploy-server.sh` | line 7, 26, 27, 28, 29（注释） / line 54, 55（Usage 提示）/ line 641（rollback 提示） | 注释里的 `vX.Y.Z` + 错误提示 |
-| `docs/scripts/publish-release.sh` | line 279（README 模板里的 deploy 例子） | GitHub Release README 解锁用的初始内容 |
+| `scripts/deploy-server.sh` | line 7, 26, 27, 28, 29（注释） / line 54, 55（Usage 提示）/ line 641（rollback 提示） | 注释里的 `vX.Y.Z` + 错误提示 |
+| `scripts/publish-release.sh` | line 279（README 模板里的 deploy 例子） | GitHub Release README 解锁用的初始内容 |
 
 **B 类 — 绝对不改的"历史引用"**（破坏它就破坏历史追溯）：
 
 | 类别 | 例子 |
 |---|---|
 | 历史 changelog | `docs/changelogs/*.md` 所有文件 |
-| 历史设计文档 | `docs/设计文档/博客系统设计方案.md` / `docs/项目部署解决方案.md` §十六实施记录 |
+| 历史设计文档 | `docs/design/博客系统设计方案.md` / `docs/项目部署解决方案.md` §十六实施记录 |
 | AGENTS.md / README.md 里的"历史描述"段 | §3 Tech Stack / §4 关键决策 / §10 关键文件索引里所有 `v2.x` 引用 |
-| 历史升级指南 | `docs/scripts/upgrade-guide.md` 里所有 `v2.x` 引用 |
+| 历史升级指南 | `scripts/upgrade-guide.md` 里所有 `v2.x` 引用 |
 | 代码注释里的"vX.Y.Z 加的"标注 | `frontend/middleware/admin-auth.ts` / `frontend/composables/*.ts` / `frontend/nuxt.config.ts` / `backend/**/application*.yml` |
 
 **C 类 — 每次版本变更新建**：
@@ -318,10 +318,10 @@ DEPLOY_MODE=data IMPORT_DB=1 sudo ./docs/scripts/deploy-server.sh v3.x.x   # 只
 
 1. 改 `backend/pom.xml` `<revision>` ← 唯一入口
 2. 全仓 grep `v<旧版本号>` 找 A 类引用 → 同步改成 `v<新版本号>`
-3. B 类历史引用一律不动（grep 时排除 `docs/changelogs/` `docs/需求文档/` `docs/项目部署解决方案.md` §十六实施记录段）
+3. B 类历史引用一律不动（grep 时排除 `docs/changelogs/` `docs/requirements/` `docs/项目部署解决方案.md` §十六实施记录段）
 4. 新建 `docs/changelogs/YYYY-MM-DD-vX.Y.Z-{slug}.md` 写变更摘要（背景 / 新增 / 改动 / 升级回滚说明）
 5. AGENTS.md §3 / §4 / §10 索引如有相关条目 → 仅在"agent 启动建议顺序"那行加新版本号
-6. 测试：`bash docs/scripts/verify-sqlite.sh` 全过 + 部署脚本能跑
+6. 测试：`bash scripts/verify-sqlite.sh` 全过 + 部署脚本能跑
 
 ### 12.4 禁止
 

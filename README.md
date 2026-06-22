@@ -401,7 +401,7 @@ blog-app（启动类，唯一可执行 jar）
 | `ip_ban` | IP 封禁记录（v4.0.0 新增，限流超阈值时落库 + 手动解封） | ip / expires_at / unbanned / created_at | ✅ | ✅ |
 | `backup_record` | 备份记录（v4.2.0 新增，异步备份状态 + GitHub Release tag） | status / tag / started_at / finished_at / error_stage / operator_name | ✅ | ✅ |
 | `restore_record` | 恢复记录（v4.3.0 新增，异步恢复状态） | status / source_tag / scope / started_at / finished_at / error_stage | ✅ | **❌ 待补** |
-| `about_section` | 关于页 section（v2.3 设计意图，DDL 见 `docs/设计文档/博客系统设计方案.md` §5.2.4） | section_key / data / sort / enabled | **❌ 设计意图未落地**（复用 site_settings.techstack/experience） | **❌ 设计意图未落地** |
+| `about_section` | 关于页 section（v2.3 设计意图，DDL 见 `docs/design/博客系统设计方案.md` §5.2.4） | section_key / data / sort / enabled | **❌ 设计意图未落地**（复用 site_settings.techstack/experience） | **❌ 设计意图未落地** |
 
 **SQL 文件**（v2.6.0 整合后，2 个 schema 替代 8 个散文件）：
 - `docs/sql/schema-sqlite.sql` — **dev/prod 默认**，15 张表 + seed data（含 `restore_record`）
@@ -516,7 +516,7 @@ docker stop blog-redis blog-mysql   # 启了 docker 的才需要
 2. **MySQL 中文 SQL 导入**：用 `--default-character-set=utf8mb4`，不要用 docker exec pipe 写含中文的 SQL 数据（会双重编码，**SQLite 无此问题**）
 3. **SQLite WAL 模式**：v4.0.0 起开 WAL（`journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL`），Hikari `maximum-pool-size` 已放开到 **8**（WAL 下「多读+单写」可并发，`busy_timeout` 让偶发写竞争等待而非立刻 SQLITE_BUSY）
 4. **admin SSR 鉴权**：`frontend/middleware/admin-auth.ts` 已修复 SSR 阶段跳过 localStorage，直接访问 `/admin/*` 不会误踢已登录用户（v2.7.0 全静态化后 `import.meta.server` 恒为 `false`，SSR 判断代码已删）
-5. **端到端验证**：`docs/scripts/verify-sqlite.sh` 跑 60+ 个端点（含 page_view 业务层去重验证、备份/恢复端点），全过后才算 dev 完成
+5. **端到端验证**：`scripts/verify-sqlite.sh` 跑 60+ 个端点（含 page_view 业务层去重验证、备份/恢复端点），全过后才算 dev 完成
 
 ---
 
@@ -561,7 +561,7 @@ Nginx (:80 → 443)         ← apt 装 nginx（系统服务）
 | 域名       | `coreyai.cn`                 | ¥55/年  |
 | SSL 证书   | Let's Encrypt (certbot 自动续期) | ¥0     |
 
-> v2.7.0 释放前端 150-250MB 内存后，JVM heap 可从 256MB 提到 384MB（详见 `docs/scripts/deploy-server.sh`）。
+> v2.7.0 释放前端 150-250MB 内存后，JVM heap 可从 256MB 提到 384MB（详见 `scripts/deploy-server.sh`）。
 
 ### 5.3 部署流程（v2.6.0 起）
 
@@ -592,7 +592,7 @@ scp docs/sql/schema-sqlite.sql myblog@<ecs-ip>:/tmp/
 scp -r frontend/.output/public myblog@<ecs-ip>:/tmp/
 
 # 上传 deploy 脚本
-scp docs/scripts/deploy-server.sh myblog@<ecs-ip>:/tmp/
+scp scripts/deploy-server.sh myblog@<ecs-ip>:/tmp/
 
 # ============ Day 3：ECS 上一键部署 ============
 ssh myblog@<ecs-ip>
@@ -624,7 +624,7 @@ sudo bash /opt/myblog/scripts/deploy-server.sh
 
 ```bash
 # 上传 rebuild 脚本
-scp docs/scripts/rebuild-static.sh myblog@<ecs-ip>:/opt/myblog/scripts/
+scp scripts/rebuild-static.sh myblog@<ecs-ip>:/opt/myblog/scripts/
 
 # 配置 cron（myblog 用户视角）
 ssh myblog@<ecs-ip>
@@ -647,7 +647,7 @@ crontab -e
 
 ```bash
 # 在本地（dev 环境）跑端到端验证
-bash docs/scripts/verify-sqlite.sh
+bash scripts/verify-sqlite.sh
 
 # 期望输出："✅ 全部 XX 个端点通过"
 # 包含：
@@ -664,10 +664,10 @@ bash docs/scripts/verify-sqlite.sh
 所有敏感信息通过环境变量注入，不在仓库中明文保存：
 
 ```bash
-# 复制模板（2026-06-22: 改用 docs/scripts/deploy-server.env.example,早期 .env.prod.example 已删）
-cp docs/scripts/deploy-server.env.example docs/scripts/deploy-server.env
+# 复制模板（2026-06-22: 改用 scripts/deploy-server.env.example,早期 .env.prod.example 已删）
+cp scripts/deploy-server.env.example scripts/deploy-server.env
 # 编辑真实值后 ssh 上传到服务器 /etc/myblog/myblog.env:
-#   scp docs/scripts/deploy-server.env myblog@<ecs-ip>:/tmp/myblog.env
+#   scp scripts/deploy-server.env myblog@<ecs-ip>:/tmp/myblog.env
 #   ssh myblog@<ecs-ip> 'sudo mv /tmp/myblog.env /etc/myblog/myblog.env && sudo chmod 600 /etc/myblog/myblog.env'
 ```
 
@@ -687,7 +687,7 @@ cp docs/scripts/deploy-server.env.example docs/scripts/deploy-server.env
 ### 5.7 上线前 CheckList
 
 - [ ] **安全**：BCrypt 密码 / JWT secret 强随机 / Swagger 关闭 / CORS 收紧 / SSH 密钥登录
-- [ ] **配置**：`application-prod.yml` / `docs/scripts/deploy-server.sh` / `nginx.conf` 就绪
+- [ ] **配置**：`application-prod.yml` / `scripts/deploy-server.sh` / `nginx.conf` 就绪
 - [ ] **数据**：`schema-sqlite.sql` 自动导入 / 默认 admin 密码修改 / 删除测试数据
 - [ ] **HTTPS**：证书部署 / 80 → 443 强制跳转
 - [ ] **静态化**：`nuxt generate` 产物已上传 `/var/www/blog/` / `rebuild-static.sh` cron 已配
@@ -720,11 +720,11 @@ curl http://localhost:8080/api/v1/health
 docker stop blog-redis blog-mysql
 
 # ============ 端到端验证 ============
-bash docs/scripts/verify-sqlite.sh
+bash scripts/verify-sqlite.sh
 
 # ============ Dev → Prod 加密数据迁移（v4.0.0 起）============
 # 1. dev 导出加密 dump（交互式输两次密码，产出 .sql.gz.enc）
-bash docs/scripts/sqlite-export.sh --exclude page_view -o /tmp/migration.sql.gz.enc
+bash scripts/sqlite-export.sh --exclude page_view -o /tmp/migration.sql.gz.enc
 
 # 2. 上传到 ECS
 scp /tmp/migration.sql.gz.enc myblog@<ecs-ip>:/tmp/
@@ -736,7 +736,7 @@ ssh myblog@<ecs-ip> "sudo bash /opt/myblog/scripts/sqlite-import.sh /opt/myblog/
 # 上传 jar + schema + 脚本到 ECS
 scp backend/blog-app/target/blog-app.jar myblog@<ecs-ip>:/tmp/
 scp docs/sql/schema-sqlite.sql myblog@<ecs-ip>:/tmp/
-scp docs/scripts/deploy-server.sh myblog@<ecs-ip>:/tmp/
+scp scripts/deploy-server.sh myblog@<ecs-ip>:/tmp/
 
 # ECS 一键部署（v4.0.0 起标准方式）
 sudo DEPLOY_MODE=full bash /opt/myblog/scripts/deploy-server.sh
@@ -761,7 +761,7 @@ sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%
 | 后端包名 | `com.blog.*` |
 | 数据库 | SQLite: `backend/blog.db`（dev）/ `/opt/myblog/blog.db`（prod）；MySQL: `blog` |
 | API 前缀 | `/api/v1` |
-| 文件上传 | `/data/uploads/yyyy/mm/<uuid>.<ext>`（dev: `backend/tmp/blog-uploads/`） |
+| 文件上传 | `/data/uploads/yyyy/mm/<uuid>.<ext>`（dev: `var/uploads/`） |
 | Swagger | `http://localhost:8080/api/v1/swagger-ui.html` |
 | 静态产物 | `frontend/.output/public/`（dev build） → `/var/www/blog/`（prod） |
 | systemd service | `/etc/systemd/system/myblog.service` |
@@ -770,16 +770,16 @@ sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%
 
 | 文档 | 说明                                         |
 |------|--------------------------------------------|
-| [`docs/设计文档/博客系统设计方案.md`](docs/设计文档/博客系统设计方案.md) | 完整需求与架构设计（v4.2.1 增量更新：v3.1 之前的快照保留作为历史，v4.0.0~v4.3.0 走 §11 v4.x 增量变更记录段 + 各子设计文档）       |
+| [`docs/design/博客系统设计方案.md`](docs/design/博客系统设计方案.md) | 完整需求与架构设计（v4.2.1 增量更新：v3.1 之前的快照保留作为历史，v4.0.0~v4.3.0 走 §11 v4.x 增量变更记录段 + 各子设计文档）       |
 | [`docs/项目部署解决方案.md`](docs/项目部署解决方案.md) | 部署解决方案（VPS 1C2G，无 docker，v4.0.0 配套） |
 | [`docs/项目部署操作手册.md`](docs/项目部署操作手册.md) | 部署操作手册（v4.0.0+ 一步步操作）              |
 | [`docs/接口契约审计报告.md`](docs/接口契约审计报告.md) | API 契约 100% 一致性审计（v4.0.0 快照：13 Controller / 60 端点，v4.2.0+ 新增备份/恢复端点待补） |
 | [`docs/数据备份操作手册.md`](docs/数据备份操作手册.md) | 数据备份操作手册（v4.2.0+ 配置/触发/恢复）      |
-| [`docs/设计文档/博客数据备份方案设计.md`](docs/设计文档/博客数据备份方案设计.md) | 数据备份方案设计（v4.2.0 已实现）                |
-| [`docs/设计文档/博客数据恢复方案设计.md`](docs/设计文档/博客数据恢复方案设计.md) | 数据恢复方案设计（v4.3.0 已实现）               |
-| [`docs/设计文档/IP限流封禁方案设计.md`](docs/设计文档/IP限流封禁方案设计.md) | IP 限流封禁方案（v4.0.0 已实现）                |
-| [`docs/设计文档/服务日志体系设计.md`](docs/设计文档/服务日志体系设计.md) | 服务日志体系设计（v4.0.0 已实现）               |
-| [`docs/设计文档/重构优化方案_2026-06-20.md`](docs/设计文档/重构优化方案_2026-06-20.md) | 重构优化方案（v4.1.0 已实现）                   |
+| [`docs/design/博客数据备份方案设计.md`](docs/design/博客数据备份方案设计.md) | 数据备份方案设计（v4.2.0 已实现）                |
+| [`docs/design/博客数据恢复方案设计.md`](docs/design/博客数据恢复方案设计.md) | 数据恢复方案设计（v4.3.0 已实现）               |
+| [`docs/design/IP限流封禁方案设计.md`](docs/design/IP限流封禁方案设计.md) | IP 限流封禁方案（v4.0.0 已实现）                |
+| [`docs/design/服务日志体系设计.md`](docs/design/服务日志体系设计.md) | 服务日志体系设计（v4.0.0 已实现）               |
+| [`docs/design/重构优化方案_2026-06-20.md`](docs/design/重构优化方案_2026-06-20.md) | 重构优化方案（v4.1.0 已实现）                   |
 | [`docs/changelogs/`](docs/changelogs/) | 版本变更记录（v2.0.0 → v4.2.1，每个版本独立 md）          |
 | [`AGENTS.md`](AGENTS.md) | 项目级 agent 上下文（v4.2.0 同步更新）                 |
 
