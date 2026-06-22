@@ -106,6 +106,7 @@ docs/scripts/.tmp/
 .audit/
 .claude/
 .cursor/
+.workbuddy
 .aider*
 
 # 本地运维脚本草稿（按需）
