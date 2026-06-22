@@ -40,7 +40,9 @@
 
 set -euo pipefail
 
-# ============= 0. 默认值 =============
+# ============= 0. 环境检测 + 默认值 =============
+IN_DOCKER=false
+[[ -f /.dockerenv ]] && IN_DOCKER=true
 RESTORE_HEALTH_URL="${RESTORE_HEALTH_URL:-http://localhost:8080/api/v1/health}"
 RESTORE_KEEP_BAKS="${RESTORE_KEEP_BAKS:-5}"
 RESTORE_RESULT_DIR="${RESTORE_RESULT_DIR:-/var/lib/myblog/restore-results}"
@@ -123,17 +125,18 @@ stage "1/13 预检"
 [[ -n "${RESTORE_SCOPE:-}" ]] \
     || { err "RESTORE_SCOPE 未配置"; exit 20; }
 
-# v5 自检: 用白名单内的 systemctl is-active 验证 sudoers 配通
-# 退出码: 0=active, 3=inactive(服务停着正常), 1=被拒(配错)
-# 关键: 不能用 `sudo -n systemd-run ...` 自检, 因为 v4 sudoers 已收窄到精确路径,
-#       自检命令不在白名单内, 必被拒 → 预检永远失败 → 恢复起不来
-sudo -n systemctl is-active myblog >/dev/null 2>&1
-SUDO_RC=$?
-if [[ $SUDO_RC -eq 1 ]]; then
-    err "sudoers 未配置 systemctl, 见设计文档 §12.1"
-    exit 20
+if $IN_DOCKER; then
+    info "Docker 环境, 跳过 sudoers/systemd 自检"
+else
+    # v5 自检: 用白名单内的 systemctl is-active 验证 sudoers 配通
+    sudo -n systemctl is-active myblog >/dev/null 2>&1
+    SUDO_RC=$?
+    if [[ $SUDO_RC -eq 1 ]]; then
+        err "sudoers 未配置 systemctl, 见设计文档 §12.1"
+        exit 20
+    fi
+    info "sudoers 验证通过 (is-active exit=$SUDO_RC, 0=active / 3=inactive / 1=rejected)"
 fi
-info "sudoers 验证通过 (is-active exit=$SUDO_RC, 0=active / 3=inactive / 1=rejected)"
 
 # sqlite-import.sh 必须在标准位置
 SQLITE_IMPORT_SH=""
@@ -173,6 +176,12 @@ chmod 700 "$RESTORE_RESULT_DIR"
 mkdir -p "$RESTORE_STAGE_DIR"
 
 RESULT_FILE="$RESTORE_RESULT_DIR/.blog-restore-result.$RESTORE_RECORD_ID.json"
+
+# 清理上次残留的 result.json（回填后不再删除，恢复前主动清理）
+if [[ -f "$RESULT_FILE" ]]; then
+    rm -f "$RESULT_FILE"
+    info "已清理旧 result.json: $RESULT_FILE"
+fi
 
 # trap: 任何路径退出都清理 stage + 兜底写 result (修复中-1: set -e 下失败要写 FAILED)
 cleanup_on_exit() {
@@ -223,12 +232,16 @@ fi
 log_step "STOP"
 stage "4/13 停 myblog 服务"
 
-if sudo -n systemctl is-active --quiet myblog 2>/dev/null; then
-    sudo -n systemctl stop myblog \
-        || { err "systemctl stop myblog 失败"; write_result FAILED STOP "systemctl stop 失败"; exit 25; }
-    info "myblog 已停止"
+if $IN_DOCKER; then
+    info "Docker 环境, 跳过 systemctl stop (容器内无 systemd 服务管理)"
 else
-    info "myblog 已是 inactive 状态, 跳过 stop"
+    if sudo -n systemctl is-active --quiet myblog 2>/dev/null; then
+        sudo -n systemctl stop myblog \
+            || { err "systemctl stop myblog 失败"; write_result FAILED STOP "systemctl stop 失败"; exit 25; }
+        info "myblog 已停止"
+    else
+        info "myblog 已是 inactive 状态, 跳过 stop"
+    fi
 fi
 
 # ============= 5. 拉 release assets (gh 优先, curl fallback) =============
@@ -272,7 +285,7 @@ else
     # 解析每个 asset (.enc / manifest.json / SHA256SUMS) 并下载
     while read -r name url; do
         [[ -z "$name" || -z "$url" ]] && continue
-        if ! curl -fsSL -H "Authorization: token $BACKUP_GITHUB_TOKEN" "$url" -o "$name"; then
+        if ! curl -fsSL -H "Authorization: token $BACKUP_GITHUB_TOKEN" -H "Accept: application/octet-stream" "$url" -o "$name"; then
             err "curl 下载 $name 失败"
             write_result FAILED DOWNLOAD "curl 下载 $name 失败"
             exit 21
@@ -281,7 +294,7 @@ else
     done < <(jq -r '
         .assets[]? | select(
             (.name | endswith(".enc")) or .name == "manifest.json" or .name == "SHA256SUMS"
-        ) | "\(.name) \(.browser_download_url)"
+        ) | "\(.name) \(.url)"
     ' "$RELEASE_JSON")
     rm -f "$RELEASE_JSON"
 fi
@@ -376,45 +389,51 @@ fi
 log_step "CHOWN"
 stage "10/13 chown -R myblog:myblog"
 
-# v4.3.3: 必须拆成两条独立 sudo 命令
-#   sudoers 是按完整命令行精确匹配的, 一条 chown 传两个路径参数跟 4 条规则都对不上
-#   100% 被拒 → FAILED exit 25 → 永远到不了 step 11 启服
-#   修复: 拆成两条, 每条对应一条 sudoers 规则
-# chown blog.db 主文件
-if ! sudo -n chown -R myblog:myblog "$SQLITE_PATH" \
-        > "$RESTORE_STAGE_DIR/chown-db.log" 2>&1; then
-    err "chown $SQLITE_PATH 失败, 日志:"
-    cat "$RESTORE_STAGE_DIR/chown-db.log" >&2
-    write_result FAILED START "chown $SQLITE_PATH 失败"
-    exit 25
-fi
-# chown uploads 目录 (scope=DB_UPLOADS 时才 chown 内容; DB_ONLY 时 uploads 不一定存在)
 UPLOAD_PATH="${UPLOAD_DIR:-/opt/myblog/uploads}"
-if [[ -d "$UPLOAD_PATH" ]]; then
-    if ! sudo -n chown -R myblog:myblog "$UPLOAD_PATH" \
-            > "$RESTORE_STAGE_DIR/chown-uploads.log" 2>&1; then
-        err "chown $UPLOAD_PATH 失败, 日志:"
-        cat "$RESTORE_STAGE_DIR/chown-uploads.log" >&2
-        write_result FAILED START "chown $UPLOAD_PATH 失败"
+if $IN_DOCKER; then
+    # Docker 内以 root 运行, 直接 chown 无需 sudo
+    chown -R myblog:myblog "$SQLITE_PATH" 2>/dev/null || true
+    [[ -d "$UPLOAD_PATH" ]] && chown -R myblog:myblog "$UPLOAD_PATH" 2>/dev/null || true
+    info "chown 完成 (Docker, 直接 chown)"
+else
+    # 宿主机: 必须拆成两条独立 sudo 命令 (sudoers 精确匹配)
+    if ! sudo -n chown -R myblog:myblog "$SQLITE_PATH" \
+            > "$RESTORE_STAGE_DIR/chown-db.log" 2>&1; then
+        err "chown $SQLITE_PATH 失败, 日志:"
+        cat "$RESTORE_STAGE_DIR/chown-db.log" >&2
+        write_result FAILED START "chown $SQLITE_PATH 失败"
         exit 25
     fi
-else
-    warn "UPLOAD_DIR ($UPLOAD_PATH) 不存在, 跳过 chown uploads"
+    if [[ -d "$UPLOAD_PATH" ]]; then
+        if ! sudo -n chown -R myblog:myblog "$UPLOAD_PATH" \
+                > "$RESTORE_STAGE_DIR/chown-uploads.log" 2>&1; then
+            err "chown $UPLOAD_PATH 失败, 日志:"
+            cat "$RESTORE_STAGE_DIR/chown-uploads.log" >&2
+            write_result FAILED START "chown $UPLOAD_PATH 失败"
+            exit 25
+        fi
+    else
+        warn "UPLOAD_DIR ($UPLOAD_PATH) 不存在, 跳过 chown uploads"
+    fi
+    info "chown 完成"
 fi
-info "chown 完成"
 
 # ============= 11. 启服 =============
 log_step "START"
 stage "11/13 systemctl start myblog"
 
-if ! sudo -n systemctl start myblog \
-        > "$RESTORE_STAGE_DIR/start.log" 2>&1; then
-    err "systemctl start myblog 失败, 日志:"
-    cat "$RESTORE_STAGE_DIR/start.log" >&2
-    write_result FAILED START "systemctl start 失败"
-    exit 25
+if $IN_DOCKER; then
+    info "Docker 环境, 跳过 systemctl start (Java 进程由容器 entrypoint 管理)"
+else
+    if ! sudo -n systemctl start myblog \
+            > "$RESTORE_STAGE_DIR/start.log" 2>&1; then
+        err "systemctl start myblog 失败, 日志:"
+        cat "$RESTORE_STAGE_DIR/start.log" >&2
+        write_result FAILED START "systemctl start 失败"
+        exit 25
+    fi
+    info "myblog 已启动"
 fi
-info "myblog 已启动"
 
 # ============= 12. 健康检查 + 数据完整性校验 =============
 log_step "HEALTH"
