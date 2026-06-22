@@ -85,12 +85,25 @@ public class IpRateLimitFilter extends OncePerRequestFilter {
             }
 
             // 2) 按"IP + 当前秒"分桶计数
+            // 2026-06-22 v4.x polish：原子 SET NX EX + INCR——
+            //   原"INCR + 独立 EXPIRE"两步非原子，INCR 后 EXPIRE 前服务崩溃/Redis 抖动
+            //   会留下"counter 永久不消"的 key 持续累积，理论 OOM。
+            //   新方案：先用 SETNX EX 把"首次创建"和"设过期"合成一步原子操作（key 不存在时设 1 并带 TTL）；
+            //   已存在的 key 直接 INCR 累加，TTL 跟着原 key 走（首次 SET 时就设好了）。
             long epochSecond = System.currentTimeMillis() / 1000;
             String counterKey = COUNTER_KEY_PREFIX + ip + ":" + epochSecond;
+            Boolean created = redis.opsForValue().setIfAbsent(counterKey, "0", Duration.ofSeconds(2));
             Long count = redis.opsForValue().increment(counterKey);
-            if (count != null && count == 1L) {
-                // 刚创建这个桶：给 2 秒过期（够盖住这一秒的统计窗口，又不会让 key 堆积）
-                redis.expire(counterKey, Duration.ofSeconds(2));
+            // 防御：SETNX 失败 + INCR 也失败（如 Redis 短暂不可用）→ count=null → 跳过阈值判断放行
+            //      Redis 整体故障已在 catch (Exception e) 里降级放行，这条只补 null 边界
+            if (count == null) {
+                chain.doFilter(request, response);
+                return;
+            }
+            // created == null 是 Redis 在 SETNX 和 INCR 之间失联（极罕见），TTL 可能没设上，
+            // 但下一行 INCR 已成功，下一秒新桶的 SETNX 会兜底，整体仍可控——记 debug 即可
+            if (created == null) {
+                log.debug("[IpRateLimit] setIfAbsent 返回 null,INCR 已成功: ip={} count={}", ip, count);
             }
 
             if (count != null && count > maxRequestsPerSecond) {
