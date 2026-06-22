@@ -45,7 +45,7 @@ my-blog 当前（v4.0.0）部署在 1C2G ECS 上，使用 SQLite + Redis + Sprin
 | `docs/nginx/nginx-https.conf` | **新增** | 443 端口配置模板：证书 + HSTS + 安全头 + 反代 + 静态文件 |
 | `docs/scripts/publish-release.sh` | 修改 | step 4.7 打包 nginx 模板；step 6 上传；zip 包含；SHA256SUMS 包含 |
 | `docs/scripts/deploy-server.sh` | 修改 | step 0 加 3 个变量；step 9.5 新增 HTTPS 流程；header 注释更新；收尾日志更新 |
-| `docs/scripts/deploy.env.example` | 修改 | 加 HTTPS 配置说明 |
+| `scripts/deploy.env.example` | 修改 | 加 HTTPS 配置说明 |
 
 ---
 
@@ -481,7 +481,7 @@ echo | openssl s_client -connect blog.croeyai.cn:443 -servername blog.croeyai.cn
    - step 0 参数 + 校验
    - 新增 step 9.5 HTTPS 全流程
    - step 13 收尾日志
-4. 修改 `docs/scripts/deploy.env.example`：追加 HTTPS 配置说明
+4. 修改 `scripts/deploy.env.example`：追加 HTTPS 配置说明
 5. 测试：
    - `bash docs/scripts/verify-sqlite.sh` 仍然通过（HTTP 模式无回归）
    - 本地 dry-run：手动把 step 9.5 的 sed/certbot 命令在容器里跑一遍（无证书签发，只看 nginx -t 通过）
