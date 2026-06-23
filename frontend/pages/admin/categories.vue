@@ -208,10 +208,7 @@ onMounted(load)
             </div>
             <div class="form-group" style="margin: 0;">
               <label class="form-label">可见性</label>
-              <select v-model="form.visible" class="form-control">
-                <option :value="1">显示</option>
-                <option :value="0">隐藏</option>
-              </select>
+              <UiDropdownSelector :model-value="form.visible" :options="[{ label: '显示', value: 1 }, { label: '隐藏', value: 0 }]" @update:model-value="(v: any) => form.visible = v" />
             </div>
           </div>
         </div>

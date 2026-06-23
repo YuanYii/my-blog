@@ -136,6 +136,19 @@ img, svg { display: block; max-width: 100%; }
 .admin-nav-item:hover { background: var(--bg-soft); color: var(--text); }
 .admin-nav-item.active { background: var(--primary-soft); color: var(--primary); font-weight: 500; }
 .admin-nav-item svg { flex-shrink: 0; }
+/* 2026-06-23 DEV-001：侧栏二级菜单（站点设置 9 项） */
+button.admin-nav-item { background: transparent; border: none; cursor: pointer; width: 100%; font-family: inherit; }
+.admin-nav-subnav { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 4px; padding-left: 22px; border-left: 1px dashed var(--line-soft); margin-left: 18px; }
+.admin-nav-subitem {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: 6px;
+  font-size: 13px; color: var(--text-2);
+  transition: all 0.15s;
+}
+.admin-nav-subitem:hover { background: var(--bg-soft); color: var(--text); }
+.admin-nav-subitem.active { background: var(--primary-soft); color: var(--primary); font-weight: 500; }
+.admin-nav-subdot { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); flex-shrink: 0; opacity: 0.6; }
+.admin-nav-subitem.active .admin-nav-subdot { background: var(--primary); opacity: 1; }
 
 .admin-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .admin-header {
@@ -194,8 +207,8 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
 .card-title { font-size: 15px; font-weight: 600; }
 
 /* ========== Tables ========== */
-.table-wrap { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-.table { width: 100%; border-collapse: collapse; }
+.table-wrap { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table { width: 100%; border-collapse: collapse; min-width: 600px; }
 .table th, .table td { padding: 12px 16px; text-align: left; font-size: 14px; }
 .table thead { background: var(--bg-soft); }
 .table th {
@@ -1178,15 +1191,23 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
 .todo-item.urgent .todo-count { color: var(--danger); }
 .todo-item.warning .todo-count { color: var(--accent); }
 
-.recent-table { width: 100%; border-collapse: collapse; }
+.recent-table { width: 100%; border-collapse: collapse; table-layout: auto; }
 .recent-table th, .recent-table td { padding: 10px 0; text-align: left; font-size: 13px; }
 .recent-table thead th { font-size: 11px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--line); }
 .recent-table tbody tr { border-bottom: 1px solid var(--line-soft); }
 .recent-table tbody tr:last-child { border-bottom: none; }
-.recent-status { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 500; }
+.recent-table .col-title { min-width: 0; }
+.recent-table .col-title .recent-title { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-all; }
+.recent-status { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 500; white-space: nowrap; }
 .recent-status.published { background: rgba(22, 163, 74, 0.1); color: var(--success); }
 .recent-status.draft { background: rgba(202, 138, 4, 0.1); color: #b45309; }
-.recent-meta { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); }
+.recent-meta { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.recent-views-inline { display: none; }
+
+/* 2026-06-23 OPT-004：dashboard 移动端布局/溢出修复 */
+.dashboard-grid > * { min-width: 0; }
+.kpi-card { min-width: 0; }
+.kpi-card-spark { max-width: 100%; }
 
 @media (max-width: 1100px) {
   .dashboard-grid { grid-template-columns: 1fr; }
@@ -1196,6 +1217,19 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
   .welcome-greeting { font-size: 22px; }
   .kpi-card-value { font-size: 24px; }
   .kpi-card-spark { width: 60px; height: 30px; }
+  /* OPT-004 A：welcome-bar 上下堆叠 + 按钮组居中 */
+  .welcome-bar { flex-direction: column; align-items: stretch; gap: 14px; }
+  .welcome-actions { justify-content: center; flex-wrap: wrap; }
+  .welcome-actions .btn { flex: 1; max-width: 200px; justify-content: center; }
+  /* OPT-004 D：最近文章表格列宽优化（不引入横向滚动） */
+  .recent-table th, .recent-table td { padding: 8px 4px; }
+  .recent-table .col-views { display: none; }
+  .recent-table .col-status { width: 64px; }
+  .recent-table .col-time { width: 110px; }
+  .recent-table .col-action { width: 56px; }
+  .recent-table .recent-meta { font-size: 11px; }
+  .recent-views-inline { display: inline; }
+  .recent-views-inline::before { content: ' · '; }
 }
 
 /* ========== Admin Pages (posts / comments / categories / tags / settings / edit) ========== */

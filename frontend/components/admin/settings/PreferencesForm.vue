@@ -1,24 +1,43 @@
 <script setup lang="ts">
 defineProps<{ prefs: { language: string; timezone: string; density: string; codeTheme: string } }>()
 defineEmits<{ (e: 'update:prefs', v: any): void }>()
+
+const langOptions = [
+  { label: '简体中文', value: 'zh-CN' },
+  { label: 'English', value: 'en' }
+]
+const tzOptions = [
+  { label: '上海 (UTC+8)', value: 'Asia/Shanghai' },
+  { label: 'UTC', value: 'UTC' },
+  { label: '纽约 (UTC-5)', value: 'America/New_York' }
+]
+const densityOptions = [
+  { label: '舒适', value: 'comfortable' },
+  { label: '紧凑', value: 'compact' }
+]
+const codeThemeOptions = [
+  { label: 'GitHub Light', value: 'github' },
+  { label: 'Monokai', value: 'monokai' },
+  { label: 'Nord', value: 'nord' }
+]
 </script>
 <template>
   <div class="card" style="padding: 24px;">
     <div class="form-group">
       <label class="form-label">语言</label>
-      <select :value="prefs.language" @change="$emit('update:prefs', { ...prefs, language: ($event.target as HTMLSelectElement).value })" class="form-control"><option value="zh-CN">简体中文</option><option value="en">English</option></select>
+      <UiDropdownSelector :model-value="prefs.language" :options="langOptions" @update:model-value="(v: any) => $emit('update:prefs', { ...prefs, language: v })" />
     </div>
     <div class="form-group">
       <label class="form-label">时区</label>
-      <select :value="prefs.timezone" @change="$emit('update:prefs', { ...prefs, timezone: ($event.target as HTMLSelectElement).value })" class="form-control"><option value="Asia/Shanghai">上海 (UTC+8)</option><option value="UTC">UTC</option><option value="America/New_York">纽约 (UTC-5)</option></select>
+      <UiDropdownSelector :model-value="prefs.timezone" :options="tzOptions" @update:model-value="(v: any) => $emit('update:prefs', { ...prefs, timezone: v })" />
     </div>
     <div class="form-group">
       <label class="form-label">列表密度</label>
-      <select :value="prefs.density" @change="$emit('update:prefs', { ...prefs, density: ($event.target as HTMLSelectElement).value })" class="form-control"><option value="comfortable">舒适</option><option value="compact">紧凑</option></select>
+      <UiDropdownSelector :model-value="prefs.density" :options="densityOptions" @update:model-value="(v: any) => $emit('update:prefs', { ...prefs, density: v })" />
     </div>
     <div class="form-group" style="margin-bottom: 0;">
       <label class="form-label">代码高亮主题</label>
-      <select :value="prefs.codeTheme" @change="$emit('update:prefs', { ...prefs, codeTheme: ($event.target as HTMLSelectElement).value })" class="form-control"><option value="github">GitHub Light</option><option value="monokai">Monokai</option><option value="nord">Nord</option></select>
+      <UiDropdownSelector :model-value="prefs.codeTheme" :options="codeThemeOptions" @update:model-value="(v: any) => $emit('update:prefs', { ...prefs, codeTheme: v })" />
     </div>
   </div>
 </template>

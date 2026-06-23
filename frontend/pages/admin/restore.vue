@@ -286,17 +286,13 @@ onBeforeUnmount(() => {
     <div class="card" style="padding: 20px; margin-bottom: 16px;">
       <div class="form-group">
         <label class="form-label">选择备份 *</label>
-        <select
-          v-model="selectedRecordId"
-          class="form-control"
+        <UiDropdownSelector
+          :model-value="selectedRecordId"
+          :options="[{ label: '请选择要恢复的备份', value: null }, ...successBackups.map((item: BackupItem) => ({ label: `#${item.id} · ${item.tag || '无tag'} · ${formatDate(item.startedAt)} · db: ${formatSize(item.dbSize)}${item.uploadsSize ? ' + uploads: ' + formatSize(item.uploadsSize) : ''}`, value: item.id }))]"
+          placeholder="请选择要恢复的备份"
           :disabled="loading || restoring || restorePollingId !== null"
-          style="width: 100%;"
-        >
-          <option :value="null" disabled>请选择要恢复的备份</option>
-          <option v-for="item in successBackups" :key="item.id" :value="item.id">
-            #{{ item.id }} · {{ item.tag || '无tag' }} · {{ formatDate(item.startedAt) }} · db: {{ formatSize(item.dbSize) }}{{ item.uploadsSize ? ' + uploads: ' + formatSize(item.uploadsSize) : '' }}
-          </option>
-        </select>
+          @update:model-value="(v: any) => selectedRecordId = v"
+        />
       </div>
 
       <!-- 备份详情 -->

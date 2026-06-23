@@ -389,17 +389,19 @@ onBeforeUnmount(() => {
       </div>
       <div v-if="!recentPosts.length" style="padding: 24px; text-align: center; color: var(--muted); font-size: 13px;">还没有文章</div>
       <table v-else class="recent-table">
-        <thead><tr><th>标题</th><th style="width: 90px;">状态</th><th style="width: 90px;">浏览</th><th style="width: 140px;">更新时间</th><th style="width: 60px;"></th></tr></thead>
+        <thead><tr><th class="col-title">标题</th><th class="col-status" style="width: 90px;">状态</th><th class="col-views" style="width: 90px;">浏览</th><th class="col-time" style="width: 140px;">更新时间</th><th class="col-action" style="width: 60px;"></th></tr></thead>
         <tbody>
           <tr v-for="a in recentPosts" :key="a.id">
-            <td>
+            <td class="col-title">
               <div class="recent-title" style="font-weight: 500;">{{ a.title }}</div>
-              <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">/{{ a.slug }}</div>
+              <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">
+                /{{ a.slug }}<span class="recent-views-inline">{{ (a.viewCount || 0).toLocaleString() }} 次浏览</span>
+              </div>
             </td>
-            <td><span class="recent-status" :class="a.status === 1 ? 'published' : 'draft'">{{ statusLabel(a.status) }}</span></td>
-            <td><span class="recent-meta">{{ (a.viewCount || 0).toLocaleString() }}</span></td>
-            <td><span class="recent-meta">{{ formatDateTime(a.updatedAt || a.createdAt) }}</span></td>
-            <td><NuxtLink :to="`/admin/edit?id=${a.id}`" style="color: var(--primary); font-size: 12px;">编辑</NuxtLink></td>
+            <td class="col-status"><span class="recent-status" :class="a.status === 1 ? 'published' : 'draft'">{{ statusLabel(a.status) }}</span></td>
+            <td class="col-views"><span class="recent-meta">{{ (a.viewCount || 0).toLocaleString() }}</span></td>
+            <td class="col-time"><span class="recent-meta">{{ formatDateTime(a.updatedAt || a.createdAt) }}</span></td>
+            <td class="col-action"><NuxtLink :to="`/admin/edit?id=${a.id}`" style="color: var(--primary); font-size: 12px;">编辑</NuxtLink></td>
           </tr>
         </tbody>
       </table>

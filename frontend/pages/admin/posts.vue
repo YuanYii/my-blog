@@ -220,15 +220,8 @@ onMounted(async () => {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input v-model="keyword" @keyup.enter="handleSearch" type="text" placeholder="搜索标题…" />
       </div>
-      <select v-model="filterCategory" @change="handleStatusFilter" class="form-control" style="width: auto; padding: 7px 28px 7px 12px; font-size: 12px;">
-        <option value="">全部分类</option>
-        <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
-      </select>
-      <select v-model="sortBy" @change="handleSearch" class="form-control" style="width: auto; padding: 7px 28px 7px 12px; font-size: 12px;">
-        <option value="newest">最新发布</option>
-        <option value="oldest">最早发布</option>
-        <option value="views">阅读最多</option>
-      </select>
+      <UiDropdownSelector :model-value="filterCategory" :options="[{ label: '全部分类', value: '' }, ...categories.map((c: any) => ({ label: c.name, value: c.id }))]" placeholder="全部分类" @update:model-value="(v: any) => { filterCategory = v; handleStatusFilter() }" />
+      <UiDropdownSelector :model-value="sortBy" :options="[{ label: '最新发布', value: 'newest' }, { label: '最早发布', value: 'oldest' }, { label: '阅读最多', value: 'views' }]" @update:model-value="(v: any) => { sortBy = v; handleSearch() }" />
     </div>
 
     <!-- Table -->

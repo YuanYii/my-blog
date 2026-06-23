@@ -217,23 +217,21 @@ onMounted(async () => {
 
         <div class="sidebar-card">
           <div class="sidebar-card-title">分类</div>
-          <select v-model="form.categoryId" class="form-control" style="font-size: 13px; padding: 7px 10px;">
-            <option :value="null">未分类</option>
-            <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
-          </select>
+          <UiDropdownSelector
+            :model-value="form.categoryId"
+            :options="[{ label: '未分类', value: null }, ...categories.map((c: any) => ({ label: c.name, value: c.id }))]"
+            @update:model-value="(v: any) => form.categoryId = v"
+          />
         </div>
 
         <div class="sidebar-card">
           <div class="sidebar-card-title">标签</div>
-          <div class="tag-input-wrap">
-            <span v-for="tid in selectedTags" :key="tid" class="tag-chip">
-              {{ allTags.find(t => t.id === tid)?.name }}
-              <button @click="removeTag(tid)">×</button>
-            </span>
-            <select v-model="selectedTags" multiple class="tag-input" style="flex: 1; min-width: 100%;">
-              <option v-for="t in allTags" :key="t.id" :value="t.id">{{ t.name }}</option>
-            </select>
-          </div>
+          <UiMultiTagSelect
+            v-model="selectedTags"
+            :options="allTags.map((t: any) => ({ label: t.name, value: t.id }))"
+            placeholder="添加标签"
+            :max="10"
+          />
           <div class="form-meta" style="margin-top: 6px;">
             <span>{{ selectedTags.length }} / 10 个</span>
           </div>
