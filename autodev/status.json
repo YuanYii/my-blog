@@ -1,0 +1,45 @@
+{
+  "RUN": "20260623",
+  "stages": {
+    "Stage_1": {
+      "status": "pending",
+      "last_update": "",
+      "message": ""
+    },
+    "Stage_2": {
+      "status": "pending",
+      "last_update": "",
+      "message": ""
+    },
+    "Stage_3": {
+      "status": "pending",
+      "last_update": "",
+      "message": ""
+    },
+    "Stage_4": {
+      "status": "pending",
+      "last_update": "",
+      "message": ""
+    },
+    "Stage_5": {
+      "status": "pending",
+      "last_update": "",
+      "message": ""
+    },
+    "Stage_6": {
+      "status": "pending",
+      "last_update": "",
+      "message": ""
+    },
+    "Stage_7": {
+      "status": "pending",
+      "last_update": "",
+      "message": ""
+    },
+    "Stage_8": {
+      "status": "pending",
+      "last_update": "",
+      "message": ""
+    }
+  }
+}
