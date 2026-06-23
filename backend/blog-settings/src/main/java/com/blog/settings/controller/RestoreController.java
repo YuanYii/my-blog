@@ -1,5 +1,6 @@
 package com.blog.settings.controller;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.blog.common.Result;
 import com.blog.common.web.AuthContext;
 import com.blog.settings.dto.RestoreResponse;
@@ -76,6 +77,18 @@ public class RestoreController {
             return Result.error(404, "恢复记录不存在");
         }
         return Result.success(r);
+    }
+
+    /**
+     * 恢复历史列表（分页，按 started_at 降序）
+     * @param page 页码（从 1 开始）
+     * @param size 每页条数（默认 20）
+     */
+    @GetMapping("/list")
+    public Result<IPage<RestoreResponse>> list(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return Result.success(restoreService.list(page, size));
     }
 
     /**

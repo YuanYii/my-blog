@@ -30,7 +30,7 @@
     <properties>
         <!-- CI-friendly 版本号:所有子模块用 ${revision} 引用父 POM,升级只改这一行 -->
         <!-- 2026-06-20: 4.1.0 → 4.2.0,核心增量见 docs/changelogs/2026-06-20-v4.2.0-data-backup.md (REQ-BACKUP-2026-06-20 数据备份) -->
-        <revision>4.2.0</revision>
+        <revision>4.3.0</revision>
 
         <java.version>1.8</java.version>
         <maven.compiler.source>1.8</maven.compiler.source>

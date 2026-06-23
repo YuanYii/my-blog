@@ -12,6 +12,27 @@ const { get, post } = useAdminApi()
 const $toast = useToast()
 const $dialog = useDialog()
 
+// ============= 恢复历史列表 =============
+interface RestoreItem {
+  id: number
+  status: string
+  sourceRecordId?: number
+  sourceTag?: string
+  scope?: string
+  startedAt?: string
+  finishedAt?: string
+  durationSec?: number
+  errorStage?: string
+  errorMessage?: string
+  verifyDiff?: string
+  operatorName?: string
+}
+const restoreList = ref<RestoreItem[]>([])
+const restoreTotal = ref(0)
+const restorePage = ref(1)
+const restoreSize = 20
+const restoreLoading = ref(false)
+
 // ============= 备份列表（用于下拉选择）============
 interface BackupItem {
   id: number
@@ -32,11 +53,27 @@ const restoreScope = ref<'DB_ONLY' | 'DB_UPLOADS'>('DB_ONLY')
 const restoreDialog = ref(false)
 const restoring = ref(false)
 
-// 容错轮询
-const restorePollingId = ref<number | null>(null)
-const restoreTimer = ref<ReturnType<typeof setTimeout> | null>(null)
-const restoreBackoffMs = ref(2000)
-const restoreConsecutiveFailures = ref(0)
+// 容错轮询（v4.3.0 polish：用模块级 usePollingTask 替换组件级 ref + setTimeout，
+// 解决"组件卸载时定时器闭包持有的 ref 已被释放"和"catch 块激进清 localStorage"两个 race）
+// 关键不变量：localStorage 是 state-of-truth, 定时器在模块作用域, 组件只订阅
+const restorePollingTask = usePollingTask('restore')
+
+// 模板里需要判断"是否正在轮询"——给个 computed 镜像
+const restorePollingId = computed<number | null>(() => restorePollingTask.state.value.id)
+
+const restoreFetcher = async () => {
+  const id = restorePollingTask.state.value.id
+  if (id == null) return null
+  const res = await get<any>(`/admin/restore/${id}`)
+  return res?.data || null
+}
+
+const restorePollingOptions = {
+  terminalStatuses: ['SUCCESS', 'FAILED', 'UNKNOWN'],
+  initialInterval: 2000,
+  maxInterval: 30000,
+  maxFailures: 60
+}
 
 // 拉取成功的备份列表
 const fetchSuccessBackups = async () => {
@@ -50,6 +87,20 @@ const fetchSuccessBackups = async () => {
     $toast.error(formatError(e, '加载备份列表失败'))
   } finally {
     loading.value = false
+  }
+}
+
+// 拉取恢复历史列表
+const fetchRestoreList = async () => {
+  restoreLoading.value = true
+  try {
+    const res = await get<any>('/admin/restore/list', { page: restorePage.value, size: restoreSize })
+    restoreList.value = res?.data?.records || []
+    restoreTotal.value = res?.data?.total || 0
+  } catch (e: any) {
+    $toast.error(formatError(e, '加载恢复历史失败'))
+  } finally {
+    restoreLoading.value = false
   }
 }
 
@@ -82,6 +133,57 @@ const formatError = (e: any, fallback = '操作失败'): string => {
   return fallback
 }
 
+// ============= 恢复历史状态工具 =============
+const restoreStatusType = (s: string) => {
+  if (s === 'SUCCESS') return 'success'
+  if (s === 'FAILED' || s === 'UNKNOWN') return 'danger'
+  if (s === 'RUNNING') return 'accent'
+  return 'muted'
+}
+const restoreStatusLabel = (s: string) => {
+  return {
+    PENDING: '排队中',
+    RUNNING: '执行中',
+    SUCCESS: '成功',
+    FAILED: '失败',
+    UNKNOWN: '状态未知'
+  }[s] || s
+}
+const restoreScopeLabel = (scope?: string) => {
+  return {
+    'DB_ONLY': '仅数据库',
+    'DB_UPLOADS': '数据库+上传文件'
+  }[scope || ''] || scope || '-'
+}
+const restoreErrorStageLabel = (stage?: string) => {
+  if (!stage) return ''
+  return {
+    PRECHECK: '预检',
+    DOWNLOAD: '下载',
+    SHA256: '校验',
+    DECRYPT: '解密',
+    IMPORT: '导入',
+    UPLOADS: '恢复上传文件',
+    START: '启动脚本',
+    HEALTH: '健康检查',
+    VERIFY: '数据校验',
+    ORPHAN: '孤儿记录处理'
+  }[stage] || stage
+}
+
+// ============= 恢复历史失败详情弹框 =============
+const restoreErrorDialog = ref(false)
+const restoreErrorDialogItem = ref<RestoreItem | null>(null)
+const openRestoreErrorDialog = (item: RestoreItem) => {
+  if (!item.errorMessage && !item.errorStage) return
+  restoreErrorDialogItem.value = item
+  restoreErrorDialog.value = true
+}
+const closeRestoreErrorDialog = () => {
+  restoreErrorDialog.value = false
+  restoreErrorDialogItem.value = null
+}
+
 // 点击恢复按钮
 const handleRestore = () => {
   if (!selectedRecordId.value) {
@@ -96,8 +198,6 @@ const handleRestore = () => {
 const confirmRestore = async () => {
   restoreDialog.value = false
   restoring.value = true
-  restoreConsecutiveFailures.value = 0
-  restoreBackoffMs.value = 2000
   try {
     const res = await post<any>('/admin/restore/run', {
       recordId: selectedRecordId.value,
@@ -106,7 +206,7 @@ const confirmRestore = async () => {
     const id = res?.data?.id
     if (!id) throw new Error('未返回 record id')
     $toast.success('恢复任务已创建, 服务将停止约 1-5 分钟, 浏览器可能短暂断线')
-    startRestorePolling(id)
+    await restorePollingTask.start(id, restoreFetcher, restorePollingOptions)
   } catch (e: any) {
     $toast.error(formatError(e, '触发失败'))
   } finally {
@@ -119,69 +219,36 @@ const cancelRestore = () => {
   restoreDialog.value = false
 }
 
-// 容错轮询
-const startRestorePolling = (id: number) => {
-  stopRestorePolling()
-  restorePollingId.value = id
-  const tick = async () => {
-    try {
-      const res = await get<any>(`/admin/restore/${id}`)
-      const item = res?.data
-      if (!item) return
-      restoreConsecutiveFailures.value = 0
-      restoreBackoffMs.value = 2000
-      if (item.status === 'SUCCESS' || item.status === 'FAILED' || item.status === 'UNKNOWN') {
-        stopRestorePolling()
-        if (item.status === 'SUCCESS') {
-          $toast.success(`恢复成功: ${item.sourceTag || ''}`)
-        } else if (item.status === 'UNKNOWN') {
-          $toast.warning(`恢复状态未知, 请检查服务端日志: ${item.errorStage || ''}`)
-        } else {
-          $toast.error(`恢复失败: ${item.errorStage || '未知阶段'}`)
-        }
-      }
-    } catch (e: any) {
-      restoreConsecutiveFailures.value++
-      restoreBackoffMs.value = Math.min(restoreBackoffMs.value * 2, 30000)
-      if (restoreConsecutiveFailures.value > 30) {
-        stopRestorePolling()
-        $toast.warning('轮询超时, 请手动刷新页面查看最终状态')
-      }
+// 订阅恢复任务状态 — 终态时弹 Toast + 刷新历史列表
+// 必须在 setup() 顶层调用（不在 onMounted 内）, onScopeDispose 才能正确触发
+// usePollingTask 内部已用 lastTerminalNotified 防多订阅者重复弹 Toast
+restorePollingTask.subscribe((state) => {
+  if (!state.id || !state.status) return
+  // 终态弹 Toast + 刷新历史
+  if (state.status === 'SUCCESS' || state.status === 'FAILED' || state.status === 'UNKNOWN') {
+    const data = state.data as any
+    if (state.status === 'SUCCESS') {
+      $toast.success(`恢复成功: ${data?.sourceTag || ''}`)
+    } else if (state.status === 'UNKNOWN') {
+      $toast.warning(`恢复状态未知, 请检查服务端日志: ${data?.errorStage || ''}`)
+    } else {
+      $toast.error(`恢复失败: ${data?.errorStage || '未知阶段'}`)
     }
+    fetchRestoreList()  // 刷新恢复历史列表
+    fetchSuccessBackups()  // 刷新备份列表（db 可能被覆盖）
   }
-  const schedule = () => {
-    restoreTimer.value = setTimeout(async () => {
-      // 2026-06-22 修复（BUG-XXX 恢复页首次轮询延迟 2s）：
-      // 之前 schedule() 是 setTimeout 包 await tick()——首次 schedule() 等 2000ms 才 tick。
-      // 对比 backup.vue 的 startPolling 是先 tick() 再 setInterval，立即执行。
-      // 修：先 await tick() 再 schedule()——首次立即查，后续按 backoff 等待。
-      //   - 行为对齐 backup.vue（用户感知：恢复任务进度立即开始更新）
-      //   - backoff 语义保留（连续失败后下次拉得慢一点，给服务端恢复时间）
-      if (restorePollingId.value !== null) {
-        await tick()
-        if (restorePollingId.value !== null) schedule()
-      }
-    }, restoreBackoffMs.value)
-  }
-  // 首次立即 tick
-  tick().then(() => {
-    if (restorePollingId.value !== null) schedule()
-  })
-}
-
-const stopRestorePolling = () => {
-  if (restoreTimer.value) {
-    clearTimeout(restoreTimer.value)
-    restoreTimer.value = null
-  }
-  restorePollingId.value = null
-}
+})
 
 onMounted(() => {
   fetchSuccessBackups()
+  fetchRestoreList()
+  // 从 localStorage 恢复轮询 — 后端可能还在停服, restore() 内部会自然失败重试，不清 localStorage
+  restorePollingTask.restore(restoreFetcher, restorePollingOptions)
 })
+
 onBeforeUnmount(() => {
-  stopRestorePolling()
+  // 不停轮询 — usePollingTask 是模块单例, 定时器在模块作用域继续跑
+  // 组件卸载只解绑 subscribe 回调（onScopeDispose 自动处理）
 })
 </script>
 
@@ -271,6 +338,72 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <!-- 恢复历史记录 -->
+    <div v-if="restoreLoading && restoreList.length === 0" style="padding: 40px; text-align: center; color: var(--muted);">加载中...</div>
+
+    <div v-else-if="!restoreList.length" class="card" style="text-align: center; color: var(--muted); padding: 40px; margin-top: 16px;">
+      暂无恢复记录
+    </div>
+
+    <div v-else class="table-wrap" style="margin-top: 16px;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width: 60px;">ID</th>
+            <th style="width: 110px;">状态</th>
+            <th style="width: 120px;">源备份</th>
+            <th style="width: 100px;">恢复范围</th>
+            <th style="width: 150px;">开始时间</th>
+            <th style="width: 80px;">耗时</th>
+            <th style="width: 110px;">操作人</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in restoreList" :key="item.id">
+            <td><code style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">#{{ item.id }}</code></td>
+            <td>
+              <span
+                v-if="item.status === 'FAILED' && (item.errorStage || item.errorMessage)"
+                class="status-badge status-danger clickable"
+                @click="openRestoreErrorDialog(item)"
+                :title="'点击查看失败详情'"
+              >
+                {{ restoreStatusLabel(item.status) }}
+              </span>
+              <span v-else class="status-badge" :class="`status-${restoreStatusType(item.status)}`">
+                <span v-if="item.status === 'RUNNING'" class="spin-dot"></span>
+                {{ restoreStatusLabel(item.status) }}
+              </span>
+            </td>
+            <td>
+              <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">{{ item.sourceTag || '-' }}</code>
+            </td>
+            <td style="font-size: 13px;">{{ restoreScopeLabel(item.scope) }}</td>
+            <td style="font-size: 12px;">{{ formatDate(item.startedAt) }}</td>
+            <td>{{ item.durationSec != null ? (item.durationSec < 60 ? item.durationSec + 's' : Math.floor(item.durationSec / 60) + 'm ' + (item.durationSec % 60) + 's') : '-' }}</td>
+            <td style="font-size: 12px;">{{ item.operatorName || '-' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 分页 -->
+    <div v-if="restoreTotal > restoreSize" class="admin-pagination" style="margin-top: 16px;">
+      <button
+        @click="restorePage = Math.max(1, restorePage - 1); fetchRestoreList()"
+        :disabled="restorePage === 1"
+        class="btn btn-sm"
+      >上一页</button>
+      <div class="pages">
+        <span style="padding: 6px 12px; color: var(--muted); font-size: 13px;">{{ restorePage }} / {{ Math.ceil(restoreTotal / restoreSize) }}</span>
+      </div>
+      <button
+        @click="restorePage = restorePage + 1; fetchRestoreList()"
+        :disabled="restorePage * restoreSize >= restoreTotal"
+        class="btn btn-sm"
+      >下一页</button>
+    </div>
+
     <!-- 恢复 Dialog -->
     <div v-if="restoreDialog" class="modal-backdrop" @click.self="cancelRestore">
       <div class="modal" role="dialog" aria-modal="true" aria-label="数据恢复">
@@ -307,6 +440,57 @@ onBeforeUnmount(() => {
         <div class="modal-footer">
           <button @click="cancelRestore" class="btn btn-ghost btn-sm">取消</button>
           <button @click="confirmRestore" class="btn btn-danger btn-sm">确认恢复</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 恢复历史失败详情弹框 -->
+    <div v-if="restoreErrorDialog" class="modal-backdrop" @click.self="closeRestoreErrorDialog">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="恢复失败详情">
+        <div class="modal-header">
+          <div class="modal-title">恢复失败详情</div>
+          <button @click="closeRestoreErrorDialog" class="modal-close" aria-label="关闭">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">恢复记录</label>
+            <div class="form-control" style="background: var(--bg-soft); cursor: default;">
+              <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                #{{ restoreErrorDialogItem?.id }} · {{ restoreErrorDialogItem?.status }}
+              </code>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">源备份</label>
+            <div class="form-control" style="background: var(--bg-soft); cursor: default;">
+              <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                {{ restoreErrorDialogItem?.sourceTag || '-' }}
+              </code>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">失败阶段</label>
+            <div class="form-control" style="background: var(--bg-soft); cursor: default;">
+              <span class="status-badge status-danger">{{ restoreErrorStageLabel(restoreErrorDialogItem?.errorStage) || '-' }}</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">错误信息</label>
+            <div class="form-control" style="background: var(--bg-soft); cursor: default; font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow-y: auto; line-height: 1.6;">
+              {{ restoreErrorDialogItem?.errorMessage || '(空)' }}
+            </div>
+          </div>
+          <div v-if="restoreErrorDialogItem?.verifyDiff" class="form-group">
+            <label class="form-label">数据校验差异</label>
+            <div class="form-control" style="background: var(--bg-soft); cursor: default; font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow-y: auto; line-height: 1.6;">
+              {{ restoreErrorDialogItem.verifyDiff }}
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button @click="closeRestoreErrorDialog" class="btn btn-ghost btn-sm">关闭</button>
         </div>
       </div>
     </div>

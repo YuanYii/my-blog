@@ -9,6 +9,26 @@ const { meta, refresh: refreshMeta } = useAdminMeta()
 const { state, handleConfirm, handleCancel, confirm, prompt } = useDialog()
 const $dialog = { confirm, prompt }
 
+// 移动端抽屉状态
+const drawerOpen = ref(false)
+
+const toggleDrawer = () => {
+  if (!import.meta.client) return
+  drawerOpen.value = !drawerOpen.value
+  document.body.style.overflow = drawerOpen.value ? 'hidden' : ''
+}
+
+const closeDrawer = () => {
+  if (!import.meta.client) return
+  drawerOpen.value = false
+  document.body.style.overflow = ''
+}
+
+// 路由变化时自动关闭抽屉
+watch(() => route.path, () => {
+  closeDrawer()
+})
+
 // 3 分组导航
 const navGroups = [
   {
@@ -92,13 +112,32 @@ onMounted(() => {
   // 与全局主题状态同步（app.vue 已在首屏注入 .dark，这里只对齐 isDark 标记）
   const saved = localStorage.getItem('theme')
   isDark.value = saved !== 'light'
+
+  // 移动端抽屉：Esc 关闭 + resize 重置
+  if (import.meta.client) {
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && drawerOpen.value) closeDrawer()
+    })
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 768 && drawerOpen.value) {
+        closeDrawer()
+      }
+    })
+  }
+
+  // 组件卸载时重置 body 溢出状态，防止抽屉关闭后页面无法滚动
+  onBeforeUnmount(() => {
+    if (import.meta.client) {
+      document.body.style.overflow = ''
+    }
+  })
 })
 </script>
 
 <template>
   <div class="admin-layout">
     <!-- Sidebar -->
-    <aside class="admin-sidebar">
+    <aside class="admin-sidebar" :class="{ open: drawerOpen }">
       <div class="admin-sidebar-head">
         <NuxtLink to="/" style="font-family: 'DM Serif Display', serif; font-size: 18px; color: var(--primary); display: flex; align-items: center; gap: 8px;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
@@ -156,10 +195,30 @@ onMounted(() => {
       </nav>
     </aside>
 
+    <!-- 移动端抽屉遮罩 -->
+    <div
+      v-if="drawerOpen"
+      class="drawer-overlay"
+      @click="closeDrawer"
+    />
+
     <!-- Main -->
     <div class="admin-main">
-      <header class="admin-header">
-        <div style="display: flex; align-items: center; gap: 12px;">
+    <header class="admin-header">
+      <!-- 移动端汉堡按钮 -->
+      <button
+        class="hamburger-btn"
+        @click="toggleDrawer"
+        aria-label="打开菜单"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+
+      <div style="display: flex; align-items: center; gap: 12px;">
           <h2 style="font-size: 14px; font-weight: 500; color: var(--text);">{{ pageTitle }}</h2>
         </div>
         <div style="display: flex; align-items: center; gap: 4px;">

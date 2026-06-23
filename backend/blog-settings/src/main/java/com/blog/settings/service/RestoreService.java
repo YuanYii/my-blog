@@ -3,6 +3,9 @@ package com.blog.settings.service;
 import com.blog.common.BusinessException;
 import com.blog.common.ResultCode;
 import com.blog.common.web.AuthContext;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.blog.settings.dto.RestoreResponse;
 import com.blog.settings.entity.BackupRecord;
 import com.blog.settings.entity.RestoreRecord;
@@ -282,6 +285,17 @@ public class RestoreService {
     public RestoreResponse getById(Long id) {
         RestoreRecord r = restoreRecordMapper.selectById(id);
         return r == null ? null : toResponse(r);
+    }
+
+    /**
+     * 恢复历史列表（分页，按 started_at 降序）
+     */
+    public IPage<RestoreResponse> list(int page, int size) {
+        Page<RestoreRecord> pg = new Page<>(page, size);
+        QueryWrapper<RestoreRecord> qw = new QueryWrapper<>();
+        qw.orderByDesc("started_at");
+        IPage<RestoreRecord> result = restoreRecordMapper.selectPage(pg, qw);
+        return result.convert(this::toResponse);
     }
 
     // ============= 3. 工具方法 =============

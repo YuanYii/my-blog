@@ -132,3 +132,10 @@ frontend/dist
 scripts/deploy.env
 scripts/deploy.env.example
 scripts/deploy-server.env.example
+# 2026-06-23: autodev 临时文件不入库
+autodev/promopt/临时
+autodev/auto_iteration/*tmp*
+
+# 一次性 debug E2E 测试脚本
+frontend/tests/debug-*
+frontend/test-results/

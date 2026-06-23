@@ -52,9 +52,27 @@ const page = ref(1)
 const size = 20
 const loading = ref(false)
 
-// 当前正在轮询的备份 record
-const pollingId = ref<number | null>(null)
-const pollingTimer = ref<ReturnType<typeof setInterval> | null>(null)
+// v4.3.0 polish：备份轮询改用模块级 usePollingTask ——
+//   1) 切路由再回来不丢（模块单例 + localStorage 兜底）
+//   2) catch 失败不清 localStorage（让 restore() 在下次 onMounted 重试）
+const backupPollingTask = usePollingTask('backup')
+
+// 模板镜像 — 模板里用 pollingId !== null 判断 disabled
+const pollingId = computed<number | null>(() => backupPollingTask.state.value.id)
+
+const backupFetcher = async () => {
+  const id = backupPollingTask.state.value.id
+  if (id == null) return null
+  const res = await get<any>(`/admin/backup/${id}`)
+  return res?.data || null
+}
+
+const backupPollingOptions = {
+  terminalStatuses: ['SUCCESS', 'FAILED'],
+  initialInterval: 2000,
+  maxInterval: 30000,
+  maxFailures: 60
+}
 
 // 触发备份
 const triggering = ref(false)
@@ -79,7 +97,7 @@ const handleTrigger = async () => {
     if (!id) throw new Error('未返回 record id')
     $toast.success(res?.data?.message || '备份任务已创建')
     await fetchList()
-    startPolling(id)
+    await backupPollingTask.start(id, backupFetcher, backupPollingOptions)
   } catch (e: any) {
     $toast.error(formatError(e, '触发失败'))
   } finally {
@@ -87,39 +105,55 @@ const handleTrigger = async () => {
   }
 }
 
-// 轮询单条
-const startPolling = (id: number) => {
-  stopPolling()
-  pollingId.value = id
-  const tick = async () => {
-    try {
-      const res = await get<any>(`/admin/backup/${id}`)
-      const item = res?.data
-      if (!item) return
-      const idx = list.value.findIndex(x => x.id === id)
-      if (idx >= 0) list.value[idx] = item
-      if (item.status === 'SUCCESS' || item.status === 'FAILED') {
-        stopPolling()
-        if (item.status === 'SUCCESS') {
-          $toast.success(`备份完成：${item.tag || ''}`)
-        } else {
-          $toast.error(`备份失败：${item.errorStage || '未知阶段'}`)
-        }
-      }
-    } catch (e) {
-      // 网络错误不停,继续轮询
+// 订阅备份轮询状态 — 同步到 list（行高亮）+ 终态 Toast + 刷新列表
+// 必须在 setup() 顶层调用（不在 onMounted 内）, onScopeDispose 才能正确触发
+backupPollingTask.subscribe((state) => {
+  if (!state.id || !state.status) return
+  const item = state.data as any
+  // 同步到列表（行高亮 + 实时数据）
+  if (item) {
+    const idx = list.value.findIndex(x => x.id === state.id)
+    if (idx >= 0) list.value[idx] = { ...list.value[idx], ...item }
+  }
+  // 终态 Toast
+  if (state.status === 'SUCCESS' || state.status === 'FAILED') {
+    if (state.status === 'SUCCESS') {
+      $toast.success(`备份完成: ${item?.tag || ''}`)
+    } else {
+      $toast.error(`备份失败: ${item?.errorStage || '未知阶段'}`)
+    }
+    fetchList()  // 刷新列表（终态完整数据）
+  }
+})
+
+// v4.3.0 polish：订阅"恢复任务进行中"—— backup 页也能看到（解决"切到 backup 页丢失恢复状态"问题）
+const restorePollingTask = usePollingTask('restore')
+const restoreFetcherFromBackup = async () => {
+  const id = restorePollingTask.state.value.id
+  if (id == null) return null
+  const res = await get<any>(`/admin/restore/${id}`)
+  return res?.data || null
+}
+const restorePollingOptionsForBackup = {
+  terminalStatuses: ['SUCCESS', 'FAILED', 'UNKNOWN'],
+  initialInterval: 2000,
+  maxInterval: 30000,
+  maxFailures: 60
+}
+restorePollingTask.subscribe((state) => {
+  if (!state.id || !state.status) return
+  // 终态 Toast（防止"恢复完成但用户在 backup 页没收到提示"）
+  if (state.status === 'SUCCESS' || state.status === 'FAILED' || state.status === 'UNKNOWN') {
+    const data = state.data as any
+    if (state.status === 'SUCCESS') {
+      $toast.success(`恢复成功: ${data?.sourceTag || ''}`)
+    } else if (state.status === 'UNKNOWN') {
+      $toast.warning(`恢复状态未知, 请检查服务端日志: ${data?.errorStage || ''}`)
+    } else {
+      $toast.error(`恢复失败: ${data?.errorStage || '未知阶段'}`)
     }
   }
-  tick()
-  pollingTimer.value = setInterval(tick, 2000)
-}
-const stopPolling = () => {
-  if (pollingTimer.value) {
-    clearInterval(pollingTimer.value)
-    pollingTimer.value = null
-  }
-  pollingId.value = null
-}
+})
 
 // 拉列表
 const fetchList = async () => {
@@ -322,9 +356,14 @@ const errorStageLabel = (stage?: string) => {
 
 onMounted(() => {
   fetchList()
+  // v4.3.0 polish: 从 localStorage 自动恢复轮询 — usePollingTask 接管, 不再激进清 localStorage
+  backupPollingTask.restore(backupFetcher, backupPollingOptions)
+  // v4.3.0 polish: backup 页也能看到恢复任务进行中 + 收终态 Toast
+  restorePollingTask.restore(restoreFetcherFromBackup, restorePollingOptionsForBackup)
 })
+
 onBeforeUnmount(() => {
-  stopPolling()
+  // 不停轮询 — usePollingTask 模块单例 + onScopeDispose 自动解绑 subscribe
 })
 </script>
 
@@ -359,6 +398,33 @@ onBeforeUnmount(() => {
           <br/><strong style="color: var(--text);">删除记录</strong>: FAILED 直接确认;SUCCESS 需输入 <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 1px 5px; background: var(--bg); border-radius: 3px;">DELETE</code> 字样(同时删 GitHub Release tag);PENDING/RUNNING 不能删。
           <br/><strong style="color: var(--text);">数据恢复</strong>: 请前往「数据恢复」页面选择备份进行恢复。
         </div>
+      </div>
+    </div>
+
+    <!--
+      v4.3.0 polish：跨页可见的状态卡
+      之前「切到 backup 页丢失恢复状态」是因为 backup.vue 根本不订阅 restorePollingTask 的状态。
+      现在用 usePollingTask 订阅, 只要 localStorage 里 restorePollingId 还在, 这张卡就会渲染。
+      - 状态从 localStorage 恢复时也会显示（onMounted restore() 内部 fill state.value.id）
+      - 点击「查看」跳转到 restore 页继续看进度
+    -->
+    <div v-if="restorePollingTask.state.value.id" class="card" style="padding: 16px; margin-bottom: 16px; border: 1px solid var(--accent); background: rgba(201, 123, 63, 0.05);">
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spin" style="color: var(--accent); flex-shrink: 0;"><circle cx="12" cy="12" r="10" stroke-dasharray="40 60"/></svg>
+        <div style="flex: 1; font-size: 13px; line-height: 1.6;">
+          <strong style="color: var(--text);">数据恢复任务进行中</strong>
+          <span style="color: var(--text-soft); margin-left: 8px;">
+            <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">#{{ restorePollingTask.state.value.id }}</code>
+            · {{ restorePollingTask.state.value.status === 'PENDING' ? '排队中' : '执行中' }}
+          </span>
+          <span v-if="(restorePollingTask.state.value.data as any)?.sourceTag" style="color: var(--muted); margin-left: 8px;">
+            ({{ (restorePollingTask.state.value.data as any).sourceTag }})
+          </span>
+          <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
+            服务将停止约 1-5 分钟, 浏览器可能短暂断线
+          </div>
+        </div>
+        <NuxtLink to="/admin/restore" class="btn btn-sm" style="text-decoration: none;">查看</NuxtLink>
       </div>
     </div>
 
