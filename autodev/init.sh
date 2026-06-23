@@ -14,10 +14,10 @@ echo "工作区：$WORKSPACE"
 echo ""
 echo "=== 1. 创建目录结构 ==="
 mkdir -p "$WORKSPACE/autodev/auto_iteration/img"
-mkdir -p "$WORKSPACE/autodev/audit_code"
+mkdir -p "$WORKSPACE/autodev/auto_audit"
 echo "✅ 目录结构已创建："
 echo "   - autodev/auto_iteration/img/"
-echo "   - autodev/audit_code/"
+echo "   - autodev/auto_audit/"
 
 # 2. 创建首次任务文档（从模板复制）
 echo ""
