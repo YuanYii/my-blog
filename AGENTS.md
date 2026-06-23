@@ -116,6 +116,13 @@ dev/prod 默认 **SQLite**（一文件 0 内存占用）；MySQL 8.0 降级为�
 
 ---
 
+### 4.9 安全红线：禁止打印/提交的敏感字段（代码审查硬线）
+- **日志禁打**：明文 password、passwordHash、token 全文、secret、key、private、apiKey、credential、JWT secret
+- **禁止提交**：.env（含真实密钥）、*.pem、*.key、*.jks、keystore、credentials.json
+- **代码审查检查点**：在 log.info/warn/error 和 System.out.println 的参数中搜索上述字段名
+- **与 §4.8 的关系**：§4.8 日志体系包含禁打字段清单（基础设施层），本节的检查维度供代码质量审查员（Stage 1.5）和日常 code review 使用
+
+
 ## 5. 常用命令
 
 ```bash
