@@ -20,27 +20,20 @@
       <div class="flex items-center gap-2">
         <!-- 汉堡菜单按钮（仅手机端显示） -->
         <button
-          class="md:hidden w-9 h-9 rounded-md flex items-center justify-center transition-colors"
+          class="md:hidden min-w-[44px] min-h-[44px] rounded-md flex items-center justify-center transition-colors active:bg-[var(--primary-soft)]"
           style="color: var(--color-text-2);"
           @click="toggleMenu"
           aria-label="切换菜单"
         >
           <!-- 菜单关闭状态：显示汉堡图标 -->
-          <svg v-if="!isMenuOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="3" y1="6" x2="21" y2="6"/>
-            <line x1="3" y1="12" x2="21" y2="12"/>
-            <line x1="3" y1="18" x2="21" y2="18"/>
-          </svg>
+          <svg v-if="!isMenuOpen" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           <!-- 菜单展开状态：显示关闭图标 -->
-          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"/>
-            <line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
+          <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
 
         <button class="w-9 h-9 rounded-md flex items-center justify-center transition-colors" style="color: var(--color-text-2);" @click="toggleTheme" aria-label="切换主题">
           <svg v-if="!isDark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         </button>
         <!-- 后台管理入口：桌面端显示 inline-flex，手机端在下拉菜单里显示 -->
         <NuxtLink v-if="isApprovedDevice" to="/admin/login" class="hidden md:inline-flex w-9 h-9 rounded-md items-center justify-center transition-colors" style="color: var(--color-text-2);" title="后台管理">
@@ -53,8 +46,8 @@
     <Transition name="menu-slide">
       <div
         v-if="isMenuOpen"
-        class="md:hidden absolute top-14 left-0 right-0 border-b"
-        style="background: var(--color-bg); border-color: var(--color-line); z-index: 49;"
+        class="md:hidden absolute top-14 left-0 right-0 border-b shadow-lg"
+        style="background: var(--card); border-color: var(--color-line); z-index: 49;"
       >
         <div class="max-w-5xl mx-auto px-4 py-2 flex flex-col gap-1">
           <NuxtLink to="/" class="mobile-menu-item" @click="closeMenu">首页</NuxtLink>
