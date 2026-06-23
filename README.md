@@ -1,6 +1,6 @@
 # 个人博客系统
 
-> **v4.2.0** — Spring Boot 2.7（多模块）+ Nuxt 3 前后端分离的个人博客 MVP。
+> **v4.3.0** — Spring Boot 2.7（多模块）+ Nuxt 3 前后端分离的个人博客 MVP。
 > 当前状态：v2.6.0 dev/prod 默认 SQLite（一文件 0 内存占用，MySQL 降级为可选 profile） + v2.7.0 前端全静态化（`nuxt generate` + nginx serve，省 150-250MB 内存）+ 公开页 SEO 预渲染 + **v4.0.0 日志体系（SLF4J/Logback + traceId + 文件滚动 30 天）+ IP 限流封禁（Redis + DB 持久化）+ 动态 favicon** + **v4.2.0 数据备份（加密上传 GitHub Release）+ v4.2.1 备份 polish（删除记录 / traceId 全链路 / UI 对齐）**。
 
 ---
@@ -16,11 +16,12 @@
 | 模块 | 功能 |
 |------|------|
 | **前台公开** | 首页（Hero 个人介绍 + 文章列表）/ 文章详情 / 归档 / 标签云 / 关于页（**SEO 预渲染**） |
-| **管理后台** | 仪表盘（KPI 聚合 + 30 天趋势）/ 文章增删改 / 评论审核 / 分类&标签管理 / 8-tab 站点设置 / 设备白名单管理 / **数据备份（加密上传 GitHub Release）+ 数据恢复** |
+| **管理后台** | 仪表盘（KPI 聚合 + 30 天趋势）/ 文章增删改 / 评论审核 / 分类&标签管理 / **9 子路由站点设置（profile/password/blog/techstack/experience/theme/social/preferences/advanced，侧栏二级菜单 + 按需加载）** / 设备白名单管理 / **数据备份（加密上传 GitHub Release）+ 数据恢复** |
 | **系统** | JWT 鉴权 / 设备白名单（X-Device-Id 绑定 token）/ API 路由白名单（DB 驱动，最长前缀匹配）/ 文件上传（本地存储 + 扩展名 + magic bytes 双重校验）/ 站点设置 8 section（blog/social/preferences/theme/advanced/techstack/experience + admin profile）/ Swagger API 文档 / 全静态前端 / **SLF4J+Logback 日志体系（traceId 串联全链路，文件滚动 30 天，3GB 容量上限）** / **IP 限流（10 次/秒 + 30 分钟封禁，Redis 热路径 + DB 持久化 + admin 手动解封）** |
 
 ### 1.3 版本记录
 
+- **v4.3.0+ 增量**（2026-06-23）— **管理后台拆分与移动端 polish**：(1) 站点设置从单页 8 tab 拆为 **9 个独立子路由** + admin 侧栏二级菜单（`/admin/settings/{profile,password,blog,techstack,experience,theme,social,preferences,advanced}`，路径命中自动展开 + `localStorage('admin.settings.expanded')` 持久化，按需 GET 替代原 8 并发 `loadAll`）；(2) **dashboard 移动端 polish**（welcome-bar ≤768px 上下堆叠 + 按钮居中、`.dashboard-grid > * { min-width: 0 }` 解决 KPI/图表/待办/站点状态/流量来源溢出、最近文章表格 col class 列宽优化 + 浏览量挪到 slug 副标题、顶栏退出按钮统一为 SVG + `.icon-btn`）；(3) 全站下拉框统一为 `DropdownSelector` 组件（11 处 `<select>` 替换 + `MultiTagSelect` chip 多选 + Teleport body 定位 + 键盘导航）；(4) 5 个 admin 表格加 `.table-wrap { overflow-x: auto }` 横向滚动；(5) 日志归档按月份子目录（`logback-spring.xml` 改 `${LOG_DIR}/archive/%d{yyyy-MM}/blog-...log` + `deploy-server.sh` 同步 logrotate glob）；(6) **admin 模块重构（OPT-005）**：抽 `composables/useAdminSettingsTab.ts`（封装 admin/settings 子页通用 load/save/saving/message 模板）+ `<AdminSettingsSaveBar>`（保存按钮 + message 行），7 个非 password settings 子页 13 行整页（-72%）；抽 `<AdminNavIcon>`（15 种 SVG icon 映射）+ `<AdminSidebarNav>`（一/二级菜单整体）+ `<AdminUserChip>`（顶栏胶囊）三组件，`layouts/admin.vue` 365 → 245 行（< 300 阈值），9 个 Form 组件 props/emits/data 零改动
 - **v4.2.1**（2026-06-21）— **备份 polish**：删除备份记录（`DELETE /admin/backup/{id}`，SUCCESS 删 GitHub Release + db 行，FAILED 仅删 db，PENDING/RUNNING 拒绝 3002）+ traceId 全链路（`TraceIdUtil` 统一工具类，AdminAuthFilter / IpRateLimitFilter / GlobalExceptionHandler 三处拒绝响应均拼 traceId）+ 前端 `formatError` 自动展示 traceId + 操作人显示 username（JWT subject 透传，零 IO）
 - **v4.2.0**（2026-06-20）— **数据备份**：admin 后台一键加密备份（`POST /admin/backup/run`，异步执行，`blog-backup.sh` 产物 AES-256-CBC 加密上传 GitHub Release）+ 备份历史列表 + 单条详情轮询 + `BackupRecord` 表 + `BACKUP_CONFLICT(3001)` 互斥
 - **v4.1.0**（2026-06-19）— 重构优化落地（A1/B1/B2/D 重构项）
@@ -232,12 +233,13 @@ frontend/
 │   ├── useAdminMeta.ts                # Admin meta 标签
 │   ├── useDashboardUtils.ts           # 仪表盘工具函数
 │   ├── useImageUpload.ts              # 图片上传逻辑
+│   ├── useAdminSettingsTab.ts         # v4.3.0+ admin/settings 子页通用 load/save/saving/message 封装（OPT-005）
 │   └── useVisitor.ts                  # 访客 ID 管理
 │
-├── components/                        # 公开组件（NavBar / SiteFooter / GlobalDialog / ...）
+├── components/                        # 公开组件（NavBar / SiteFooter / GlobalDialog / ...）+ v4.3.0+ admin/（NavIcon/SidebarNav/UserChip + settings/SaveBar）+ ui/（DropdownSelector/MultiTagSelect）
 ├── plugins/                           # Nuxt 插件（auth.client.ts 等）
 │
-├── pages/ # 15 个页面（5 公开 + 10 admin）
+├── pages/ # 24 个页面（5 公开 + 10 admin 顶层 + 9 settings 子路由）
 │   ├── index.vue                      # 首页（Hero + 文章列表）
 │   ├── post/[slug].vue                # 文章详情（v2.7.0 build 时预渲染）
 │   ├── archives.vue                   # 归档
@@ -251,9 +253,20 @@ frontend/
 │       ├── comments.vue               # 评论管理
 │       ├── categories.vue             # 分类管理
 │       ├── tags.vue                   # 标签管理
-│       ├── settings.vue               # 个人设置（8 tab：profile/social/preferences/blog/theme/advanced/techstack/experience）
 │       ├── devices.vue                # 设备管理
-│       └── backup.vue                 # 数据备份（v4.2.0 + v4.2.1 polish）
+│       ├── backup.vue                 # 数据备份（v4.2.0 + v4.2.1 polish）
+│       ├── restore.vue                # 数据恢复（v4.3.0）
+│       ├── settings.vue               # 站点设置外壳（v4.3.0+：page-head + <NuxtPage /> 出口，/admin/settings → /admin/settings/profile 重定向）
+│       └── settings/                  # 站点设置 9 子路由（v4.3.0+，每页独立 onMounted GET + save + message）
+│           ├── profile.vue            # 个人资料（保存后 useAuth().updateUser 同步顶栏 nickname/avatar）
+│           ├── password.vue           # 修改密码（ref + onSuccess/onError handler 模式）
+│           ├── blog.vue               # 站点信息
+│           ├── techstack.vue          # 技术栈
+│           ├── experience.vue         # 个人经历
+│           ├── theme.vue              # 主题外观
+│           ├── social.vue             # 社交账号
+│           ├── preferences.vue        # 偏好设置
+│           └── advanced.vue           # 高级
 │
 ├── scripts/
 │   └── fetch-routes.js                # build 前拉后端所有公开页 slug，生成 .routes.json
