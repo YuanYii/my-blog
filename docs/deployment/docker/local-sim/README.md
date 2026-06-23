@@ -87,7 +87,7 @@ cd /opt/myblog/scripts
 chmod +x deploy-server.sh
 
 # 跟生产一模一样的命令（容器内 /.dockerenv 存在，自动开 LOCAL_SIM=1）
-GITHUB_REPO=你的-owner/repo ./deploy-server.sh v4.1.0
+GITHUB_REPO=你的-owner/repo ./deploy-server.sh v4.3.0
 ```
 
 ### 2.5 验收

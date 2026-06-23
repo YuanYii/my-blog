@@ -305,6 +305,16 @@ CREATE INDEX IF NOT EXISTS idx_ip_ban_ip ON ip_ban(ip);
 CREATE INDEX IF NOT EXISTS idx_ip_ban_expire ON ip_ban(expire_at);
 CREATE INDEX IF NOT EXISTS idx_ip_ban_unbanned ON ip_ban(unbanned);
 
+-- ----------------------------------------------------
+-- 15. _migration_history 增量 SQL 迁移追踪
+-- ----------------------------------------------------
+CREATE TABLE IF NOT EXISTS _migration_history (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  script_name     VARCHAR(255) NOT NULL,
+  executed_at     DATETIME     NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_migration_script ON _migration_history(script_name);
+
 -- =====================================================
 -- Seed Data
 -- =====================================================

@@ -81,14 +81,14 @@ if [ ! -f "$DEPLOY_SCRIPT" ]; then
     echo "     docker exec -it myblog-sim bash"
     echo "     cd $INSTALL_DIR/scripts"
     echo "     chmod +x deploy-server.sh"
-    echo "     GITHUB_REPO=owner/repo ./deploy-server.sh v4.1.0   # 跟生产一样的参数"
+    echo "     GITHUB_REPO=owner/repo ./deploy-server.sh v4.3.0   # 跟生产一样的参数"
     echo
 else
     info "✅ $DEPLOY_SCRIPT 已就位"
     echo "   在容器内跑："
     echo
     echo "     cd $INSTALL_DIR/scripts"
-    echo "     GITHUB_REPO=owner/repo ./deploy-server.sh v4.1.0"
+    echo "     GITHUB_REPO=owner/repo ./deploy-server.sh v4.3.0"
     echo
 fi
 

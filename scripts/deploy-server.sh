@@ -4,7 +4,7 @@
 # 跑法(root 或 sudo):
 #   curl -L https://raw.githubusercontent.com/OWNER/REPO/main/scripts/deploy-server.sh -o deploy-server.sh
 #   chmod +x deploy-server.sh
-#   sudo ./deploy-server.sh v4.1.0
+#   sudo ./deploy-server.sh v4.3.0
 #
 # ----- LOCAL_SIM 模式（2026-06-19 本地模拟容器用，docs/docker/local-sim）-----
 # 当 LOCAL_SIM=1 时，自动跳过 systemd/apt/防火墙等生产专属步骤，
@@ -22,8 +22,12 @@
 #   SKIP_DEPS=0                  设为 1 跳过依赖安装(已装过的话)
 #   OPEN_FIREWALL=1              设为 1 自动 firewalld/ufw 放行 PUBLIC_PORT(默认 1)
 #   DEPLOY_MODE=full             部署模式(默认 full)
-#                                 full = 代码+数据可选导入(走完整 step 5/6)
-#                                 code = 只装代码,即使 IMPORT_DB=1 也跳过 db
+#                                 init = 首次初始化(schema 建库 + 种子数据,不导入业务数据)
+#                                 full = 全量代码升级(保留 DB + 增量 SQL migration)
+#                                 frontend = 只更新前端静态文件
+#                                 backend = 只更新后端 jar + 增量 SQL
+#                                 sql = 只跑增量 SQL migration
+#                                 code = 等价 full(显式,向后兼容)
 #                                 data = 只导入数据,跳过 jar/schema/前端
 #   IMPORT_DB=0                  是否导入 release 中的加密 db dump(默认 0)
 #                                 设为 1 后从交互式输入密码,调 sqlite-import.sh 解密导入
@@ -48,7 +52,7 @@ PUBLIC_PORT="${PUBLIC_PORT:-80}"
 DB_FILE="${DB_FILE:-$INSTALL_DIR/db/blog.db}"
 SKIP_DEPS="${SKIP_DEPS:-0}"
 OPEN_FIREWALL="${OPEN_FIREWALL:-1}"
-DEPLOY_MODE="${DEPLOY_MODE:-full}"      # full | code | data
+DEPLOY_MODE="${DEPLOY_MODE:-full}"      # init | full | frontend | backend | sql | code | data
 IMPORT_DB="${IMPORT_DB:-0}"             # 0/1
 LOCAL_SIM="${LOCAL_SIM:-0}"             # 0=生产模式  1=本地模拟容器模式
 
@@ -59,8 +63,8 @@ err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # 校验
 if [ -z "$TAG" ]; then
-    err "Usage: $0 <tag>  e.g. $0 v4.1.0"
-    err "Or:RELEASE_TAG=v4.1.0 $0"
+    err "Usage: $0 <tag>  e.g. $0 v4.3.0"
+    err "Or:RELEASE_TAG=v4.3.0 $0"
     exit 1
 fi
 if [ -z "$GITHUB_REPO" ] && [ "$LOCAL_SIM" != "1" ]; then
@@ -76,13 +80,24 @@ fi
 
 # DEPLOY_MODE 校验
 case "$DEPLOY_MODE" in
-    full|code|data) ;;
-    *) err "DEPLOY_MODE must be full / code / data, got: $DEPLOY_MODE" ;;
+    init|full|frontend|backend|sql|code|data) ;;
+    *) err "DEPLOY_MODE must be init / full / frontend / backend / sql / code / data, got: $DEPLOY_MODE" ;;
 esac
 
 # 矛盾检测
 if [ "$DEPLOY_MODE" = "data" ] && [ "$IMPORT_DB" != "1" ]; then
     err "DEPLOY_MODE=data but IMPORT_DB=0, contradictory (use DEPLOY_MODE=full/code, or IMPORT_DB=1)"
+fi
+
+# init 模式:DB 已存在时警告(可能误操作)
+if [ "$DEPLOY_MODE" = "init" ] && [ -f "$DB_FILE" ]; then
+    warn "DEPLOY_MODE=init but DB already exists at $DB_FILE"
+    warn "  If you want to upgrade, use DEPLOY_MODE=full instead"
+fi
+
+# frontend/sql 模式:不需要 GITHUB_REPO(本地文件即可)
+if [ "$DEPLOY_MODE" = "sql" ] && [ -z "$GITHUB_REPO" ] && [ "$LOCAL_SIM" != "1" ]; then
+    warn "DEPLOY_MODE=sql with no GITHUB_REPO, will skip download (use local migration files)"
 fi
 
 # code 模式 + IMPORT_DB=1:warn(语义不强,但允许)
@@ -170,7 +185,7 @@ fi
 
 # ============= 3. 创建部署目录 + 用户 =============
 info "=== 3. Preparing directory structure ==="
-mkdir -p "$INSTALL_DIR"/{logs,frontend,db,uploads} "$INSTALL_DIR/db/backups"
+mkdir -p "$INSTALL_DIR"/{logs,frontend,db,uploads} "$INSTALL_DIR/db/backups" "$INSTALL_DIR/logs/archive"
 if [ "$LOCAL_SIM" = "1" ]; then
     info "LOCAL_SIM=1, skipping myblog user creation (running as root in container)"
 else
@@ -206,15 +221,15 @@ BUNDLE="deploy-bundle-${TAG}.zip"
 # 2026-06-22 修复:BUNDLE / SHA256SUMS 必须下到 TMP_DIR 里,否则 sha256sum -c 找不到文件会全 FAIL
 #   原代码下到当前目录,但 sha256sum -c 在 TMP_DIR 跑,导致"沉默失败"(warn continue 掩盖了真错)
 if curl -fsSL -o "$TMP_DIR/$BUNDLE" "$BASE_URL/$BUNDLE" 2>/dev/null; then
-    info "Got cold-deployment package $BUNDLE, verifying sha256..."
+    info "Got cold-deployment package $BUNDLE, extracting first..."
+    (cd "$TMP_DIR" && unzip -qo "$BUNDLE")
     curl -fsSL -o "$TMP_DIR/SHA256SUMS" "$BASE_URL/SHA256SUMS" 2>/dev/null || warn "No SHA256SUMS, skipping verification"
     if [ -f "$TMP_DIR/SHA256SUMS" ]; then
         if command -v sha256sum >/dev/null; then
+            info "Verifying sha256..."
             (cd "$TMP_DIR" && sha256sum -c SHA256SUMS) || err "sha256 verification failed (refusing to deploy corrupted bundle)"
         fi
     fi
-    info "Extracting $BUNDLE ..."
-    (cd "$TMP_DIR" && unzip -qo "$BUNDLE")
 else
     warn "No cold-deployment package, downloading files individually"
     download "blog-app.jar"
@@ -314,6 +329,45 @@ flush_redis() {
 }
 
 # ============= 5. 部署 jar / schema / 应用配置 =============
+# 根据 DEPLOY_MODE 决定执行哪些步骤
+SKIP_JAR=false
+SKIP_SCHEMA=false
+SKIP_FRONTEND=false
+SKIP_MIGRATION=false
+
+case "$DEPLOY_MODE" in
+    init)
+        # 首次初始化:全量部署 jar + schema + 前端
+        ;;
+    full|code)
+        # 全量升级:部署 jar + 前端,保留 DB + 跑增量 SQL
+        ;;
+    frontend)
+        # 只更新前端
+        SKIP_JAR=true
+        SKIP_SCHEMA=true
+        SKIP_MIGRATION=true
+        ;;
+    backend)
+        # 只更新后端
+        SKIP_FRONTEND=true
+        SKIP_MIGRATION=false
+        ;;
+    sql)
+        # 只跑增量 SQL
+        SKIP_JAR=true
+        SKIP_SCHEMA=true
+        SKIP_FRONTEND=true
+        ;;
+    data)
+        # 只导入数据
+        SKIP_JAR=true
+        SKIP_SCHEMA=true
+        SKIP_FRONTEND=true
+        SKIP_MIGRATION=true
+        ;;
+esac
+
 if [ "$DEPLOY_MODE" = "data" ]; then
     info "=== 5. Deploying jar / schema / app config ==="
     info "    DEPLOY_MODE=data, skipping jar/schema/frontend/app config (db only)"
@@ -341,9 +395,15 @@ stop_app() {
 }
 stop_app
 
-cp "$TMP_DIR/blog-app.jar" "$INSTALL_DIR/blog-app.jar"
-if [ "$LOCAL_SIM" != "1" ]; then
-    chown myblog:myblog "$INSTALL_DIR/blog-app.jar"
+# 部署 jar (frontend/sql/data 模式跳过)
+if [ "$SKIP_JAR" = true ]; then
+    info "    DEPLOY_MODE=$DEPLOY_MODE, skipping jar deployment"
+else
+    cp "$TMP_DIR/blog-app.jar" "$INSTALL_DIR/blog-app.jar"
+    if [ "$LOCAL_SIM" != "1" ]; then
+        chown myblog:myblog "$INSTALL_DIR/blog-app.jar"
+    fi
+    info "[OK] Backend jar deployed"
 fi
 
 # ---- schema 增量兜底:在删旧 DB 之前补齐生产历史库的列 ----
@@ -367,31 +427,109 @@ if [ -f "$DB_FILE" ]; then
     fi
 fi
 
-# 全量部署:备份旧 DB → 删除 → 用 schema-sqlite.sql 重建（干净的全新库）
-# schema-sqlite.sql 包含建表 DDL + 种子数据(admin/123456)
-if [ -f "$DB_FILE" ]; then
-    cp "$DB_FILE" "$INSTALL_DIR/db/backups/blog-before-${TAG}-$(date +%Y%m%d-%H%M%S).db"
-    info "Backed up existing DB before full deploy"
-    rm -f "$DB_FILE"
+# 根据 DEPLOY_MODE 处理 DB
+if [ "$SKIP_SCHEMA" = true ]; then
+    # frontend/sql/data 模式:完全跳过 schema
+    info "    DEPLOY_MODE=$DEPLOY_MODE, skipping schema (DB untouched)"
+elif [ "$DEPLOY_MODE" = "init" ]; then
+    # init 模式:删旧 DB → 全量重建(仅种子数据)
+    if [ -f "$DB_FILE" ]; then
+        cp "$DB_FILE" "$INSTALL_DIR/db/backups/blog-before-${TAG}-$(date +%Y%m%d-%H%M%S).db"
+        info "Backed up existing DB before init (will be replaced)"
+        rm -f "$DB_FILE"
+    fi
+    cp "$TMP_DIR/schema-sqlite.sql" "$INSTALL_DIR/schema-sqlite.sql"
+    if [ "$LOCAL_SIM" != "1" ]; then
+        chown myblog:myblog "$INSTALL_DIR/schema-sqlite.sql"
+    fi
+    sqlite3 "$DB_FILE" < "$INSTALL_DIR/schema-sqlite.sql"
+    if [ "$LOCAL_SIM" != "1" ]; then
+        chown myblog:myblog "$DB_FILE"
+    fi
+    info "[OK] SQLite initialized from schema (init mode - seed data only)"
+else
+    # full/code/backend 模式:保留 DB + 跑增量 SQL migration
+    cp "$TMP_DIR/schema-sqlite.sql" "$INSTALL_DIR/schema-sqlite.sql"
+    if [ "$LOCAL_SIM" != "1" ]; then
+        chown myblog:myblog "$INSTALL_DIR/schema-sqlite.sql"
+    fi
+    if [ ! -f "$DB_FILE" ]; then
+        # DB 不存在:从 schema 建库(等价 init)
+        sqlite3 "$DB_FILE" < "$INSTALL_DIR/schema-sqlite.sql"
+        if [ "$LOCAL_SIM" != "1" ]; then
+            chown myblog:myblog "$DB_FILE"
+        fi
+        info "[OK] SQLite created from schema (DB did not exist)"
+    else
+        info "DB exists at $DB_FILE, preserving business data"
+    fi
 fi
-cp "$TMP_DIR/schema-sqlite.sql" "$INSTALL_DIR/schema-sqlite.sql"
-if [ "$LOCAL_SIM" != "1" ]; then
-    chown myblog:myblog "$INSTALL_DIR/schema-sqlite.sql"
+
+# ============= 5.1 执行增量 SQL migration =============
+if [ "$SKIP_MIGRATION" = false ] && [ -f "$DB_FILE" ]; then
+    info "=== 5.1 Running incremental SQL migrations ==="
+    
+    # 确保 _migration_history 表存在(首次可能没有)
+    sqlite3 "$DB_FILE" "CREATE TABLE IF NOT EXISTS _migration_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        script_name VARCHAR(255) NOT NULL UNIQUE,
+        executed_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
+    );"
+    
+    # 扫描并执行未执行的 migration
+    MIGRATION_DIR="$TMP_DIR/migrations"
+    if [ -d "$MIGRATION_DIR" ]; then
+        MIGRATION_COUNT=0
+        MIGRATION_FAILED=""
+        
+        for script in $(ls "$MIGRATION_DIR"/*.sql 2>/dev/null | sort); do
+            script_name=$(basename "$script")
+            
+            # 检查是否已执行
+            already_executed=$(sqlite3 "$DB_FILE" "SELECT COUNT(*) FROM _migration_history WHERE script_name='$script_name';")
+            
+            if [ "$already_executed" = "0" ]; then
+                info "  Executing migration: $script_name"
+                if sqlite3 "$DB_FILE" < "$script"; then
+                    sqlite3 "$DB_FILE" "INSERT INTO _migration_history (script_name, executed_at) VALUES ('$script_name', datetime('now','localtime'));"
+                    info "    [OK] $script_name executed successfully"
+                    MIGRATION_COUNT=$((MIGRATION_COUNT + 1))
+                else
+                    MIGRATION_FAILED="$script_name"
+                    err "    [FAIL] $script_name execution failed"
+                    break
+                fi
+            else
+                info "  Skipping migration: $script_name (already executed)"
+            fi
+        done
+        
+        if [ -n "$MIGRATION_FAILED" ]; then
+            err "Migration failed at: $MIGRATION_FAILED"
+            err "  Check the script for errors and fix manually"
+        elif [ $MIGRATION_COUNT -gt 0 ]; then
+            info "[OK] Executed $MIGRATION_COUNT migration(s)"
+        else
+            info "  No pending migrations to execute"
+        fi
+    else
+        info "  No migrations directory found at $MIGRATION_DIR, skipping"
+    fi
 fi
-sqlite3 "$DB_FILE" < "$INSTALL_DIR/schema-sqlite.sql"
-if [ "$LOCAL_SIM" != "1" ]; then
-    chown myblog:myblog "$DB_FILE"
-fi
-info "[OK] SQLite initialized from schema (full deploy)"
 
 # ============= 6. 部署前端静态文件 =============
-info "=== 6. Deploying frontend static files ==="
-rm -rf "$INSTALL_DIR/frontend"/*
-tar -xzf "$TMP_DIR/frontend-static.tar.gz" -C "$INSTALL_DIR/frontend/"
-if [ "$LOCAL_SIM" != "1" ]; then
-    chown -R myblog:myblog "$INSTALL_DIR/frontend"
+if [ "$SKIP_FRONTEND" = true ]; then
+    info "=== 6. Deploying frontend static files ==="
+    info "    DEPLOY_MODE=$DEPLOY_MODE, skipping frontend deployment"
+else
+    info "=== 6. Deploying frontend static files ==="
+    rm -rf "$INSTALL_DIR/frontend"/*
+    tar -xzf "$TMP_DIR/frontend-static.tar.gz" -C "$INSTALL_DIR/frontend/"
+    if [ "$LOCAL_SIM" != "1" ]; then
+        chown -R myblog:myblog "$INSTALL_DIR/frontend"
+    fi
+    info "[OK] Static files deployed to $INSTALL_DIR/frontend"
 fi
-info "[OK] Static files deployed to $INSTALL_DIR/frontend"
 
 # ============= 7. 写 application 配置 =============
 # 策略:脚本生成的 application.yml 通过 --spring.config.additional-location 叠加在 jar 之上
@@ -601,7 +739,7 @@ fi
 
 # ============= 8.6 logrotate 配置(REQ-LOG-2026-06-18)=============
 # 覆盖两类日志:
-#   ① Logback 管理的滚动文件(blog.YYYY-MM-DD.NN.log + blog-warn.YYYY-MM-DD.NN.log)
+#   ① Logback 管理的滚动文件(archive/YYYY-MM/blog.YYYY-MM-DD.NN.log + archive/YYYY-MM/blog-warn.YYYY-MM-DD.NN.log)
 #      —— Logback 自己按 30 天滚动,但 systemd 重启/异常退出可能留下孤儿,兜底
 #   ② systemd 重定向的 app.log / app-error.log —— Logback 管不到,必须单独配
 # 周期按天,保留 7 天(日志在 prod 仅供 owner 单人排查,7 天足够)
@@ -610,7 +748,7 @@ if [ "$LOCAL_SIM" = "1" ]; then
     info "LOCAL_SIM=1, skipping logrotate (supervisord has stdout_logfile_maxbytes rotation built-in)"
 elif [ -w /etc/logrotate.d ] || command -v sudo >/dev/null 2>&1; then
     cat > "$LOGROTATE_FILE" <<'LOGROTATE_EOF'
-/opt/myblog/logs/blog-*.log /opt/myblog/logs/blog-warn-*.log {
+/opt/myblog/logs/archive/*/blog-*.log /opt/myblog/logs/archive/*/blog-warn-*.log {
     daily
     rotate 30
     missingok
@@ -875,5 +1013,5 @@ else
     info "                  tail -f $INSTALL_DIR/logs/app.log"
     info "  Restart service:    systemctl restart myblog"
 fi
-info "  Version rollback:    $0 v4.1.0   (specify old tag)"
+info "  Version rollback:    $0 v4.3.0   (specify old tag)"
 info "=========================================="
