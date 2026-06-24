@@ -106,6 +106,7 @@ const handleLogout = async () => {
 }
 
 // 顶栏标题
+// OPT-009：进入站点设置后，顶栏标题始终显示当前二级菜单名称（不再显示"站点设置"）
 const pageTitle = computed(() => {
   const map: Record<string, string> = {
     '/admin/dashboard': '仪表盘',
@@ -117,16 +118,17 @@ const pageTitle = computed(() => {
     '/admin/devices': '设备授权',
     '/admin/backup': '数据备份',
     '/admin/restore': '数据恢复',
-    '/admin/settings': '站点设置',
-    '/admin/settings/profile':     '站点设置 · 个人资料',
-    '/admin/settings/password':    '站点设置 · 修改密码',
-    '/admin/settings/blog':        '站点设置 · 站点信息',
-    '/admin/settings/techstack':   '站点设置 · 技术栈',
-    '/admin/settings/experience':  '站点设置 · 个人经历',
-    '/admin/settings/theme':       '站点设置 · 主题外观',
-    '/admin/settings/social':      '站点设置 · 社交账号',
-    '/admin/settings/preferences': '站点设置 · 偏好设置',
-    '/admin/settings/advanced':    '站点设置 · 高级'
+    '/admin/settings':             '个人资料',
+    '/admin/settings/':            '个人资料',
+    '/admin/settings/profile':     '个人资料',
+    '/admin/settings/password':    '修改密码',
+    '/admin/settings/blog':        '站点信息',
+    '/admin/settings/techstack':   '技术栈',
+    '/admin/settings/experience':  '个人经历',
+    '/admin/settings/theme':       '主题外观',
+    '/admin/settings/social':      '社交账号',
+    '/admin/settings/preferences': '偏好设置',
+    '/admin/settings/advanced':    '高级'
   }
   return map[route.path] || '后台'
 })

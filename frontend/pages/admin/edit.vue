@@ -161,7 +161,13 @@ onMounted(async () => {
   <div class="editor-page">
     <!-- Topbar -->
     <div class="editor-topbar">
-      <h1>{{ isEdit ? '编辑文章' : '新建文章' }}</h1>
+      <div class="editor-topbar-left">
+        <button @click="router.push('/admin/posts')" class="btn btn-ghost btn-sm editor-back-btn" aria-label="返回文章列表">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          <span>返回</span>
+        </button>
+        <h1>{{ isEdit ? '编辑文章' : '新建文章' }}</h1>
+      </div>
       <div class="editor-topbar-actions">
         <span class="save-status" :class="{ saving: saveStatus === 'saving' }">
           <span class="dot"></span>

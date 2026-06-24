@@ -1,5 +1,7 @@
 /* ========== Reset & Base ========== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* OPT-010：禁止全局横向滚动（移动端首页 .hero::before 装饰元素右溢出过 100px） */
+html, body { overflow-x: hidden; max-width: 100%; }
 html { scroll-behavior: smooth; }
 body {
   font-family: 'Outfit', 'Noto Serif SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -14,7 +16,8 @@ body {
 a { color: inherit; text-decoration: none; }
 button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
 input, textarea, select { font-family: inherit; }
-img, svg { display: block; max-width: 100%; }
+img, svg, video, iframe { display: block; max-width: 100%; }
+table { max-width: 100%; }
 
 .font-serif { font-family: 'DM Serif Display', 'Noto Serif SC', serif; }
 .font-mono { font-family: 'JetBrains Mono', monospace; }
@@ -279,6 +282,8 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
   padding: 80px 0 64px;
   border-bottom: 1px dashed var(--line);
   position: relative;
+  /* OPT-010：clip 装饰渐变（::before 右溢出 100px），防止移动端横向滚动 */
+  overflow: hidden;
 }
 .hero::before {
   content: ""; position: absolute;
@@ -1163,7 +1168,22 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
 .chart-tabs { display: flex; gap: 0; padding: 3px; background: var(--bg-soft); border-radius: 7px; }
 .chart-tab { padding: 3px 10px; border-radius: 4px; font-size: 11px; color: var(--text-2); background: transparent; border: none; cursor: pointer; font-family: inherit; }
 .chart-tab.active { background: var(--card); color: var(--text); box-shadow: var(--shadow); }
-.chart-area { position: relative; height: 240px; }
+.chart-area { position: relative; width: 100%; height: 240px; }
+.chart-area canvas { width: 100% !important; height: 100% !important; }
+.chart-area-category { height: 200px; }
+.chart-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); font-size: 13px; }
+
+/* OPT-007: 分类分布 + 流量来源 50/50 并排（桌面 + 移动端都生效） */
+.dashboard-split-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.dashboard-split-panel > * { min-width: 0; }
+.dashboard-category, .dashboard-traffic { min-width: 0; }
+.traffic-list { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+.traffic-row { min-width: 0; }
+.traffic-row-head { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+.traffic-name { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.traffic-pct { font-family: 'JetBrains Mono', monospace; color: var(--text); flex-shrink: 0; margin-left: 6px; }
+.traffic-bar { height: 6px; background: var(--bg-soft); border-radius: 3px; overflow: hidden; }
+.traffic-bar-fill { height: 100%; border-radius: 3px; }
 
 .todo-list { display: flex; flex-direction: column; gap: 4px; }
 .todo-item {
@@ -1221,15 +1241,18 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
   .welcome-bar { flex-direction: column; align-items: stretch; gap: 14px; }
   .welcome-actions { justify-content: center; flex-wrap: wrap; }
   .welcome-actions .btn { flex: 1; max-width: 200px; justify-content: center; }
-  /* OPT-004 D：最近文章表格列宽优化（不引入横向滚动） */
+  /* OPT-008：移动端 4 列 40/15/30/15 布局，浏览数挪到副标题区 */
   .recent-table th, .recent-table td { padding: 8px 4px; }
   .recent-table .col-views { display: none; }
-  .recent-table .col-status { width: 64px; }
-  .recent-table .col-time { width: 110px; }
-  .recent-table .col-action { width: 56px; }
+  .recent-table .col-title { width: 40%; }
+  .recent-table .col-status { width: 15%; }
+  .recent-table .col-time { width: 30%; white-space: normal; word-break: break-all; }
+  .recent-table .col-action { width: 15%; }
   .recent-table .recent-meta { font-size: 11px; }
   .recent-views-inline { display: inline; }
   .recent-views-inline::before { content: ' · '; }
+  /* OPT-007：分类饼图缩小但保持 50/50，不影响其他 panel 内的 canvas */
+  .dashboard-split-panel .chart-area-category { height: 160px; }
 }
 
 /* ========== Admin Pages (posts / comments / categories / tags / settings / edit) ========== */
@@ -1540,10 +1563,13 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
 }
+.editor-topbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; flex-wrap: wrap; }
 .editor-topbar h1 {
   font-family: 'DM Serif Display', 'Noto Serif SC', serif;
   font-size: 24px; font-weight: 400;
 }
+.editor-back-btn { gap: 4px; flex-shrink: 0; }
+.editor-back-btn svg { flex-shrink: 0; }
 .editor-topbar-actions { display: flex; gap: 6px; align-items: center; }
 
 .editor-grid {

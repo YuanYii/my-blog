@@ -324,19 +324,19 @@ onBeforeUnmount(() => {
         <!-- 访问趋势图 -->
         <AdminTrafficChart ref="trafficChartRef" :visit-trend="visitTrend" :visit-trend7="visitTrend7" />
 
-        <div class="panel" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="panel dashboard-split-panel">
           <!-- 分类分布饼图 -->
           <AdminCategoryChart ref="categoryChartRef" :category-dist="categoryDist" />
-          <div>
+          <div class="dashboard-traffic">
             <div class="panel-header"><h3 class="panel-title">流量来源</h3></div>
-            <div style="display: flex; flex-direction: column; gap: 10px; padding-top: 4px;">
-              <div v-for="s in trafficSources" :key="s.name">
-                <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
-                  <span style="color: var(--text-2);">{{ s.name }}</span>
-                  <span style="font-family: 'JetBrains Mono', monospace; color: var(--text);">{{ s.pct }}%</span>
+            <div class="traffic-list">
+              <div v-for="s in trafficSources" :key="s.name" class="traffic-row">
+                <div class="traffic-row-head">
+                  <span class="traffic-name">{{ s.name }}</span>
+                  <span class="traffic-pct">{{ s.pct }}%</span>
                 </div>
-                <div style="height: 6px; background: var(--bg-soft); border-radius: 3px; overflow: hidden;">
-                  <div :style="{ height: '100%', width: s.pct + '%', background: s.color, borderRadius: '3px' }"></div>
+                <div class="traffic-bar">
+                  <div class="traffic-bar-fill" :style="{ width: s.pct + '%', background: s.color }"></div>
                 </div>
               </div>
             </div>

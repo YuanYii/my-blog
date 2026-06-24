@@ -40,14 +40,14 @@ defineExpose({ renderCategory })
 </script>
 
 <template>
-  <div>
+  <div class="dashboard-category">
     <div class="panel-header">
       <h3 class="panel-title">分类分布</h3>
-      <NuxtLink to="/admin/categories" class="panel-action">管理 →</NuxtLink>
+      <NuxtLink to="/admin/categories" class="panel-action">分类管理</NuxtLink>
     </div>
-    <div class="chart-area" style="height: 200px;">
+    <div class="chart-area chart-area-category">
       <canvas v-if="categoryDist.length" id="chart-category"></canvas>
-      <div v-else style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); font-size: 13px;">暂无数据</div>
+      <div v-else class="chart-empty">暂无数据</div>
     </div>
   </div>
 </template>
