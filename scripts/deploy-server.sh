@@ -24,16 +24,18 @@
 #   DEPLOY_MODE=full             部署模式(默认 full)
 #                                 init = 首次初始化(schema 建库 + 种子数据,不导入业务数据)
 #                                 full = 全量代码升级(保留 DB + 增量 SQL migration)
-#                                 frontend = 只更新前端静态文件
-#                                 backend = 只更新后端 jar + 增量 SQL
-#                                 sql = 只跑增量 SQL migration
-#                                 code = 等价 full(显式,向后兼容)
-#                                 data = 只导入数据,跳过 jar/schema/前端
+#                                 docker-create = 本地容器创建(build + run myblog-sim,复用 docs/deployment/docker/local-sim/)
+#                                 docker-init = 本地容器业务初始化(docker cp + exec 进容器跑 deploy-server.sh)
 #   IMPORT_DB=0                  是否导入 release 中的加密 db dump(默认 0)
 #                                 设为 1 后从交互式输入密码,调 sqlite-import.sh 解密导入
 #                                 产物:dev-blog-dump.sql.gz.enc (publish-release.sh 加 EXPORT_DB=1 才有)
 #
-# 语义约束: DEPLOY_MODE=data + IMPORT_DB=0 → 报错退出(语义矛盾)
+# v4.4.0 模式集合精简(7 → 4):
+#   - 删除: code / frontend / backend / sql / data
+#   - 新增: docker-create / docker-init(本地模拟生产,本地 dev 机用)
+#   - 替代: frontend/backend/sql → full(全量升级)
+#           code → full(等价)
+#           data → full + IMPORT_DB=1(显式开环境变量)
 
 set -euo pipefail
 
@@ -52,7 +54,7 @@ PUBLIC_PORT="${PUBLIC_PORT:-80}"
 DB_FILE="${DB_FILE:-$INSTALL_DIR/db/blog.db}"
 SKIP_DEPS="${SKIP_DEPS:-0}"
 OPEN_FIREWALL="${OPEN_FIREWALL:-1}"
-DEPLOY_MODE="${DEPLOY_MODE:-full}"      # init | full | frontend | backend | sql | code | data
+DEPLOY_MODE="${DEPLOY_MODE:-full}"      # init | full | docker-create | docker-init
 IMPORT_DB="${IMPORT_DB:-0}"             # 0/1
 LOCAL_SIM="${LOCAL_SIM:-0}"             # 0=生产模式  1=本地模拟容器模式
 
@@ -78,16 +80,14 @@ if [ "$EUID" -ne 0 ] && [ "$LOCAL_SIM" != "1" ]; then
     exit 1
 fi
 
-# DEPLOY_MODE 校验
+# DEPLOY_MODE 校验 (v4.4.0 重构:7 模式 → 4 模式)
 case "$DEPLOY_MODE" in
-    init|full|frontend|backend|sql|code|data) ;;
-    *) err "DEPLOY_MODE must be init / full / frontend / backend / sql / code / data, got: $DEPLOY_MODE" ;;
+    init|full|docker-create|docker-init) ;;
+    *) err "DEPLOY_MODE must be init / full / docker-create / docker-init, got: $DEPLOY_MODE"
+       err "  Note: code/frontend/backend/sql/data were removed in v4.4.0, use 'full' instead" ;;
 esac
 
-# 矛盾检测
-if [ "$DEPLOY_MODE" = "data" ] && [ "$IMPORT_DB" != "1" ]; then
-    err "DEPLOY_MODE=data but IMPORT_DB=0, contradictory (use DEPLOY_MODE=full/code, or IMPORT_DB=1)"
-fi
+# (v4.4.0: 'data' 模式已删除,矛盾检测块随之移除——'full + IMPORT_DB=1' 是合法组合,不构成矛盾)
 
 # init 模式:DB 已存在时警告(可能误操作)
 if [ "$DEPLOY_MODE" = "init" ] && [ -f "$DB_FILE" ]; then
@@ -95,15 +95,9 @@ if [ "$DEPLOY_MODE" = "init" ] && [ -f "$DB_FILE" ]; then
     warn "  If you want to upgrade, use DEPLOY_MODE=full instead"
 fi
 
-# frontend/sql 模式:不需要 GITHUB_REPO(本地文件即可)
-if [ "$DEPLOY_MODE" = "sql" ] && [ -z "$GITHUB_REPO" ] && [ "$LOCAL_SIM" != "1" ]; then
-    warn "DEPLOY_MODE=sql with no GITHUB_REPO, will skip download (use local migration files)"
-fi
-
-# code 模式 + IMPORT_DB=1:warn(语义不强,但允许)
-if [ "$DEPLOY_MODE" = "code" ] && [ "$IMPORT_DB" = "1" ]; then
-    warn "DEPLOY_MODE=code + IMPORT_DB=1: you explicitly requested data import, will execute"
-fi
+# (v4.4.0: sql/code 模式已删除,这两个 if 块随之移除)
+#   - sql 模式:功能被 full 模式覆盖
+#   - code 模式 + IMPORT_DB=1:等价 full + IMPORT_DB=1,合法组合,无需警告
 
 info "=========================================="
 info " my-blog one-click deployment"
@@ -239,6 +233,8 @@ else
     download "sqlite-import.sh" || warn "sqlite-import.sh download failed (needed when IMPORT_DB=1)"
     # v4.2.0 数据备份脚本：admin 后台「数据备份」菜单由后端 ProcessBuilder 调它
     download "blog-backup.sh" || warn "blog-backup.sh download failed (v4.2.0+ data backup feature will not work)"
+    download "sqlite-export.sh" || warn "sqlite-export.sh download failed (v4.3.0+ admin data export feature will not work)"
+    download "blog-restore.sh" || warn "blog-restore.sh download failed (v4.3.0+ data restore feature will not work)"
     # IMPORT_DB=1 才尝试下 .enc(可选,不存在说明纯代码发版)
     if [ "$IMPORT_DB" = "1" ]; then
         download "dev-blog-dump.sql.gz.enc" || warn "dev-blog-dump.sql.gz.enc download failed (required when IMPORT_DB=1)"
@@ -263,6 +259,29 @@ if [ -f "$TMP_DIR/blog-backup.sh" ]; then
     info "[OK] blog-backup.sh installed to $INSTALL_DIR/scripts/"
 else
     warn "blog-backup.sh not in release (v4.2.0+ data backup feature will not work)"
+fi
+
+# v4.3.0+ 数据恢复脚本：deploy-server.sh 部署到 $INSTALL_DIR/scripts/blog-restore.sh
+# 路径固定（RestoreService 写死 /opt/myblog/scripts/blog-restore.sh）
+# 注意：脚本本身用 systemd-run --scope 启才能 stop myblog 不自杀（设计文档 §3.2），
+#   但脚本路径必须先就位才能被 RestoreService 调到。sudoers/myblog-restore.slice 配置
+#   不在本脚本职责范围，需运维手动配（见 scripts/sudoers-myblog-restore.example）。
+if [ -f "$TMP_DIR/blog-restore.sh" ]; then
+    cp "$TMP_DIR/blog-restore.sh" "$INSTALL_DIR/scripts/blog-restore.sh"
+    chmod +x "$INSTALL_DIR/scripts/blog-restore.sh"
+    info "[OK] blog-restore.sh installed to $INSTALL_DIR/scripts/"
+else
+    warn "blog-restore.sh not in release (v4.3.0+ data restore feature will not work)"
+fi
+
+# v4.3.0+ 数据导出脚本：deploy-server.sh 部署到 $INSTALL_DIR/scripts/sqlite-export.sh
+# 路径固定（BackupService 写死 /opt/myblog/scripts/sqlite-export.sh）
+if [ -f "$TMP_DIR/sqlite-export.sh" ]; then
+    cp "$TMP_DIR/sqlite-export.sh" "$INSTALL_DIR/scripts/sqlite-export.sh"
+    chmod +x "$INSTALL_DIR/scripts/sqlite-export.sh"
+    info "[OK] sqlite-export.sh installed to $INSTALL_DIR/scripts/"
+else
+    warn "sqlite-export.sh not in release (v4.3.0+ admin data export feature will not work)"
 fi
 
 # ============= 4.5 启动 Redis（提前：让 §5 stop_app / flush_redis 有 redis 可用）=============
@@ -335,44 +354,63 @@ SKIP_SCHEMA=false
 SKIP_FRONTEND=false
 SKIP_MIGRATION=false
 
+# docker-create / docker-init 是顶层命令,不进入下面的部署流程,直接走 docker 分支
 case "$DEPLOY_MODE" in
-    init)
-        # 首次初始化:全量部署 jar + schema + 前端
+    docker-create)
+        info "=== DEPLOY_MODE=docker-create: 本地容器创建 ==="
+        DOCKER_DIR="$ROOT_DIR/docs/deployment/docker/local-sim"
+        if [ ! -f "$DOCKER_DIR/Dockerfile" ]; then
+            err "未找到 Dockerfile: $DOCKER_DIR/Dockerfile"
+            err "  请确认 docs/deployment/docker/local-sim/ 目录完整"
+            exit 1
+        fi
+        info "构建镜像 myblog-local-sim:latest ..."
+        docker build -t myblog-local-sim:latest "$DOCKER_DIR"
+        # 容器已存在则跳过创建(幂等)
+        if docker ps -a --format '{{.Names}}' | grep -q '^myblog-sim$'; then
+            info "myblog-sim 容器已存在,跳过 docker run"
+            info "  如需重建: docker rm -f myblog-sim 后重跑"
+        else
+            info "创建并启动容器 myblog-sim ..."
+            docker run -d --name myblog-sim \
+                -p 28080:8080 \
+                -p 28000:80 \
+                -v myblog-sim-data:/opt/myblog/db \
+                -v myblog-sim-uploads:/opt/myblog/uploads \
+                myblog-local-sim:latest
+        fi
+        info "✅ myblog-sim 容器已就绪"
+        info "  端口映射: 28080→8080 (后端) / 28000→80 (nginx 前端)"
+        info "  下一步: ./deploy-server.sh docker-init $TAG"
+        exit 0
         ;;
-    full|code)
-        # 全量升级:部署 jar + 前端,保留 DB + 跑增量 SQL
-        ;;
-    frontend)
-        # 只更新前端
-        SKIP_JAR=true
-        SKIP_SCHEMA=true
-        SKIP_MIGRATION=true
-        ;;
-    backend)
-        # 只更新后端
-        SKIP_FRONTEND=true
-        SKIP_MIGRATION=false
-        ;;
-    sql)
-        # 只跑增量 SQL
-        SKIP_JAR=true
-        SKIP_SCHEMA=true
-        SKIP_FRONTEND=true
-        ;;
-    data)
-        # 只导入数据
-        SKIP_JAR=true
-        SKIP_SCHEMA=true
-        SKIP_FRONTEND=true
-        SKIP_MIGRATION=true
+    docker-init)
+        info "=== DEPLOY_MODE=docker-init: 本地容器业务初始化 ==="
+        if ! docker ps -a --format '{{.Names}}' | grep -q '^myblog-sim$'; then
+            err "myblog-sim 容器不存在,请先跑: ./deploy-server.sh docker-create"
+            exit 1
+        fi
+        if [ -z "$TAG" ]; then
+            err "docker-init 需要指定 tag: ./deploy-server.sh docker-init v4.4.0"
+            exit 1
+        fi
+        info "把 deploy-server.sh 拷进容器 ..."
+        docker cp "$0" myblog-sim:/opt/myblog/scripts/deploy-server.sh
+        docker exec myblog-sim bash -c "chmod +x /opt/myblog/scripts/deploy-server.sh"
+        info "在容器内执行部署(容器内 /.dockerenv 自动 LOCAL_SIM=1) ..."
+        docker exec -e GITHUB_REPO="$GITHUB_REPO" myblog-sim \
+            bash -c "cd /opt/myblog/scripts && ./deploy-server.sh $TAG"
+        info "✅ 容器内部署完成"
+        info "  健康检查: curl http://localhost:28080/api/v1/health"
+        exit 0
         ;;
 esac
 
-if [ "$DEPLOY_MODE" = "data" ]; then
-    info "=== 5. Deploying jar / schema / app config ==="
-    info "    DEPLOY_MODE=data, skipping jar/schema/frontend/app config (db only)"
-else
-    info "=== 5. Deploying backend jar ==="
+case "$DEPLOY_MODE" in
+    init|full)
+        # init:首次全量;full:全量升级(保留 DB + 增量 SQL)
+        ;;
+esac
 # 2026-06-22 新增:stop_app 之前清空 redis,避免旧版本写入的 cache (限流计数/token 黑名单/配置缓存)
 #   与新版本 jar 不兼容 (key schema/序列化格式/字段名变更 等). flush_redis 自身有 redis-cli/连通性检测,失败非致命.
 flush_redis
@@ -395,7 +433,7 @@ stop_app() {
 }
 stop_app
 
-# 部署 jar (frontend/sql/data 模式跳过)
+# 部署 jar (init/full 都部署)
 if [ "$SKIP_JAR" = true ]; then
     info "    DEPLOY_MODE=$DEPLOY_MODE, skipping jar deployment"
 else
@@ -429,7 +467,7 @@ fi
 
 # 根据 DEPLOY_MODE 处理 DB
 if [ "$SKIP_SCHEMA" = true ]; then
-    # frontend/sql/data 模式:完全跳过 schema
+    # 完全跳过 schema (init/full 模式都执行 schema 步骤,本分支只在 SKIP_SCHEMA=true 时进入,v4.4.0 已无此场景,保留兜底)
     info "    DEPLOY_MODE=$DEPLOY_MODE, skipping schema (DB untouched)"
 elif [ "$DEPLOY_MODE" = "init" ]; then
     # init 模式:删旧 DB → 全量重建(仅种子数据)
@@ -448,7 +486,7 @@ elif [ "$DEPLOY_MODE" = "init" ]; then
     fi
     info "[OK] SQLite initialized from schema (init mode - seed data only)"
 else
-    # full/code/backend 模式:保留 DB + 跑增量 SQL migration
+    # full 模式:保留 DB + 跑增量 SQL migration (init 模式见上方 init 分支)
     cp "$TMP_DIR/schema-sqlite.sql" "$INSTALL_DIR/schema-sqlite.sql"
     if [ "$LOCAL_SIM" != "1" ]; then
         chown myblog:myblog "$INSTALL_DIR/schema-sqlite.sql"
@@ -777,8 +815,7 @@ fi
 
 # ============= 8.5 数据导入(IMPORT_DB=1 触发)=============
 # 调用 sqlite-import.sh 解密 .enc 并导入到 $DB_FILE
-# DEPLOY_MODE=data 模式强制要求 IMPORT_DB=1(已在顶部矛盾检测)
-# DEPLOY_MODE=code + IMPORT_DB=1:warn 后仍执行(用户显式要求)
+# (v4.4.0: data/code 模式已删除,这两条约束随之移除——full + IMPORT_DB=1 是合法组合)
 # DEPLOY_MODE=full + IMPORT_DB=1:正常执行
 if [ "$IMPORT_DB" = "1" ]; then
     info "=== 8.5 Data import (IMPORT_DB=1) ==="
@@ -825,16 +862,10 @@ if [ "$IMPORT_DB" = "1" ]; then
     fi
 fi
 
-# 关闭 DEPLOY_MODE=data 的 if 块(步骤 5 开启,包裹到 step 8.5)
-fi  # DEPLOY_MODE != "data"
+# (v4.4.0: 'data' 模式已删除,开头的 if/else + 闭合 fi 一并移除)
 
 # ============= 9. nginx 反代 + 静态文件 =============
-# DEPLOY_MODE=data 跳过 nginx 配置(前端没动,nginx 配置也不变)
-if [ "$DEPLOY_MODE" = "data" ]; then
-    info "=== 9. nginx config ==="
-    info "    DEPLOY_MODE=data, skipping nginx config (frontend unchanged)"
-else
-    info "=== 9. Configuring nginx ==="
+info "=== 9. Configuring nginx ==="
 NGINX_CONF="/etc/nginx/conf.d/myblog.conf"
 # 2026-06-22 [FIX] 用 'EOF' (带引号) 禁止 bash 变量展开,避免 set -u 下 \$http_host 等 nginx 变量被当作 bash 变量求值触发 unbound variable
 # nginx 占位符 NGINX_PORT / NGINX_ROOT / NGINX_UPLOADS / NGINX_APP_PORT 在写完后做替换
@@ -926,7 +957,6 @@ else
     systemctl restart nginx
 fi
 info "[OK] nginx configured and started"
-fi  # DEPLOY_MODE != "data" (close step 9 nginx block)
 
 # ============= 10. Redis 健康检查（启动已在 §4.5 完成）=============
 # 2026-06-22 改动:redis 启动逻辑提前到 §4.5,确保 §5 stop_app / flush_redis 可用.

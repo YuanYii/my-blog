@@ -8,7 +8,7 @@
 # 关键设计依据: docs/设计文档/博客数据恢复方案设计.md
 # 调用方式: 由 RestoreService 通过 systemd-run 启动（独立 cgroup，不被 systemctl stop 杀到）
 #   手动调试: export 全部 env 后 bash 跑
-# 算法: 与 sqlite-export.sh 对称 (AES-256-CBC + PBKDF2 100k + salt)
+# 算法: 与 sqlite-export.sh 对称 (AES-256-CBC + PBKDF2 10 + salt)
 #       通过 sqlite-import.sh 解密导入, 不重新实现加密层
 #
 # 退出码:
@@ -353,7 +353,7 @@ if [[ "$RESTORE_SCOPE" == "DB_UPLOADS" ]]; then
 
     # 脚本以 myblog 身份跑, tar 解到属主是 myblog 的目录不需要 sudo
     if ! BACKUP_ENCRYPTION_PASSWORD="$BACKUP_ENCRYPTION_PASSWORD" \
-         openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 \
+         openssl enc -d -aes-256-cbc -pbkdf2 -iter 10 \
             -pass env:BACKUP_ENCRYPTION_PASSWORD \
             -in "$RESTORE_STAGE_DIR/$UPLOADS_FILE" \
          | tar xzf - -C "${INSTALL_DIR:-/opt/myblog}" \

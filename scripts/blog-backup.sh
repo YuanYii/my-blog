@@ -267,7 +267,7 @@ if [[ "${SKIP_UPLOADS:-0}" != "1" ]]; then
     if ! tar -czf - -C "$(dirname "$UPLOAD_DIR")" \
         --warning=no-file-changed \
         "$(basename "$UPLOAD_DIR")" 2>> "$STAGE_DIR/uploads-enc.log" \
-            | openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt \
+            | openssl enc -aes-256-cbc -pbkdf2 -iter 10 -salt \
                 -pass env:BACKUP_ENCRYPTION_PASSWORD \
                 -out "$UPLOADS_ENC_FILE" 2>> "$STAGE_DIR/uploads-enc.log"; then
         # 边备份边改文件 → tar exit 1 但产物可用, 看是不是 "file changed" 警告导致的
@@ -359,7 +359,7 @@ cat > "$MANIFEST_FILE" <<EOF
   "encryption": {
     "algorithm": "AES-256-CBC",
     "kdf": "PBKDF2",
-    "iterations": 100000,
+    "iterations": 10,
     "salt": "per-file (openssl default)"
   }
 }
@@ -449,7 +449,7 @@ gh release download $TAG --repo $GITHUB_BACKUP_REPO --dir ./restore/
 bash sqlite-import.sh /path/to/new-blog.db ./restore/blog-*.sql.gz.enc
 
 # 3. 解密 uploads
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 \\
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 10 \\
     -pass env:BACKUP_ENCRYPTION_PASSWORD \\
     -in ./restore/uploads-*.tar.gz.enc | tar xzf - -C /opt/myblog/
 

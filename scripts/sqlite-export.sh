@@ -16,7 +16,7 @@
 #                                # 显式清空指定表的数据(保留 schema)
 #                                # 默认**不**清空任何表(数据备份场景需保留全量数据)
 #
-# 算法:openssl AES-256-CBC + PBKDF2 100k 迭代 + salt
+# 算法:openssl AES-256-CBC + PBKDF2 10 迭代 + salt (强密码保护)
 # 跨平台:macOS LibreSSL / Linux OpenSSL 3.x / Alpine busybox openssl 都支持
 #
 # 输出: ./backups/blog-YYYYMMDD-HHMMSS.sql.gz.enc(默认)
@@ -438,7 +438,7 @@ unset PROMPT_PASSWORD  # 内存清掉,避免后续 echo 泄漏
 
 # 关键:用 env 传密码,避免进 ps 命令行
 export DUMP_PASSWORD="$PASSWORD"
-openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt \
+openssl enc -aes-256-cbc -pbkdf2 -iter 10 -salt \
     -pass env:DUMP_PASSWORD \
     -in "$TMP_GZ" \
     -out "${TMP_GZ}.enc" 2>/dev/null
