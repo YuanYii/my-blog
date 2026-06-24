@@ -289,6 +289,28 @@ INSERT IGNORE INTO `user` (`id`, `username`, `password_hash`, `nickname`, `role`
 (1, 'admin', '$2a$10$0YSdd8Tf7xcsmAk.05Kn4uEDSUAIT7ukAZqLnUMLrE5Gnd4wj5jEa', 'Corey', 'ADMIN');
 
 -- API 白名单（最长前缀匹配）
+
+-- ============================================================
+-- restore_record（v4.3.0 / REQ-RESTORE-2026-06-20）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `restore_record` (
+  `id`                BIGINT        NOT NULL AUTO_INCREMENT,
+  `status`            VARCHAR(16)   NOT NULL COMMENT 'PENDING/RUNNING/SUCCESS/FAILED/UNKNOWN',
+  `source_record_id`  BIGINT        DEFAULT NULL COMMENT '关联 backup_record.id',
+  `source_tag`        VARCHAR(64)   DEFAULT NULL COMMENT '备份的 GitHub Release tag',
+  `scope`             VARCHAR(16)   NOT NULL COMMENT 'DB_ONLY / DB_UPLOADS',
+  `started_at`        DATETIME      NOT NULL,
+  `finished_at`       DATETIME      DEFAULT NULL,
+  `error_stage`       VARCHAR(32)   DEFAULT NULL COMMENT '失败阶段',
+  `error_message`     TEXT          DEFAULT NULL,
+  `verify_diff`       TEXT          DEFAULT NULL COMMENT '数据完整性校验差异',
+  `operator_id`       BIGINT        DEFAULT NULL,
+  `operator_name`     VARCHAR(64)   DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `idx_restore_started` (`started_at` DESC),
+  INDEX `idx_restore_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- type=public → 放行（GET 任意，写方法按 isPublicWriteAllowed 显式允许）
 -- type=admin  → 必须鉴权
 INSERT IGNORE INTO `api_whitelist` (`path_prefix`, `type`, `enabled`, `description`) VALUES
