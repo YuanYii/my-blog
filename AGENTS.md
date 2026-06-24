@@ -27,7 +27,7 @@
   - `composables/` — `useApi` / `useAuth` / `useAdminApi` / `usePublicApi` / `useDialog` / `useToast` / `useDevice` / `useAdminMeta`
   - `components/` / `plugins/` / `nuxt.config.ts` / `scripts/fetch-routes.js`（build 前拉公开页路由）
 - `scripts/` — 部署/验证/迁移/rebuild（2026-06-22 由 `scripts/` 迁移至根目录）
-  - `deploy-server.sh` — 服务器端一键部署（`DEPLOY_MODE=full|code|data` + `IMPORT_DB=1`）
+  - `deploy-server.sh` — 服务器端一键部署（**v4.4.0：4 种 DEPLOY_MODE** = `init` / `full` / `docker-create` / `docker-init`，外置开关 `IMPORT_DB=1` 灌数据）
   - `publish-release.sh` — 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子）
   - `sqlite-export.sh` — **加密导出** dev db（`AES-256-CBC + PBKDF2 100k`，交互式密码两次输入；产出 `.sql.gz.enc`）
   - `sqlite-import.sh` — **解密导入** 到目标 db（密码一次输入；支持本地 + `--remote user@host` 远端模式；错密码不碰目标 db）
@@ -156,7 +156,7 @@ scp backend/blog-app/target/blog-app.jar myblog@<ecs-ip>:/tmp/
 scp docs/sql/schema-sqlite.sql myblog@<ecs-ip>:/tmp/
 scp scripts/deploy-server.sh myblog@<ecs-ip>:/tmp/
 
-# ECS 一键部署（v4.0.0 起标准方式：DEPLOY_MODE=full/code/data + IMPORT_DB=1 钩子）
+# ECS 一键部署（v4.4.0 起：DEPLOY_MODE=full + 可选 IMPORT_DB=1 钩子）
 sudo DEPLOY_MODE=full bash /opt/myblog/scripts/deploy-server.sh
 
 # 每日 cron rebuild（v2.7.0 配套）
@@ -178,10 +178,10 @@ ssh myblog@<ecs-ip> "sudo bash /opt/myblog/scripts/sqlite-import.sh /opt/myblog/
 
 # 4. publish-release + deploy-server 集成(两个外置开关,默认关)
 EXPORT_DB=1 ./scripts/publish-release.sh          # dev:数据加密导出到 release
-IMPORT_DB=1 sudo ./scripts/deploy-server.sh v3.x.x # prod:自动下载+解密导入
-DEPLOY_MODE=code sudo ./scripts/deploy-server.sh v3.x.x   # 只装代码,不动 db
-DEPLOY_MODE=data IMPORT_DB=1 sudo ./scripts/deploy-server.sh v3.x.x   # 只导入数据,跳过 jar/schema/前端
-# ⚠️ DEPLOY_MODE=data 但 IMPORT_DB=0 → 报错退出(语义矛盾)
+IMPORT_DB=1 sudo DEPLOY_MODE=full ./scripts/deploy-server.sh v3.x.x   # 代码 + 数据一起升级
+DEPLOY_MODE=full sudo ./scripts/deploy-server.sh v3.x.x              # 全量代码升级(默认)
+# v4.4.0:7 模式精简为 4 模式(init/full/docker-create/docker-init);code/frontend/backend/sql/data 已删除
+# 本地 docker 模拟生产: ./scripts/deploy-server.sh docker-create + docker-init vX.Y.Z
 ```
 
 ---
@@ -275,7 +275,7 @@ DEPLOY_MODE=data IMPORT_DB=1 sudo ./scripts/deploy-server.sh v3.x.x   # 只导�
 | `scripts/sudoers-myblog-restore.example` | sudoers 白名单（5 条精确命令，**无通配符**） | 🔴 必读 |
 | `docs/design/博客数据恢复方案设计.md` | 恢复功能设计稿（v5 设计稿，5 轮迭代） | 🟠 重要 |
 | `scripts/publish-release.sh` | 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子） | 🟠 重要 |
-| `scripts/deploy-server.sh` | 服务器端一键部署（`DEPLOY_MODE=full\|code\|data` + `IMPORT_DB=1`） | 🟠 重要 |
+| `scripts/deploy-server.sh` | 服务器端一键部署（v4.4.0：4 种 DEPLOY_MODE = `init` / `full` / `docker-create` / `docker-init`，外置开关 `IMPORT_DB=1` 灌数据） | 🟠 重要 |
 | `docs/changelogs/` | 版本变更记录（v2.0.0 → v2.7.0） | 🟠 重要 |
 | `docs/接口契约审计报告.md` | API 100% 一致 | 🟠 重要 |
 | `AGENTS.md` | **本文件** | 🔴 必读 |
@@ -304,7 +304,7 @@ DEPLOY_MODE=data IMPORT_DB=1 sudo ./scripts/deploy-server.sh v3.x.x   # 只导�
 | 文件 | 位置 | 说明 |
 |---|---|---|
 | `backend/pom.xml` | line 32 `<revision>` | 🔴 唯一入口，改这个其他全跟着同步 |
-| `scripts/deploy-server.sh` | line 7, 26, 27, 28, 29（注释） / line 54, 55（Usage 提示）/ line 641（rollback 提示） | 注释里的 `vX.Y.Z` + 错误提示 |
+| `scripts/deploy-server.sh` | 头部注释（`DEPLOY_MODE` 取值说明 + 版本号引用）/ Usage 段 / rollback 提示 | 注释里的 `vX.Y.Z` + 错误提示（具体行号随脚本迭代变化，以 `grep -n vX.Y.Z scripts/deploy-server.sh` 实际查找为准）|
 | `scripts/publish-release.sh` | line 279（README 模板里的 deploy 例子） | GitHub Release README 解锁用的初始内容 |
 
 **B 类 — 绝对不改的"历史引用"**（破坏它就破坏历史追溯）：

@@ -51,6 +51,15 @@ docker build -t myblog-local-sim:latest .
 
 ### 2.2 启动"假 ECS"
 
+**v4.4.0 起推荐**：用项目根的 `scripts/deploy-server.sh` 一行命令完成 build + run：
+
+```bash
+./scripts/deploy-server.sh docker-create
+# 等价于本节下面的手动 docker build + docker run 两步
+```
+
+**手动命令（escape hatch）**：
+
 ```bash
 docker run -d --name myblog-sim \
   -p 28080:8080 \             # Spring Boot 端口（宿主 28080 → 容器 8080，跟生产 SERVER_PORT 默认值一致）
@@ -72,10 +81,20 @@ docker exec -it myblog-sim entrypoint-helper
 
 ### 2.4 跑一次完整部署（模拟生产）
 
+**v4.4.0 起推荐**：用项目根的 `scripts/deploy-server.sh` 一行命令搞定（自动 docker cp + exec 进容器跑部署）：
+
+```bash
+./scripts/deploy-server.sh docker-init v4.4.0
+GITHUB_REPO=你的-owner/repo ./scripts/deploy-server.sh docker-init v4.4.0
+# 容器内 /.dockerenv 自动 LOCAL_SIM=1,跳 apt/systemd/防火墙
+```
+
+**手动命令（escape hatch）**：
+
 **先把生产 deploy-server.sh 拷进容器**：
 
 ```bash
-docker cp docs/scripts/deploy-server.sh myblog-sim:/opt/myblog/scripts/
+docker cp scripts/deploy-server.sh myblog-sim:/opt/myblog/scripts/
 ```
 
 **进容器跑部署**：
