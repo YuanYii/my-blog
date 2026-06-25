@@ -311,6 +311,26 @@ CREATE TABLE IF NOT EXISTS `restore_record` (
   INDEX `idx_restore_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ============================================================
+-- import_record（2026-06-24 DEV-002，文章批量导入）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `import_record` (
+  `id`              BIGINT        NOT NULL AUTO_INCREMENT,
+  `file_name`       VARCHAR(255)  NOT NULL COMMENT '上传的 ZIP 文件名',
+  `status`          VARCHAR(16)   NOT NULL COMMENT 'PENDING/RUNNING/SUCCESS/FAILED',
+  `total_count`     INT           NOT NULL DEFAULT 0,
+  `success_count`   INT           NOT NULL DEFAULT 0,
+  `fail_count`      INT           NOT NULL DEFAULT 0,
+  `error_message`   TEXT          DEFAULT NULL,
+  `started_at`      DATETIME      NOT NULL,
+  `finished_at`     DATETIME      DEFAULT NULL,
+  `operator_id`     BIGINT        DEFAULT NULL,
+  `operator_name`   VARCHAR(64)   DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `idx_import_started` (`started_at` DESC),
+  INDEX `idx_import_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- type=public → 放行（GET 任意，写方法按 isPublicWriteAllowed 显式允许）
 -- type=admin  → 必须鉴权
 INSERT IGNORE INTO `api_whitelist` (`path_prefix`, `type`, `enabled`, `description`) VALUES

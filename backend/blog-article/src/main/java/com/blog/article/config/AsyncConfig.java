@@ -36,4 +36,22 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * 文章导入专用线程池（2026-06-24 DEV-002）
+     *  - core/max 1：同一时间只跑一个导入任务（避免多 ZIP 并行解压抢内存）
+     *  - 队列容量 16：足够日常导入排队
+     *  - AbortPolicy：队列满直接抛异常给前端（让用户重试,而不是丢任务）
+     */
+    @Bean("articleImportExecutor")
+    public Executor articleImportExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(16);
+        executor.setThreadNamePrefix("article-import-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.initialize();
+        return executor;
+    }
 }

@@ -267,6 +267,28 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_restore_record_running ON restore_record(st
 CREATE INDEX IF NOT EXISTS idx_page_view_visit_date ON page_view(visit_date);
 
 -- ----------------------------------------------------
+-- 13. import_record 文章导入记录（2026-06-24 DEV-002，文章批量导入）
+-- ----------------------------------------------------
+-- 状态机：PENDING → RUNNING → SUCCESS / FAILED
+-- 配套：ImportRecord / ImportRecordMapper / ArticleImportService
+-- 时间由 Java 端 ZoneId UTC+8 填充
+CREATE TABLE IF NOT EXISTS import_record (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_name         VARCHAR(255) NOT NULL,                  -- 上传的 ZIP 文件名
+  status            VARCHAR(16)  NOT NULL,                  -- PENDING/RUNNING/SUCCESS/FAILED
+  total_count       INT          NOT NULL DEFAULT 0,        -- 总文章数（解析后）
+  success_count     INT          NOT NULL DEFAULT 0,        -- 成功导入文章数
+  fail_count        INT          NOT NULL DEFAULT 0,        -- 失败文章数
+  error_message     TEXT,                                   -- 失败详情（前 500 字）
+  started_at        DATETIME     NOT NULL,                  -- 由 Java 显式填
+  finished_at       DATETIME,
+  operator_id       BIGINT,
+  operator_name     VARCHAR(64)
+);
+CREATE INDEX IF NOT EXISTS idx_import_record_started_at ON import_record(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_import_record_status ON import_record(status);
+
+-- ----------------------------------------------------
 -- 11. article_view_log 历史访问日志（v2.5.0 之前的，0 数据保留 schema 兼容）
 -- ----------------------------------------------------
 CREATE TABLE IF NOT EXISTS article_view_log (
@@ -344,13 +366,5 @@ INSERT OR IGNORE INTO api_whitelist (path_prefix, type, enabled, description, cr
   ('/auth/devices', 'admin', 1, '设备管理', datetime('now', 'localtime'), datetime('now', 'localtime')),
   ('/uploads', 'admin', 1, '文件上传（multipart）', datetime('now', 'localtime'), datetime('now', 'localtime'));
 
--- 站点设置（SQLite 无 JSON_OBJECT 函数 → 直接写 JSON 字符串字面量）
-INSERT OR IGNORE INTO site_settings (section, data) VALUES
-  ('profile',     '{"nickname":"Corey","email":"corey@example.com","avatar":"","bio":"个人博客作者","location":""}'),
-  ('blog',        '{"title":"加载中","subtitle":"","description":"","keywords":"","author":""}'),
-  ('social',      '{"github":"","twitter":"","email":"","weibo":"","rss":true}'),
-  ('preferences', '{"theme":"light","language":"zh-CN","timezone":"Asia/Shanghai"}'),
-  ('theme',       '{"primaryColor":"#2f6f5e","accentColor":"#c97b3f","mode":"auto"}'),
-  ('advanced',    '{"enableCache":true,"enableRss":true,"enableSearch":true,"commentModeration":true}'),
-  ('techstack',   '{"groups":[]}'),
-  ('experience',  '{"items":[]}');
+-- 站点设置：不预置种子数据，由用户在管理后台初始化填写
+-- SiteSettingsService 在首次 GET 时会自动创建空默认值

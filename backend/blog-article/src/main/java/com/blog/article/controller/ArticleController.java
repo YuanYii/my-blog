@@ -2,14 +2,23 @@ package com.blog.article.controller;
 
 import com.blog.article.entity.Article;
 import com.blog.article.entity.Category;
+import com.blog.article.entity.ImportRecord;
 import com.blog.article.entity.Tag;
+import com.blog.article.service.ArticleImportService;
 import com.blog.article.service.ArticleService;
 import com.blog.common.PageResult;
 import com.blog.common.Result;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,6 +31,7 @@ import java.util.Map;
 public class ArticleController {
 
     private final ArticleService articleService;
+    private final ArticleImportService articleImportService;
 
     @GetMapping
     public Result<PageResult<Map<String, Object>>> list(
@@ -117,5 +127,43 @@ public class ArticleController {
     @DeleteMapping("/tags/{id}")
     public Result<Void> deleteTag(@PathVariable Long id) {
         return articleService.deleteTag(id);
+    }
+
+    // ============ 2026-06-24 DEV-002：文章导入 ============
+
+    /**
+     * 上传 ZIP 包导入文章（admin）
+     * 由 admin 鉴权（/articles/admin/* 在 ApiWhitelistInterceptor 中要求 admin）
+     */
+    @PostMapping("/admin/import")
+    public Result<Map<String, Object>> importZip(@RequestParam("file") MultipartFile file,
+                                                  HttpServletRequest request) throws IOException {
+        Long id = articleImportService.enqueueImport(file, request);
+        Map<String, Object> data = new HashMap<>();
+        data.put("id", id);
+        return Result.success(data);
+    }
+
+    /** 查询单条导入任务状态 */
+    @GetMapping("/admin/import/{id}")
+    public Result<ImportRecord> getImport(@PathVariable Long id) {
+        return Result.success(articleImportService.getRecord(id));
+    }
+
+    /** 列出最近导入记录（最多 50 条） */
+    @GetMapping("/admin/import")
+    public Result<List<ImportRecord>> listImports(
+            @RequestParam(defaultValue = "20") int limit) {
+        return Result.success(articleImportService.listRecent(limit));
+    }
+
+    /** 下载导入模板 ZIP */
+    @GetMapping("/admin/import/template")
+    public ResponseEntity<byte[]> downloadTemplate() throws IOException {
+        byte[] data = articleImportService.readTemplate();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+        headers.setContentDispositionFormData("attachment", "import-template.zip");
+        return new ResponseEntity<>(data, headers, org.springframework.http.HttpStatus.OK);
     }
 }
