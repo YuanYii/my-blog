@@ -24,6 +24,9 @@ const publishTrend = ref<any[]>([])
 const visitTrend = ref<any[]>([])
 const visitTrend7 = ref<any[]>([])
 const topArticles = ref<any[]>([])
+// 2026-06-24 DEV-001：流量来源从硬编码改真实统计（后端按 referer 域名分组）
+// 后端返回 [{domain, label, count, percentage}]
+const trafficSources = ref<Array<{ domain: string; label: string; count: number; percentage: number }>>([])
 
 const now = new Date()
 const hour = now.getHours()
@@ -43,6 +46,7 @@ const loadAll = async () => {
     visitTrend7.value = res.data?.visitTrend7 || []
     topArticles.value = res.data?.topArticles || []
     lastBackup.value = res.data?.lastBackup || null
+    trafficSources.value = res.data?.trafficSources || []
   } catch {
     kpi.value = {}
   } finally {
@@ -188,18 +192,19 @@ const loadRecent = async () => {
   } catch { /* ignore */ }
 }
 
-// 2026-06-22：services / trafficSources 从硬编码改真实数据
-// - services 改从 /admin/health 拉（见上面 loadHealth + services computed）
-// - trafficSources 暂时仍硬编码——真实流量来源需要 nginx access log 分析或第三方统计，
-//   接入成本与收益不成正比（MVP 阶段仪表盘能展示"有访问"已足够，不需精确占比）。
-//   下一轮评估接入 Plausible/Umami 后再统一替换。
-const trafficSources = [
-  { name: 'Google',    pct: 42, color: 'var(--primary)' },
-  { name: '直接访问',  pct: 28, color: 'var(--accent)' },
-  { name: '百度',      pct: 15, color: '#3b82f6' },
-  { name: 'Twitter',   pct: 9,  color: '#8b5cf6' },
-  { name: '其他',      pct: 6,  color: 'var(--muted)' }
-]
+// 2026-06-24 DEV-001：trafficSources 从硬编码改后端真实统计
+// - 后端 DashboardController + PageViewService.topReferrers 按 page_view.referer 列分组
+// - 返回 [{domain, label, count, percentage}], 上面 loadAll() 填充 trafficSources ref
+// - 颜色按位置循环（最多 5 项,顺序对齐 backend Top N）
+// 调色板：primary / accent / 蓝 / 紫 / 灰
+const trafficColors = ['var(--primary)', 'var(--accent)', '#3b82f6', '#8b5cf6', 'var(--muted)']
+const decoratedTrafficSources = computed(() =>
+  trafficSources.value.map((s, i) => ({
+    name: s.label,
+    pct: s.percentage,
+    color: trafficColors[i % trafficColors.length]
+  }))
+)
 
 // sparkline 图表（仍在此层管理，轻量）
 let sparkCharts: any[] = []
@@ -329,8 +334,11 @@ onBeforeUnmount(() => {
           <AdminCategoryChart ref="categoryChartRef" :category-dist="categoryDist" />
           <div class="dashboard-traffic">
             <div class="panel-header"><h3 class="panel-title">流量来源</h3></div>
-            <div class="traffic-list">
-              <div v-for="s in trafficSources" :key="s.name" class="traffic-row">
+            <div v-if="!decoratedTrafficSources.length" style="padding: 24px 8px; text-align: center; color: var(--muted); font-size: 12px;">
+              暂无访问数据
+            </div>
+            <div v-else class="traffic-list">
+              <div v-for="s in decoratedTrafficSources" :key="s.name" class="traffic-row">
                 <div class="traffic-row-head">
                   <span class="traffic-name">{{ s.name }}</span>
                   <span class="traffic-pct">{{ s.pct }}%</span>

@@ -207,6 +207,127 @@ public class PageViewService {
                 fromDate, limit);
     }
 
+    /**
+     * 流量来源 Top N（2026-06-24 DEV-001 新增）
+     *
+     * 设计：
+     *  - 从 page_view.referer 列提取域名（Java 端处理, 跨方言不写 SQL substr 函数）
+     *  - referer 为 NULL/空/`-`/相对路径/不含 `://` → 归类「直接访问」
+     *  - 域名映射: google.com→Google / baidu.com→百度 / bing.com→Bing / twitter.com|x.com→Twitter / github.com→GitHub
+     *    去掉 www. 前缀再查表, 未知域名按域名本身显示
+     *  - 返回 [{domain, label, count, percentage}], percentage 用浮点除法 (避免 Java int 截断)
+     *  - 跨方言：拉所有 referer 到 Java 聚合, 避免 SQL 方言差异（page_view 表当前最多几千行级别可控）
+     */
+    public List<Map<String, Object>> topReferrers(int days, int limit) {
+        if (days <= 0) days = 30;
+        if (limit <= 0) limit = 5;
+
+        LocalDate fromDate = LocalDate.now().minusDays(days - 1);
+
+        // 跨方言：拉 referer 列表到 Java 端聚合 (避免 SQLite vs MySQL 字符串函数差异)
+        // page_view 表数量级 (个人博客几千行) 可控,Java 内存聚合 OK
+        List<String> referers = jdbc.queryForList(
+                "SELECT referer FROM page_view WHERE visit_date >= ?",
+                String.class, fromDate);
+
+        // 域名 → 计数
+        Map<String, Long> domainCount = new java.util.LinkedHashMap<>();
+        long total = 0L;
+        for (String r : referers) {
+            String domain = extractDomain(r);
+            domainCount.merge(domain, 1L, Long::sum);
+            total++;
+        }
+        if (total == 0L) return new java.util.ArrayList<>();
+
+        // 排序取 Top N
+        List<Map.Entry<String, Long>> sorted = new java.util.ArrayList<>(domainCount.entrySet());
+        sorted.sort((a, b) -> Long.compare(b.getValue(), a.getValue()));
+
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        int n = Math.min(limit, sorted.size());
+        for (int i = 0; i < n; i++) {
+            Map.Entry<String, Long> e = sorted.get(i);
+            String domain = e.getKey();
+            long count = e.getValue();
+            Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("domain", domain);
+            row.put("label", domainLabel(domain));
+            row.put("count", count);
+            row.put("percentage", Math.round((double) count / (double) total * 10000.0) / 100.0);
+            result.add(row);
+        }
+        return result;
+    }
+
+    /**
+     * 从 referer URL 提取域名（去掉 www. 前缀）
+     * referer 为 NULL/空/`-`/相对路径/不含 `://` → "direct"（直接访问）
+     */
+    static String extractDomain(String referer) {
+        if (referer == null) return "direct";
+        String s = referer.trim();
+        if (s.isEmpty() || "-".equals(s)) return "direct";
+        int idx = s.indexOf("://");
+        if (idx < 0) return "direct";
+        String rest = s.substring(idx + 3);
+        // 截到第一个 / 或 ? 或 # 或字符串末尾
+        int cut = rest.length();
+        for (int i = 0; i < rest.length(); i++) {
+            char c = rest.charAt(i);
+            if (c == '/' || c == '?' || c == '#') { cut = i; break; }
+        }
+        String host = rest.substring(0, cut).toLowerCase();
+        // 去端口
+        int colon = host.indexOf(':');
+        if (colon >= 0) host = host.substring(0, colon);
+        // 去 www.
+        if (host.startsWith("www.")) host = host.substring(4);
+        if (host.isEmpty()) return "direct";
+        return host;
+    }
+
+    /**
+     * 域名 → 友好显示名映射
+     * 未知域名兜底显示域名本身（如 example.com）
+     */
+    static String domainLabel(String domain) {
+        if (domain == null || domain.isEmpty() || "direct".equals(domain)) return "直接访问";
+        switch (domain) {
+            case "google.com":
+            case "google.com.hk":
+                return "Google";
+            case "baidu.com":
+                return "百度";
+            case "bing.com":
+                return "Bing";
+            case "duckduckgo.com":
+                return "DuckDuckGo";
+            case "sogou.com":
+                return "搜狗";
+            case "so.com":
+            case "360.cn":
+                return "360 搜索";
+            case "twitter.com":
+            case "x.com":
+                return "Twitter";
+            case "github.com":
+                return "GitHub";
+            case "facebook.com":
+                return "Facebook";
+            case "reddit.com":
+                return "Reddit";
+            case "weibo.com":
+                return "微博";
+            case "zhihu.com":
+                return "知乎";
+            case "v2ex.com":
+                return "V2EX";
+            default:
+                return domain;
+        }
+    }
+
     private static String truncate(String s, int max) {
         if (s == null) return null;
         return s.length() > max ? s.substring(0, max) : s;
