@@ -234,7 +234,7 @@ else
     # v4.2.0 数据备份脚本：admin 后台「数据备份」菜单由后端 ProcessBuilder 调它
     download "blog-backup.sh" || warn "blog-backup.sh download failed (v4.2.0+ data backup feature will not work)"
     download "sqlite-export.sh" || warn "sqlite-export.sh download failed (v4.3.0+ admin data export feature will not work)"
-    download "blog-restore.sh" || warn "blog-restore.sh download failed (v4.3.0+ data restore feature will not work)"
+    # v5.0: blog-restore.sh 已废弃,RestoreExecutor 在同 JVM 内执行恢复,不再需要此脚本
     # IMPORT_DB=1 才尝试下 .enc(可选,不存在说明纯代码发版)
     if [ "$IMPORT_DB" = "1" ]; then
         download "dev-blog-dump.sql.gz.enc" || warn "dev-blog-dump.sql.gz.enc download failed (required when IMPORT_DB=1)"
@@ -261,18 +261,8 @@ else
     warn "blog-backup.sh not in release (v4.2.0+ data backup feature will not work)"
 fi
 
-# v4.3.0+ 数据恢复脚本：deploy-server.sh 部署到 $INSTALL_DIR/scripts/blog-restore.sh
-# 路径固定（RestoreService 写死 /opt/myblog/scripts/blog-restore.sh）
-# 注意：脚本本身用 systemd-run --scope 启才能 stop myblog 不自杀（设计文档 §3.2），
-#   但脚本路径必须先就位才能被 RestoreService 调到。sudoers/myblog-restore.slice 配置
-#   不在本脚本职责范围，需运维手动配（见 scripts/sudoers-myblog-restore.example）。
-if [ -f "$TMP_DIR/blog-restore.sh" ]; then
-    cp "$TMP_DIR/blog-restore.sh" "$INSTALL_DIR/scripts/blog-restore.sh"
-    chmod +x "$INSTALL_DIR/scripts/blog-restore.sh"
-    info "[OK] blog-restore.sh installed to $INSTALL_DIR/scripts/"
-else
-    warn "blog-restore.sh not in release (v4.3.0+ data restore feature will not work)"
-fi
+# v5.0 数据恢复改为同 JVM 进程内执行 (RestoreExecutor),不再需要 blog-restore.sh 脚本
+# 详见 docs/design/博客数据恢复方案设计.md
 
 # v4.3.0+ 数据导出脚本：deploy-server.sh 部署到 $INSTALL_DIR/scripts/sqlite-export.sh
 # 路径固定（BackupService 写死 /opt/myblog/scripts/sqlite-export.sh）
@@ -915,6 +905,10 @@ server {
         #   用 $http_host 而不是 $host:$server_port:前者直接是 HTTP Host 头原值(含端口)，
         #   后者在"浏览器→非标端口(28000)→nginx:80→后端:8080"两次反代场景下永远是 nginx 自己的 80。
         proxy_set_header   X-Forwarded-Host  $http_host;
+        # 2026-06-24 修复：手机浏览器带 Origin 头 → Spring CorsConfig 的
+        # allowedOriginPatterns("*")+allowCredentials(true) 在 SB 2.7 下拒 403。
+        # 前后端同 nginx 同源，proxy 层剥掉 Origin 即可。
+        proxy_set_header   Origin             "";
         proxy_read_timeout 60s;
         client_max_body_size 20m;
     }
