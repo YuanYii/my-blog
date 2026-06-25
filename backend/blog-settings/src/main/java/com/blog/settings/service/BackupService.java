@@ -708,15 +708,19 @@ public class BackupService {
     }
 
     /**
-     * 调 gh release list 拿最近 N 条 release(含 assets)
-     * 走 gh CLI + JSON 输出,避免引入 HTTP 客户端
+     * 调 GitHub REST API 拿最近 N 条 release(含 assets)
+     * 用 curl + REST API 代替 gh release list --json（兼容旧版 gh CLI）
+     * token 通过 env var 注入，不出现在命令行参数（防 ps/proc 泄漏）
      */
     private List<GithubRelease> listGithubReleases(int limit) throws Exception {
-        // gh release list -L N --json tagName,publishedAt,assets
+        // GET /repos/{owner}/{repo}/releases
+        String apiUrl = "https://api.github.com/repos/" + githubBackupRepo + "/releases?per_page=" + limit;
         ProcessBuilder pb = new ProcessBuilder("bash", "-c",
-            "gh release list --repo '" + githubBackupRepo + "' -L " + limit
-            + " --json tagName,publishedAt,assets 2>&1");
-        pb.environment().put("GH_TOKEN", githubToken);
+            "curl -fsSL "
+            + "-H 'Accept: application/vnd.github+json' "
+            + "-H \"Authorization: token ${BACKUP_GITHUB_TOKEN}\" "
+            + "'" + apiUrl + "'");
+        pb.environment().put("BACKUP_GITHUB_TOKEN", githubToken);
         pb.redirectErrorStream(true);
         Process p = pb.start();
         StringBuilder buf = new StringBuilder();
@@ -725,13 +729,13 @@ public class BackupService {
             String line;
             while ((line = br.readLine()) != null) buf.append(line).append('\n');
         }
-        boolean finished = p.waitFor(5, TimeUnit.SECONDS);
+        boolean finished = p.waitFor(10, TimeUnit.SECONDS);
         if (!finished) {
             p.destroyForcibly();
-            throw new IOException("gh release list 超时 (>5s)");
+            throw new IOException("GitHub API 超时 (>10s)");
         }
         if (p.exitValue() != 0) {
-            throw new IOException("gh release list 退出码 " + p.exitValue() + ": " + buf.toString().trim());
+            throw new IOException("GitHub API 失败 退出码 " + p.exitValue() + ": " + buf.toString().trim());
         }
         String json = buf.toString().trim();
         if (json.isEmpty() || "[]".equals(json)) {
@@ -755,13 +759,16 @@ public class BackupService {
             }
         }
         if (manifestAsset == null) return null;
-        // 通过 github raw download URL 拉取（公开 repo 不需要 token; 私有需要 Authorization header）
+        // 用 GitHub API assets 端点 + Accept: application/octet-stream 下载
+        // 私有仓库不能用 /releases/download/ 浏览器路径（GitHub 重定向到 S3 签名 URL 时会剥掉 Authorization header → 403）
+        // asset.url 形如 https://api.github.com/repos/{owner}/{repo}/releases/assets/{id}，不受重定向影响
+        if (manifestAsset.url == null || manifestAsset.url.isEmpty()) return null;
         try {
-            String downloadUrl = "https://github.com/" + githubBackupRepo
-                + "/releases/download/" + rel.tagName + "/manifest.json";
             ProcessBuilder pb = new ProcessBuilder("bash", "-c",
-                "curl -fsSL -H @<(printf '%s' \"Authorization: token ${BACKUP_GITHUB_TOKEN}\") "
-                + "'" + downloadUrl + "'");
+                "curl -fsSL "
+                + "-H 'Accept: application/octet-stream' "
+                + "-H \"Authorization: token ${BACKUP_GITHUB_TOKEN}\" "
+                + "'" + manifestAsset.url + "'");
             pb.environment().put("BACKUP_GITHUB_TOKEN", githubToken);
             Process p = pb.start();
             StringBuilder buf = new StringBuilder();
@@ -782,9 +789,11 @@ public class BackupService {
         }
     }
 
-    /** GitHub Release 元数据（gh CLI JSON 输出反序列化用） */
+    /** GitHub Release 元数据（REST API / gh CLI JSON 输出反序列化用） */
     public static class GithubRelease {
+        @JsonProperty("tag_name")
         public String tagName;
+        @JsonProperty("published_at")
         public String publishedAt;
         public List<GithubAsset> assets;
     }
@@ -793,6 +802,8 @@ public class BackupService {
     public static class GithubAsset {
         public String name;
         public Long size;
+        /** GitHub API 端点，形如 https://api.github.com/repos/{owner}/{repo}/releases/assets/{id} */
+        public String url;
     }
 
     /** 解析 GitHub 时间戳（"2026-06-24T08:00:00Z" → LocalDateTime） */

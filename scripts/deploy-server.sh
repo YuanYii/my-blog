@@ -4,7 +4,7 @@
 # 跑法(root 或 sudo):
 #   curl -L https://raw.githubusercontent.com/OWNER/REPO/main/scripts/deploy-server.sh -o deploy-server.sh
 #   chmod +x deploy-server.sh
-#   sudo ./deploy-server.sh v4.3.0
+#   sudo ./deploy-server.sh v5.0.0
 #
 # ----- LOCAL_SIM 模式（2026-06-19 本地模拟容器用，docs/docker/local-sim）-----
 # 当 LOCAL_SIM=1 时，自动跳过 systemd/apt/防火墙等生产专属步骤，
@@ -65,8 +65,8 @@ err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # 校验
 if [ -z "$TAG" ]; then
-    err "Usage: $0 <tag>  e.g. $0 v4.3.0"
-    err "Or:RELEASE_TAG=v4.3.0 $0"
+    err "Usage: $0 <tag>  e.g. $0 <current-tag>"
+    err "Or:RELEASE_TAG=<tag> $0"
     exit 1
 fi
 if [ -z "$GITHUB_REPO" ] && [ "$LOCAL_SIM" != "1" ]; then
@@ -158,6 +158,25 @@ install_deps() {
                 python3
             ;;
     esac
+
+    # 安装 gh CLI（备份脚本 gh release 需要）
+    if ! command -v gh >/dev/null 2>&1; then
+        info "Installing gh CLI..."
+        if command -v apt-get >/dev/null 2>&1; then
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+                | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg 2>/dev/null \
+                && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+                | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+                && apt-get update -y -qq \
+                && apt-get install -y -qq gh \
+                || warn "gh CLI install failed, backup will fallback to curl+jq"
+        elif command -v yum >/dev/null 2>&1; then
+            yum install -y 'dnf-command(config-manager)' || true
+            yum config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo \
+                && yum install -y gh \
+                || warn "gh CLI install failed, backup will fallback to curl+jq"
+        fi
+    fi
 
     # 验证
     for bin in java sqlite3 redis-server nginx curl lsof; do
@@ -381,7 +400,7 @@ case "$DEPLOY_MODE" in
             exit 1
         fi
         if [ -z "$TAG" ]; then
-            err "docker-init 需要指定 tag: ./deploy-server.sh docker-init v4.4.0"
+            err "docker-init 需要指定 tag: ./deploy-server.sh docker-init <tag>"
             exit 1
         fi
         info "把 deploy-server.sh 拷进容器 ..."
@@ -1037,5 +1056,9 @@ else
     info "                  tail -f $INSTALL_DIR/logs/app.log"
     info "  Restart service:    systemctl restart myblog"
 fi
-info "  Version rollback:    $0 v4.3.0   (specify old tag)"
+info "  Version rollback:    $0 <old-tag>   (specify old tag, current: $TAG)"
+if [ "$LOCAL_SIM" != "1" ] && ! command -v gh >/dev/null 2>&1; then
+    warn "  [WARN] gh CLI not found — backup script will fallback to curl+jq"
+    warn "  Install: curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg"
+fi
 info "=========================================="

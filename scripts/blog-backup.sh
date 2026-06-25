@@ -102,6 +102,7 @@ if [[ "${DRY_RUN:-0}" != "1" ]]; then
         err "BACKUP_GITHUB_TOKEN 未设置(非 DRY_RUN 模式必须,在 /etc/myblog/myblog.env 配置,需要 my-blog-backup 仓库的 repo 权限)"
         exit 10
     fi
+    export GH_TOKEN="$BACKUP_GITHUB_TOKEN"
     if [[ -z "${GITHUB_BACKUP_REPO:-}" ]]; then
         err "GITHUB_BACKUP_REPO 未设置(非 DRY_RUN 模式必须,例 owner/my-blog-backup)"
         exit 10
@@ -144,7 +145,7 @@ if [[ "${DRY_RUN:-0}" != "1" ]]; then
             if command -v apt-get >/dev/null 2>&1; then
                 DEBIAN_FRONTEND=noninteractive apt-get update -qq \
                     && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq jq \
-                    || { err "apt-get install jq 失败"; exit 17; }
+                    || { err "apt-get install jq 失败,请手动安装: sudo apt-get install -y jq"; exit 17; }
             elif command -v apk >/dev/null 2>&1; then
                 apk add --no-cache jq \
                     || { err "apk add jq 失败"; exit 17; }
