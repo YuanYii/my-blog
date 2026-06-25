@@ -74,6 +74,23 @@ const backupPollingOptions = {
   maxFailures: 60
 }
 
+// 备份同步（DEV-003 2026-06-24）
+const syncing = ref(false)
+const handleSync = async () => {
+  if (syncing.value) return
+  syncing.value = true
+  try {
+    const res = await post<any>('/admin/backup/sync', {})
+    const inserted = (res?.data as number) ?? 0
+    $toast.success(`已同步 ${inserted} 条备份`)
+    await fetchList()
+  } catch (e: any) {
+    $toast.error(formatError(e, '同步失败'))
+  } finally {
+    syncing.value = false
+  }
+}
+
 // 触发备份
 const triggering = ref(false)
 // 2026-06-21 v4.2.1 polish: 改用 $dialog.confirm(代替 window.confirm),与全站风格一致
@@ -131,8 +148,15 @@ const restorePollingTask = usePollingTask('restore')
 const restoreFetcherFromBackup = async () => {
   const id = restorePollingTask.state.value.id
   if (id == null) return null
-  const res = await get<any>(`/admin/restore/${id}`)
-  return res?.data || null
+  try {
+    const res = await get<any>(`/admin/restore/${id}`)
+    return res?.data || null
+  } catch (e: any) {
+    if (e?.data?.code === 404) {
+      return { status: 'UNKNOWN' } as any
+    }
+    throw e
+  }
 }
 const restorePollingOptionsForBackup = {
   terminalStatuses: ['SUCCESS', 'FAILED', 'UNKNOWN'],
@@ -377,6 +401,16 @@ onBeforeUnmount(() => {
       </div>
       <div style="display: flex; align-items: center; gap: 12px;">
         <button
+          @click="handleSync"
+          :disabled="syncing"
+          class="btn btn-ghost btn-sm"
+          title="从 GitHub 备份仓库同步最近 3 条 release"
+        >
+          <svg v-if="!syncing" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spin"><circle cx="12" cy="12" r="10" stroke-dasharray="40 60"/></svg>
+          {{ syncing ? '同步中…' : '备份同步' }}
+        </button>
+        <button
           @click="handleTrigger"
           :disabled="triggering || pollingId !== null"
           class="btn-new"
@@ -421,7 +455,7 @@ onBeforeUnmount(() => {
             ({{ (restorePollingTask.state.value.data as any).sourceTag }})
           </span>
           <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
-            服务将停止约 1-5 分钟, 浏览器可能短暂断线
+            v5.0 同进程恢复, 预计 10-60 秒
           </div>
         </div>
         <NuxtLink to="/admin/restore" class="btn btn-sm" style="text-decoration: none;">查看</NuxtLink>

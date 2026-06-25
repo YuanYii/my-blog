@@ -84,4 +84,15 @@ public class BackupController {
         backupService.deleteBackupRecord(id, request);
         return Result.success();
     }
+
+    /**
+     * 2026-06-24 DEV-003 新增：从 GitHub 备份仓库同步最近 3 条 release
+     * 项目初始化场景下用于回填 backup_record（已存在 tag 跳过，天然幂等）
+     */
+    @PostMapping("/sync")
+    public Result<Integer> sync(HttpServletRequest request) {
+        log.info("备份同步触发: operator={}", AuthContext.username(request));
+        int inserted = backupService.syncFromGithub(request);
+        return Result.success(inserted);
+    }
 }

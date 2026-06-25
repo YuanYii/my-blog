@@ -580,6 +580,235 @@ public class BackupService {
         log.info("删除备份记录成功: id={} status={} tag={} operator={}", id, status, tag, username);
     }
 
+    /**
+     * 2026-06-24 DEV-003：从 GitHub 备份仓库同步最近 3 条 release 到本地 backup_record
+     *
+     * 使用场景：项目初始化时本地 backup_record 表为空，无法选择历史备份恢复。
+     * 通过此接口拉取最近 3 条 release 元数据回填 backup_record（status=SUCCESS），
+     * 完成后这些记录就与本地备份一样可在恢复页面被选中走正常恢复流程。
+     *
+     * 实现要点：
+     *  - 复用现有 BACKUP_GITHUB_TOKEN / GITHUB_BACKUP_REPO 配置
+     *  - 复用 gh CLI 模式（项目内已有），不引入 HTTP 客户端
+     *  - selectByTag 不存在才 INSERT（天然幂等）
+     *  - manifest.json 拉取失败不阻塞 sync（db_size / uploads_size 兜底填 0）
+     *
+     * @return 实际新增的 record 数（已存在的 tag 跳过不计）
+     * @throws BusinessException token/repo 未配置或 gh CLI 调用失败
+     */
+    public int syncFromGithub(HttpServletRequest request) {
+        if (githubToken == null || githubToken.isEmpty()) {
+            log.warn("备份同步拒绝: BACKUP_GITHUB_TOKEN 未配置");
+            throw new BusinessException(ResultCode.INTERNAL_ERROR,
+                "BACKUP_GITHUB_TOKEN 未配置,请先在 /etc/myblog/myblog.env 设置");
+        }
+        if (githubBackupRepo == null || githubBackupRepo.isEmpty()) {
+            log.warn("备份同步拒绝: GITHUB_BACKUP_REPO 未配置");
+            throw new BusinessException(ResultCode.INTERNAL_ERROR,
+                "GITHUB_BACKUP_REPO 未配置,例 owner/my-blog-backup");
+        }
+
+        String traceId = org.slf4j.MDC.get(TraceIdUtil.MDC_TRACE_ID);
+        String operatorName = resolveOperatorName(request);
+        Long operatorId = null;
+        Object uid = AuthContext.uid(request);
+        if (uid != null) {
+            try {
+                operatorId = Long.parseLong(uid.toString());
+            } catch (NumberFormatException ignored) {}
+        }
+
+        // 1. 拉最近 3 条 release（gh CLI -L 3 --json 拿结构化数据）
+        List<GithubRelease> releases;
+        try {
+            releases = listGithubReleases(3);
+        } catch (Exception e) {
+            log.warn("备份同步失败: gh release list 调用异常 trace_id={} error={}",
+                traceId, e.getMessage());
+            throw new BusinessException(ResultCode.INTERNAL_ERROR,
+                "GitHub release 列表拉取失败: " + e.getMessage());
+        }
+
+        // 2. 逐条 INSERT（selectByTag 不存在才插）
+        int inserted = 0;
+        for (GithubRelease rel : releases) {
+            if (rel.tagName == null || rel.tagName.isEmpty()) continue;
+            // defense in depth: tagName 来自 GitHub,虽然 release tag 受 owner 控制,
+            // 但 fetchManifestContent 仍通过 bash -c 拼 URL,与 deleteGitHubRelease 对齐安全策略
+            if (!isShellSafe(rel.tagName)) {
+                log.warn("备份同步跳过: tag 含 shell 元字符 tag-len={}", rel.tagName.length());
+                continue;
+            }
+            BackupRecord exist = backupRecordMapper.selectByTag(rel.tagName);
+            if (exist != null) {
+                log.debug("备份同步跳过: tag={} 已存在 record_id={}", rel.tagName, exist.getId());
+                continue;
+            }
+            BackupRecord r = new BackupRecord();
+            r.setTag(rel.tagName);
+            r.setStatus("SUCCESS");
+            LocalDateTime publishedLdt = parseGithubTimestamp(rel.publishedAt);
+            r.setStartedAt(publishedLdt);
+            r.setFinishedAt(publishedLdt);
+            r.setAssetCount(rel.assets == null ? 0 : rel.assets.size());
+            r.setOperatorId(operatorId);
+            r.setOperatorName(operatorName);
+            r.setTraceId(traceId);
+
+            // assetUrls: github release download 直链
+            List<String> urls = new ArrayList<>();
+            if (rel.assets != null) {
+                String downloadBase = "https://github.com/" + githubBackupRepo
+                    + "/releases/download/" + rel.tagName;
+                for (GithubAsset a : rel.assets) {
+                    urls.add(downloadBase + "/" + a.name);
+                }
+            }
+            try {
+                r.setAssetUrls(objectMapper.writeValueAsString(urls));
+            } catch (Exception ignored) {
+                r.setAssetUrls("[]");
+            }
+
+            // manifest.json 拉取（失败兜底 0）
+            long dbSize = 0L, uploadsSize = 0L;
+            String manifestStr = fetchManifestContent(rel);
+            if (manifestStr != null) {
+                r.setManifestJson(manifestStr.length() > 65536
+                    ? manifestStr.substring(0, 65536) + "..." : manifestStr);
+                try {
+                    java.util.Map<?, ?> m = objectMapper.readValue(manifestStr, java.util.Map.class);
+                    Object db = m.get("db");
+                    if (db instanceof java.util.Map) {
+                        Object sz = ((java.util.Map<?, ?>) db).get("size_bytes");
+                        if (sz instanceof Number) dbSize = ((Number) sz).longValue();
+                    }
+                    Object up = m.get("uploads");
+                    if (up instanceof java.util.Map) {
+                        Object sz = ((java.util.Map<?, ?>) up).get("size_bytes");
+                        if (sz instanceof Number) uploadsSize = ((Number) sz).longValue();
+                    }
+                } catch (Exception e) {
+                    log.warn("备份同步: manifest 解析失败 tag={} trace_id={} error={}",
+                        rel.tagName, traceId, e.getMessage());
+                }
+            }
+            r.setDbSize(dbSize);
+            r.setUploadsSize(uploadsSize);
+
+            backupRecordMapper.insert(r);
+            inserted++;
+            log.info("备份同步: 新增 record id={} tag={} operator={}",
+                r.getId(), rel.tagName, operatorName);
+        }
+
+        log.info("备份同步完成: 拉取 {} 条 release,新增 {} 条 record trace_id={} operator={}",
+            releases.size(), inserted, traceId, operatorName);
+        return inserted;
+    }
+
+    /**
+     * 调 gh release list 拿最近 N 条 release(含 assets)
+     * 走 gh CLI + JSON 输出,避免引入 HTTP 客户端
+     */
+    private List<GithubRelease> listGithubReleases(int limit) throws Exception {
+        // gh release list -L N --json tagName,publishedAt,assets
+        ProcessBuilder pb = new ProcessBuilder("bash", "-c",
+            "gh release list --repo '" + githubBackupRepo + "' -L " + limit
+            + " --json tagName,publishedAt,assets 2>&1");
+        pb.environment().put("GH_TOKEN", githubToken);
+        pb.redirectErrorStream(true);
+        Process p = pb.start();
+        StringBuilder buf = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(
+                new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = br.readLine()) != null) buf.append(line).append('\n');
+        }
+        boolean finished = p.waitFor(5, TimeUnit.SECONDS);
+        if (!finished) {
+            p.destroyForcibly();
+            throw new IOException("gh release list 超时 (>5s)");
+        }
+        if (p.exitValue() != 0) {
+            throw new IOException("gh release list 退出码 " + p.exitValue() + ": " + buf.toString().trim());
+        }
+        String json = buf.toString().trim();
+        if (json.isEmpty() || "[]".equals(json)) {
+            return Collections.emptyList();
+        }
+        return objectMapper.readValue(json,
+            new TypeReference<List<GithubRelease>>() {});
+    }
+
+    /**
+     * 从 release.assets 中找 manifest.json 并拉取原文
+     * 拉取失败返回 null（不抛异常,sync 兜底填 0）
+     */
+    private String fetchManifestContent(GithubRelease rel) {
+        if (rel.assets == null) return null;
+        GithubAsset manifestAsset = null;
+        for (GithubAsset a : rel.assets) {
+            if ("manifest.json".equals(a.name)) {
+                manifestAsset = a;
+                break;
+            }
+        }
+        if (manifestAsset == null) return null;
+        // 通过 github raw download URL 拉取（公开 repo 不需要 token; 私有需要 Authorization header）
+        try {
+            String downloadUrl = "https://github.com/" + githubBackupRepo
+                + "/releases/download/" + rel.tagName + "/manifest.json";
+            ProcessBuilder pb = new ProcessBuilder("bash", "-c",
+                "curl -fsSL -H @<(printf '%s' \"Authorization: token ${BACKUP_GITHUB_TOKEN}\") "
+                + "'" + downloadUrl + "'");
+            pb.environment().put("BACKUP_GITHUB_TOKEN", githubToken);
+            Process p = pb.start();
+            StringBuilder buf = new StringBuilder();
+            try (BufferedReader br = new BufferedReader(
+                    new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = br.readLine()) != null) buf.append(line).append('\n');
+            }
+            boolean finished = p.waitFor(5, TimeUnit.SECONDS);
+            if (!finished) {
+                p.destroyForcibly();
+                return null;
+            }
+            if (p.exitValue() != 0) return null;
+            return buf.toString().trim();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** GitHub Release 元数据（gh CLI JSON 输出反序列化用） */
+    public static class GithubRelease {
+        public String tagName;
+        public String publishedAt;
+        public List<GithubAsset> assets;
+    }
+
+    /** GitHub Release Asset 元数据 */
+    public static class GithubAsset {
+        public String name;
+        public Long size;
+    }
+
+    /** 解析 GitHub 时间戳（"2026-06-24T08:00:00Z" → LocalDateTime） */
+    private static LocalDateTime parseGithubTimestamp(String s) {
+        if (s == null || s.isEmpty()) return LocalDateTime.now();
+        try {
+            return java.time.OffsetDateTime.parse(s).toLocalDateTime();
+        } catch (Exception e) {
+            try {
+                return LocalDateTime.parse(s.replace("Z", ""));
+            } catch (Exception e2) {
+                return LocalDateTime.now();
+            }
+        }
+    }
+
     private void markFailed(Long recordId, String stage, String message) {
         BackupRecord r = backupRecordMapper.selectById(recordId);
         if (r == null) return;
