@@ -11,6 +11,8 @@ const { get, put, del } = useAdminApi()
 const route = useRoute()
 const $toast = useToast()
 const $dialog = useDialog()
+// 2026-06-24 BUG-003：审核/删除评论后侧栏「待审评论」数量不刷新
+const { refresh: refreshMeta } = useAdminMeta()
 const filter = ref<number>(0)
 const comments = ref<any[]>([])
 const articles = ref<any[]>([])
@@ -56,6 +58,7 @@ const handleAction = async (c: any, action: 'approve' | 'reject') => {
   try {
     await put(`/comments/${c.id}/status`, { status })
     load()
+    refreshMeta()  // 2026-06-24 BUG-003：审核改了 pendingComments,刷新侧栏
   } catch (e: any) {
     $toast.error('操作失败：' + (e?.data?.message || e?.message))
   }
@@ -76,6 +79,7 @@ const handleDelete = async (c: any) => {
     await del(`/comments/${c.id}`)
     $toast.success('已删除')
     load()
+    refreshMeta()  // 2026-06-24 BUG-003：删除待审评论会减少 pendingComments,刷新侧栏
   } catch (e: any) {
     $toast.error('删除失败：' + (e?.data?.message || e?.message))
   }

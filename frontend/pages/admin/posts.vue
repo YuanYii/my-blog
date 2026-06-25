@@ -9,6 +9,9 @@ const route = useRoute()
 const { get, del, put } = useAdminApi()
 const $toast = useToast()
 const $dialog = useDialog()
+// 2026-06-24 BUG-003：删除文章后侧栏数量不刷新——dashboard.vue 在 loadAll 末尾调了
+// refreshMeta(),但 posts.vue 删除操作完毕后没调,导致侧栏「文章/草稿」陈旧
+const { refresh: refreshMeta } = useAdminMeta()
 
 const articles = ref<any[]>([])
 const total = ref(0)
@@ -93,6 +96,7 @@ const handleDelete = async (a: any) => {
     selected.value = selected.value.filter(id => id !== a.id)
     load()
     loadStats()
+    refreshMeta()  // 2026-06-24 BUG-003：刷新侧栏「文章/草稿」数量
   } catch (e: any) {
     $toast.error('删除失败：' + (e?.data?.message || e?.message || '未知错误'))
   }
@@ -127,6 +131,7 @@ const handleBulkDelete = async () => {
   selected.value = []
   load()
   loadStats()
+  refreshMeta()  // 2026-06-24 BUG-003：批量删除后刷新侧栏
 }
 
 const handleBulkPublish = async () => {
@@ -140,6 +145,7 @@ const handleBulkPublish = async () => {
   selected.value = []
   load()
   loadStats()
+  refreshMeta()  // 2026-06-24 BUG-003：批量发布改了 draftCount,刷新侧栏
 }
 
 const statusLabel = (s: number) => ({ 0: '草稿', 1: '已发布', 2: '已归档' }[s] || '未知')
@@ -157,6 +163,13 @@ const thumb = (a: any) => {
 const categoryName = (id: number) => categories.value.find(c => c.id === id)?.name || '未分类'
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / size.value)))
+
+// 2026-06-24 DEV-002：文章 ZIP 导入对话框开关
+const showImport = ref(false)
+const onImportClose = (refreshed?: boolean) => {
+  showImport.value = false
+  if (refreshed) { load(); loadStats() }
+}
 
 onMounted(async () => {
   await loadCategories()
@@ -176,11 +189,21 @@ onMounted(async () => {
         <h1>文章管理</h1>
         <p>管理所有已发布、草稿和已归档的文章</p>
       </div>
-      <NuxtLink to="/admin/edit" class="btn-new">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-        新建文章
-      </NuxtLink>
+      <div style="display: flex; gap: 8px;">
+        <button @click="showImport = true" class="btn-new" style="background: var(--muted-soft, var(--accent)); color: var(--text);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+          导入
+        </button>
+        <NuxtLink to="/admin/edit" class="btn-new">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          新建文章
+        </NuxtLink>
+      </div>
     </div>
+
+    <!-- 2026-06-24 DEV-002：文章 ZIP 导入对话框 -->
+    <AdminArticleImportDialog v-if="showImport" @close="onImportClose" />
+
 
     <!-- Stats（点击「总文章 / 已发布 / 草稿」筛选下方列表） -->
     <div class="stats-row">
@@ -220,8 +243,12 @@ onMounted(async () => {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input v-model="keyword" @keyup.enter="handleSearch" type="text" placeholder="搜索标题…" />
       </div>
-      <UiDropdownSelector :model-value="filterCategory" :options="[{ label: '全部分类', value: '' }, ...categories.map((c: any) => ({ label: c.name, value: c.id }))]" placeholder="全部分类" @update:model-value="(v: any) => { filterCategory = v; handleStatusFilter() }" />
-      <UiDropdownSelector :model-value="sortBy" :options="[{ label: '最新发布', value: 'newest' }, { label: '最早发布', value: 'oldest' }, { label: '阅读最多', value: 'views' }]" @update:model-value="(v: any) => { sortBy = v; handleSearch() }" />
+      <div class="toolbar-dropdown">
+        <UiDropdownSelector :model-value="filterCategory" :options="[{ label: '全部分类', value: '' }, ...categories.map((c: any) => ({ label: c.name, value: c.id }))]" placeholder="全部分类" @update:model-value="(v: any) => { filterCategory = v; handleStatusFilter() }" />
+      </div>
+      <div class="toolbar-dropdown">
+        <UiDropdownSelector :model-value="sortBy" :options="[{ label: '最新发布', value: 'newest' }, { label: '最早发布', value: 'oldest' }, { label: '阅读最多', value: 'views' }]" @update:model-value="(v: any) => { sortBy = v; handleSearch() }" />
+      </div>
     </div>
 
     <!-- Table -->
@@ -250,7 +277,7 @@ onMounted(async () => {
             <td>
               <div class="post-cell">
                 <div class="post-thumb">{{ thumb(a).emoji }}</div>
-                <div class="post-cell-info">
+                <div class="post-cell-info post-cell-clickable" @click="handleEdit(a)">
                   <div class="post-cell-title">{{ a.title }}</div>
                   <div class="post-cell-meta">/{{ a.slug }}</div>
                 </div>
