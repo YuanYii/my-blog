@@ -271,7 +271,6 @@ DEPLOY_MODE=full sudo ./scripts/deploy-server.sh v3.x.x              # 全量代
 | `scripts/sqlite-export.sh` | dev 加密导出 db（**只支持加密**，无明文兜底） | 🟠 重要 |
 | `scripts/sqlite-import.sh` | prod 解密导入 db（**只支持 .enc**，错密码不碰目标 db） | 🟠 重要 |
 | `scripts/blog-backup.sh` | 备份脚本（db+uploads 加密打包 → 推 GitHub Release） | 🟠 重要 |
-| `scripts/blog-restore.sh` | 恢复脚本（systemd-run --scope 独立 cgroup + myblog 身份，13 步流程） | 🔴 必读 |
 | `scripts/sudoers-myblog-restore.example` | sudoers 白名单（5 条精确命令，**无通配符**） | 🔴 必读 |
 | `docs/design/博客数据恢复方案设计.md` | 恢复功能设计稿（v5 设计稿，5 轮迭代） | 🟠 重要 |
 | `scripts/publish-release.sh` | 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子） | 🟠 重要 |
@@ -294,7 +293,7 @@ DEPLOY_MODE=full sudo ./scripts/deploy-server.sh v3.x.x              # 全量代
 
 ### 12.1 权威源
 - **Maven `<revision>` 是项目唯一权威版本号**（`backend/pom.xml` line 32）
-- 当前 `<revision>` = **4.0.0**
+- 当前 `<revision>` = **5.0.0**
 - Git tag / 部署脚本 / 文档里的所有版本号必须与 `<revision>` **同步**（按 §12.3 工作流）
 
 ### 12.2 版本号引用分类（决定改 vs 不改）
