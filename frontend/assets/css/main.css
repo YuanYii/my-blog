@@ -26,9 +26,11 @@ table { max-width: 100%; }
 :root {
   --bg: #fafaf7;
   --bg-soft: #f3f1ea;
+  --bg-2: #f3f4f6;
   --card: #ffffff;
   --line: #e8e4d8;
   --line-soft: #f0ece0;
+  --border: #e8e4d8;
   --text: #1a1f2e;
   --text-2: #4a5568;
   --muted: #8b8475;
@@ -37,6 +39,7 @@ table { max-width: 100%; }
   --primary-soft: rgba(47, 111, 94, 0.08);
   --accent: #c97b3f;
   --danger: #c2410c;
+  --danger-soft: #fef2f2;
   --success: #16a34a;
   --code-bg: #f7f4ec;
   --code-text: #1a1f2e;
@@ -47,9 +50,11 @@ table { max-width: 100%; }
 .dark {
   --bg: #14171e;
   --bg-soft: #1c2129;
+  --bg-2: #1c2129;
   --card: #1f252f;
   --line: #2a3038;
   --line-soft: #232932;
+  --border: #2a3038;
   --text: #e8e6df;
   --text-2: #a8a59a;
   --muted: #6f6c63;
@@ -58,6 +63,7 @@ table { max-width: 100%; }
   --primary-soft: rgba(95, 176, 154, 0.12);
   --accent: #d99262;
   --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.1);
   --success: #4ade80;
   --code-bg: #1a1f2e;
   --code-text: #e8e6df;
@@ -1321,6 +1327,8 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
   font-family: inherit;
 }
 .toolbar-search input:focus { outline: none; border-color: var(--primary); }
+.toolbar-dropdown { width: 160px; flex-shrink: 0; }
+.toolbar-dropdown :deep(.ds-wrap) { width: 100%; }
 
 .filter-tabs { display: flex; gap: 0; padding: 3px; background: var(--bg-soft); border-radius: 8px; }
 .filter-tab {
@@ -1342,10 +1350,13 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
 }
 .post-thumb.no-cover { background: var(--bg-soft); color: var(--muted); font-size: 16px; }
 .post-cell-info { min-width: 0; flex: 1; }
+.post-cell-clickable { cursor: pointer; }
+.post-cell-clickable:hover .post-cell-title { color: var(--primary); }
 .post-cell-title {
   font-size: 14px; font-weight: 500; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 360px;
+  transition: color 0.15s;
 }
 .post-cell-meta {
   font-size: 11px; color: var(--muted);
@@ -1552,6 +1563,7 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
   .page-head h1 { font-size: 22px; }
   .toolbar { flex-direction: column; align-items: stretch; }
   .toolbar-search { max-width: none; }
+  .toolbar-dropdown { width: 100%; }
   .filter-tabs { overflow-x: auto; }
   .post-cell-title { max-width: 200px; }
   .post-thumb { width: 32px; height: 32px; font-size: 10px; }

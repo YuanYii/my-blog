@@ -64,8 +64,15 @@ const restorePollingId = computed<number | null>(() => restorePollingTask.state.
 const restoreFetcher = async () => {
   const id = restorePollingTask.state.value.id
   if (id == null) return null
-  const res = await get<any>(`/admin/restore/${id}`)
-  return res?.data || null
+  try {
+    const res = await get<any>(`/admin/restore/${id}`)
+    return res?.data || null
+  } catch (e: any) {
+    if (e?.data?.code === 404) {
+      return { status: 'UNKNOWN' } as any
+    }
+    throw e
+  }
 }
 
 const restorePollingOptions = {
@@ -134,10 +141,14 @@ const formatError = (e: any, fallback = '操作失败'): string => {
 }
 
 // ============= 恢复历史状态工具 =============
+// 2026-06-24 OPT-002：五态色值标准化
+//   SUCCESS → success(绿) / FAILED + UNKNOWN → danger(红) / RUNNING → accent(橙)
+//   PENDING / 未匹配 → muted(灰)
 const restoreStatusType = (s: string) => {
   if (s === 'SUCCESS') return 'success'
   if (s === 'FAILED' || s === 'UNKNOWN') return 'danger'
   if (s === 'RUNNING') return 'accent'
+  if (s === 'PENDING') return 'muted'
   return 'muted'
 }
 const restoreStatusLabel = (s: string) => {
@@ -205,7 +216,7 @@ const confirmRestore = async () => {
     })
     const id = res?.data?.id
     if (!id) throw new Error('未返回 record id')
-    $toast.success('恢复任务已创建, 服务将停止约 1-5 分钟, 浏览器可能短暂断线')
+    $toast.success('恢复任务已创建, 预计 10-60 秒, 过程不停服')
     await restorePollingTask.start(id, restoreFetcher, restorePollingOptions)
   } catch (e: any) {
     $toast.error(formatError(e, '触发失败'))
@@ -276,7 +287,7 @@ onBeforeUnmount(() => {
       <div style="display: flex; gap: 10px; align-items: flex-start;">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         <div style="font-size: 13px; line-height: 1.6; color: var(--text-soft);">
-          <strong style="color: var(--text);">数据恢复</strong>: 从下拉框选择一个已成功备份的数据 → 点「数据恢复」 → 服务将停 1-5 分钟 (覆盖式恢复, 期间浏览器可能短暂断线, 自动恢复后会重新连接)。
+          <strong style="color: var(--text);">数据恢复</strong>: 从下拉框选择一个已成功备份的数据 → 点「数据恢复」 → v5.0 同进程不停服, 预计 10-60 秒内完成, 期间浏览器无需断线。
           <br/>恢复会自动备份当前 db 到 .bak 文件, 失败可手动回退。
         </div>
       </div>
@@ -329,7 +340,7 @@ onBeforeUnmount(() => {
         <div class="spin-dot" style="width: 12px; height: 12px;"></div>
         <div>
           <div style="font-size: 14px; font-weight: 500;">恢复任务执行中...</div>
-          <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">服务将停止约 1-5 分钟，请耐心等待</div>
+          <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">同进程内执行, 预计 10-60 秒</div>
         </div>
       </div>
     </div>
@@ -430,7 +441,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div style="color: var(--danger); font-size: 13px; line-height: 1.6; padding: 8px 12px; background: rgba(239, 68, 68, 0.08); border-left: 3px solid var(--danger); border-radius: 4px;">
-            ⚠ 恢复期间服务将停止约 1-5 分钟, 浏览器可能短暂掉线。恢复会自动备份当前 db 到 .bak 文件, 失败可手动回退。
+            ⚠ v5.0 同进程恢复, 预计 10-60 秒内完成, 期间服务不中断。SQLite Online Backup API 原地替换 db, 替换瞬间业务请求可能短暂 SQLITE_BUSY 后自动重试。
           </div>
         </div>
         <div class="modal-footer">
@@ -506,11 +517,37 @@ onBeforeUnmount(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent);
+  background: currentColor;  /* 跟随 badge 文字色,使 badge 切换状态时圆点同步换色 */
+  margin-right: 6px;
   animation: pulse 1s ease-in-out infinite;
 }
 @keyframes pulse {
   0%, 100% { opacity: 0.3; }
   50% { opacity: 1; }
+}
+
+/* 2026-06-24 OPT-002：恢复历史状态 badge 五态色值
+   - backup.vue 的同名 style scoped 只在 backup.vue 生效,restore.vue 无样式 → 用户看到的 badge 是纯文字无底色
+   - 这里照搬 backup.vue:620-639 的色值,保持两页面视觉一致 */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.status-success { background: rgba(34, 197, 94, 0.12);  color: var(--success); }
+.status-danger  { background: rgba(239, 68, 68, 0.12);  color: var(--danger); }
+.status-accent  { background: rgba(201, 123, 63, 0.12); color: var(--accent); }
+.status-muted   { background: var(--bg);                color: var(--muted); }
+.status-badge.clickable {
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+.status-badge.clickable:hover {
+  filter: brightness(0.95);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 </style>
