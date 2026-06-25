@@ -228,7 +228,11 @@ const tick = async (entry: PoolEntry): Promise<void> => {
     const result = await entry.fetcher()
     entry.failures = 0
     entry.interval = entry.options.initialInterval ?? 2000
-    if (!result) return
+    if (!result) {
+      // 记录不存在（可能被 wipe），停止轮询 + 清 localStorage
+      stopEntry(entry)
+      return
+    }
     const newState: PollingTaskState = {
       id: entry.state.value.id,
       status: result.status,

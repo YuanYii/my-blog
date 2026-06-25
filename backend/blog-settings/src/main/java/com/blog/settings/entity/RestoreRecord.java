@@ -14,18 +14,19 @@ import java.time.LocalDateTime;
  *
  * 字段说明：
  *  - status:  PENDING / RUNNING / SUCCESS / FAILED / UNKNOWN
- *      UNKNOWN 给"启动时回填发现孤儿但磁盘上没 result.json"用（v3 新增）
+ *      UNKNOWN 给"JVM 在 RUNNING 中途崩溃,新 JVM 启动 30min 后兜底"用
  *  - sourceRecordId: 关联 backup_record.id（哪个备份被恢复）
- *  - sourceTag: 备份的 GitHub Release tag（崩溃后磁盘只有这个也能找到对应备份）
+ *  - sourceTag: 备份的 GitHub Release tag
  *  - scope: DB_ONLY / DB_UPLOADS
- *  - errorStage: 失败阶段定位 PRECHECK/DOWNLOAD/SHA256/DECRYPT/IMPORT/START/HEALTH/VERIFY/UPLOADS/ORPHAN
- *  - verifyDiff: v3 数据完整性校验差异（manifest 行数 vs 实际）
+ *  - errorStage: 失败阶段定位 DOWNLOAD / VERIFY / DECRYPT / IMPORT / UPLOADS / POSTCHECK / ORPHAN / INTERNAL
+ *  - verifyDiff: 数据完整性校验差异（manifest 行数 vs 实际）
  *
  * 配套：
  *  - RestoreRecordMapper（CRUD + countRunning + findAllRunning）
- *  - RestoreService（双向互斥 + 即发即忘 + systemd-run --scope）
- *  - RestoreStartupReconciler（双轨回填：启动 + @Scheduled(5min)）
- *  - RestoreController（admin API: run / get）
+ *  - RestoreService（双向互斥 + 同 JVM 异步执行）
+ *  - RestoreExecutor（v5 新增,同进程 6 步流水线）
+ *  - RestoreStartupReconciler（v5 极简版:仅 JVM 崩溃孤儿兜底）
+ *  - RestoreController（admin API: run / get / list）
  */
 @Data
 @TableName("restore_record")

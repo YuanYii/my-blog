@@ -12,20 +12,22 @@ import org.springframework.web.bind.annotation.*;
 import javax.servlet.http.HttpServletRequest;
 
 /**
- * 数据恢复管理（REQ-RESTORE-2026-06-20，v4.3.1）
+ * 数据恢复管理（REQ-RESTORE-2026-06-24，v5.0 · 同进程不停服）
  *
- * 设计依据：docs/设计文档/博客数据恢复方案设计.md §5.1
+ * 设计依据：docs/design/博客数据恢复方案设计.md §10
  *
- * API（v4.3.1 删掉 list 端点, 与设计文档一致）：
+ * API：
  *  - POST /api/v1/admin/restore/run   触发恢复（异步, 立即返回 record id）
  *  - GET  /api/v1/admin/restore/{id}  单条详情 + 状态（前端轮询用）
+ *  - GET  /api/v1/admin/restore/list  恢复历史（分页）
  *
  * 鉴权：admin（AdminAuthFilter 已在 /admin/** 路径统一拦截）
  *
  * 流程:
- *  1. POST /run → 建 restore_record(PENDING) → 异步跑 blog-restore.sh
- *  2. 脚本在 myblog-restore.slice 独立 cgroup + myblog 身份运行
- *  3. 脚本完成后写 .result.json → RestoreStartupReconciler 回填状态
+ *  1. POST /run → 建 restore_record(PENDING) → @Async 触发 RestoreExecutor
+ *  2. RestoreExecutor 在同 JVM 内顺序执行 6 步:
+ *     DOWNLOAD → VERIFY → DECRYPT → IMPORT (SQLite Online Backup) → UPLOADS → POSTCHECK
+ *  3. 全程同步推进 record 状态 (PENDING → RUNNING → SUCCESS/FAILED),无外部脚本/无 JVM 重启
  *  4. 前端轮询 GET /{id} 看到 SUCCESS / FAILED / UNKNOWN
  */
 @Slf4j

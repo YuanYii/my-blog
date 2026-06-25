@@ -264,16 +264,7 @@ fi
 cp "$ROOT_DIR/scripts/blog-backup.sh"      "$STAGE_DIR/assets/blog-backup.sh"
 chmod +x "$STAGE_DIR/assets/blog-backup.sh"
 
-# blog-restore.sh v4.3.0+ 数据恢复脚本（admin 后台点"恢复"时由 RestoreService systemd-run --scope 调）
-# 首装后 deploy-server.sh 必须把脚本复制到 /opt/myblog/scripts/（生产路径硬编码在 RestoreService）
-if [ ! -f "$ROOT_DIR/scripts/blog-restore.sh" ]; then
-    err "$ROOT_DIR/scripts/blog-restore.sh 不存在，无法发布"
-    err "  （v4.3.0+ admin 后台数据恢复功能由后端 RestoreService 调此脚本，发布包里必须带）"
-    err "  注意：脚本本身用 systemd-run --scope 启才能 stop myblog 不自杀，但脚本路径必须先就位"
-    exit 1
-fi
-cp "$ROOT_DIR/scripts/blog-restore.sh"     "$STAGE_DIR/assets/blog-restore.sh"
-chmod +x "$STAGE_DIR/assets/blog-restore.sh"
+# v5.0 数据恢复改为同 JVM 进程内执行 (RestoreExecutor),不再打包 blog-restore.sh
 
 # ============= 4.6 数据导出(可选,EXPORT_DB=1 触发)=============
 # 把 dev blog.db 加密导出到 staging(随 release 发布)
@@ -309,7 +300,7 @@ fi
 # 计算每个 asset 的 sha256(包含可选的 .enc)
 info "生成 SHA256SUMS..."
 cd "$STAGE_DIR/assets"
-SUM_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh blog-restore.sh"
+SUM_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh"
 [ -f dev-blog-dump.sql.gz.enc ] && SUM_FILES="$SUM_FILES dev-blog-dump.sql.gz.enc"
 shasum -a 256 $SUM_FILES > SHA256SUMS 2>/dev/null || \
     sha256sum $SUM_FILES > SHA256SUMS
@@ -318,7 +309,7 @@ cd "$ROOT_DIR"
 # 打 zip 冷部署包
 BUNDLE="deploy-bundle-${TAG}.zip"
 cd "$STAGE_DIR/assets"
-ZIP_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh blog-restore.sh SHA256SUMS"
+ZIP_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh SHA256SUMS"
 [ -f dev-blog-dump.sql.gz.enc ] && ZIP_FILES="$ZIP_FILES dev-blog-dump.sql.gz.enc"
 zip -q "$BUNDLE" $ZIP_FILES
 cd "$ROOT_DIR"
@@ -417,7 +408,6 @@ upload_one "$STAGE_DIR/assets/deploy-server.sh"        "deploy-server.sh"
 upload_one "$STAGE_DIR/assets/sqlite-import.sh"        "sqlite-import.sh"
 upload_one "$STAGE_DIR/assets/sqlite-export.sh"        "sqlite-export.sh"
 upload_one "$STAGE_DIR/assets/blog-backup.sh"          "blog-backup.sh"
-upload_one "$STAGE_DIR/assets/blog-restore.sh"         "blog-restore.sh"
 # 可选:加密的 db dump(EXPORT_DB=1 时存在)
 [ -f "$STAGE_DIR/assets/dev-blog-dump.sql.gz.enc" ] && \
     upload_one "$STAGE_DIR/assets/dev-blog-dump.sql.gz.enc" "dev-blog-dump.sql.gz.enc"

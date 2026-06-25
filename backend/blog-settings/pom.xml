@@ -56,5 +56,20 @@
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- 2026-06-24 v5.0: RestoreExecutor 同进程恢复需要 SQLite Online Backup API
+             版本与 blog-app/pom.xml 一致(3.45.0.0) -->
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>3.45.0.0</version>
+        </dependency>
+
+        <!-- 2026-06-24 v5.0: RestoreExecutor uploads 解压使用 commons-compress 处理 tar.gz -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>1.21</version>
+        </dependency>
     </dependencies>
 </project>

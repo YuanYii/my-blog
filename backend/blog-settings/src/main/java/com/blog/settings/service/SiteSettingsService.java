@@ -193,6 +193,28 @@ public class SiteSettingsService {
         }
     }
 
+    /**
+     * 清除全部 section 的 Redis 缓存（数据恢复后调用）。
+     * 恢复后 SQLite 已替换为备份数据，但 Redis 仍持有旧值（TTL 5min）。
+     * 主动 DEL 让下次读强制走 DB，保证设置立即生效。
+     */
+    public void evictAllCaches() {
+        List<String> sections = Arrays.asList(
+            SECTION_BLOG, SECTION_SOCIAL, SECTION_PREFERENCES,
+            SECTION_THEME, SECTION_ADVANCED, SECTION_TECHSTACK, SECTION_EXPERIENCE
+        );
+        int evicted = 0;
+        for (String section : sections) {
+            try {
+                Boolean deleted = redis.delete(CACHE_KEY_PREFIX + section);
+                if (Boolean.TRUE.equals(deleted)) evicted++;
+            } catch (Exception e) {
+                log.warn("[site_settings] evictAllCaches 失败: section={} err={}", section, e.getMessage());
+            }
+        }
+        log.info("[site_settings] 已清除 {}/{} 个 section 缓存（数据恢复后同步）", evicted, sections.size());
+    }
+
     /** DB 直查（不走缓存） */
     private SiteSettings getRaw(String section) {
         QueryWrapper<SiteSettings> qw = new QueryWrapper<>();
