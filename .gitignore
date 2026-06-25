@@ -90,6 +90,9 @@ docs/scripts/*.env.local
 *.swp
 *.swo
 **/.DS_Store
+.DS_Store
+__MACOSX/
+._*
 
 # 日志
 *.log
