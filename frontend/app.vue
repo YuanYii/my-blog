@@ -18,6 +18,13 @@ const blogShared = useState<any>('site-blog-data', () => blogRes.value?.data || 
 watch(blogRes, (v) => { blogShared.value = v?.data || {} }, { immediate: true })
 const blog = blogShared
 
+// 2026-06-27 DEV-001：站点主题（theme）落地——读取后注入 CSS 变量与 dark class / font class
+useSiteTheme()
+// 2026-06-27 DEV-002：站点偏好（language / timezone / density / codeTheme）落地
+useSitePreferences()
+// 2026-06-28 OPT-001/002（autopush）：站点能力开关显隐（enableRss / enableSearch）
+useSiteFlags()
+
 // 让 <title> 跟 blog.title 联动；description 用 computed 覆盖 nuxt.config.ts 里的静态默认值
 const siteTitle = computed(() => blog.value?.title || '加载中')
 const siteDesc = computed(() => blog.value?.description || '后端工程师的博客 - 技术、读书、生活')
