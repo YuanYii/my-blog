@@ -9,12 +9,12 @@
         <span class="font-serif-display text-lg">{{ blog?.title || '加载中' }}</span>
       </NuxtLink>
 
-      <!-- 桌面端导航菜单 -->
+      <!-- 桌面端导航菜单（2026-06-27 DEV-002：i18n 化，由 useI18n 驱动） -->
       <div class="hidden md:flex items-center gap-1">
-        <NuxtLink to="/" class="px-3 py-1.5 rounded-md text-sm transition-colors" style="color: var(--color-text-2);" active-class="active-link">首页</NuxtLink>
-        <NuxtLink to="/archives" class="px-3 py-1.5 rounded-md text-sm transition-colors" style="color: var(--color-text-2);" active-class="active-link">归档</NuxtLink>
-        <NuxtLink to="/tags" class="px-3 py-1.5 rounded-md text-sm transition-colors" style="color: var(--color-text-2);" active-class="active-link">标签</NuxtLink>
-        <NuxtLink to="/about" class="px-3 py-1.5 rounded-md text-sm transition-colors" style="color: var(--color-text-2);" active-class="active-link">关于</NuxtLink>
+        <NuxtLink to="/" class="px-3 py-1.5 rounded-md text-sm transition-colors" style="color: var(--color-text-2);" active-class="active-link">{{ t('nav.home') }}</NuxtLink>
+        <NuxtLink to="/archives" class="px-3 py-1.5 rounded-md text-sm transition-colors" style="color: var(--color-text-2);" active-class="active-link">{{ t('nav.archives') }}</NuxtLink>
+        <NuxtLink to="/tags" class="px-3 py-1.5 rounded-md text-sm transition-colors" style="color: var(--color-text-2);" active-class="active-link">{{ t('nav.tags') }}</NuxtLink>
+        <NuxtLink to="/about" class="px-3 py-1.5 rounded-md text-sm transition-colors" style="color: var(--color-text-2);" active-class="active-link">{{ t('nav.about') }}</NuxtLink>
       </div>
 
       <div class="flex items-center gap-2">
@@ -30,6 +30,39 @@
           <!-- 菜单展开状态：显示关闭图标 -->
           <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
+
+        <!-- 2026-06-28 OPT-002（autopush）：搜索入口，按 advanced.enableSearch 显隐 -->
+        <div v-if="siteFlags.enableSearch" class="relative" ref="searchRef">
+          <button
+            class="w-9 h-9 rounded-md flex items-center justify-center transition-colors"
+            style="color: var(--color-text-2);"
+            @click="toggleSearch"
+            :aria-expanded="isSearchOpen"
+            aria-label="搜索"
+            title="搜索"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </button>
+          <Transition name="search-pop">
+            <div
+              v-if="isSearchOpen"
+              class="absolute right-0 top-11 w-72 rounded-lg border shadow-lg p-3"
+              style="background: var(--card); border-color: var(--color-line); z-index: 60;"
+            >
+              <form @submit.prevent="onSearchSubmit" class="flex items-center gap-2">
+                <input
+                  ref="searchInputRef"
+                  v-model="searchKeyword"
+                  type="search"
+                  class="form-control flex-1"
+                  placeholder="搜索文章…"
+                  autocomplete="off"
+                />
+                <button type="submit" class="btn btn-primary btn-sm">搜索</button>
+              </form>
+            </div>
+          </Transition>
+        </div>
 
         <button class="w-9 h-9 rounded-md flex items-center justify-center transition-colors" style="color: var(--color-text-2);" @click="toggleTheme" aria-label="切换主题">
           <svg v-if="!isDark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
@@ -50,13 +83,15 @@
         style="background: var(--card); border-color: var(--color-line); z-index: 49;"
       >
         <div class="max-w-5xl mx-auto px-4 py-2 flex flex-col gap-1">
-          <NuxtLink to="/" class="mobile-menu-item" @click="closeMenu">首页</NuxtLink>
-          <NuxtLink to="/archives" class="mobile-menu-item" @click="closeMenu">归档</NuxtLink>
-          <NuxtLink to="/tags" class="mobile-menu-item" @click="closeMenu">标签</NuxtLink>
-          <NuxtLink to="/about" class="mobile-menu-item" @click="closeMenu">关于</NuxtLink>
+          <NuxtLink to="/" class="mobile-menu-item" @click="closeMenu">{{ t('nav.home') }}</NuxtLink>
+          <NuxtLink to="/archives" class="mobile-menu-item" @click="closeMenu">{{ t('nav.archives') }}</NuxtLink>
+          <NuxtLink to="/tags" class="mobile-menu-item" @click="closeMenu">{{ t('nav.tags') }}</NuxtLink>
+          <NuxtLink to="/about" class="mobile-menu-item" @click="closeMenu">{{ t('nav.about') }}</NuxtLink>
+          <!-- 2026-06-28 OPT-002：手机端下拉菜单也补一个搜索入口 -->
+          <NuxtLink v-if="siteFlags.enableSearch" to="/search" class="mobile-menu-item" @click="closeMenu">搜索</NuxtLink>
           <template v-if="isApprovedDevice">
             <div class="my-1 border-t" style="border-color: var(--color-line);"></div>
-            <NuxtLink to="/admin/login" class="mobile-menu-item" @click="closeMenu">后台管理</NuxtLink>
+            <NuxtLink to="/admin/login" class="mobile-menu-item" @click="closeMenu">{{ t('nav.admin') }}</NuxtLink>
           </template>
         </div>
       </div>
@@ -69,6 +104,12 @@
 const { request } = usePublicApi()
 const blogRef = useState<any>('site-blog-data', () => ({}))
 const blog = computed(() => blogRef.value || {})
+
+// 2026-06-27 DEV-002：i18n
+const { t } = useI18n()
+
+// 2026-06-28 OPT-001/002（autopush）：站点能力开关（enableRss / enableSearch）
+const { flags: siteFlags } = useSiteFlags()
 
 // 后台管理入口：已授权设备才显示
 const { deviceId } = useDevice()
@@ -89,6 +130,7 @@ onMounted(async () => {
 // 移动端汉堡菜单
 const isMenuOpen = ref(false)
 const route = useRoute()
+const router = useRouter()
 
 const toggleMenu = () => { isMenuOpen.value = !isMenuOpen.value }
 const closeMenu = () => { isMenuOpen.value = false }
@@ -105,6 +147,43 @@ onMounted(() => {
     }
   })
 })
+
+// 2026-06-28 OPT-002（autopush）：搜索弹层
+const isSearchOpen = ref(false)
+const searchKeyword = ref('')
+const searchRef = ref<HTMLElement | null>(null)
+const searchInputRef = ref<HTMLInputElement | null>(null)
+
+const toggleSearch = () => {
+  isSearchOpen.value = !isSearchOpen.value
+  if (isSearchOpen.value) {
+    // 展开后聚焦输入框（nextTick 等 transition 完成）
+    nextTick(() => searchInputRef.value?.focus())
+  }
+}
+const closeSearch = () => { isSearchOpen.value = false }
+
+const onSearchSubmit = () => {
+  const q = searchKeyword.value.trim()
+  if (!q) return
+  closeSearch()
+  router.push({ path: '/search', query: { q } })
+}
+
+if (import.meta.client) {
+  onMounted(() => {
+    // 点击搜索弹层外区域关闭
+    document.addEventListener('click', (e) => {
+      if (isSearchOpen.value && searchRef.value && !searchRef.value.contains(e.target as Node)) {
+        closeSearch()
+      }
+    })
+    // ESC 关闭搜索弹层
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isSearchOpen.value) closeSearch()
+    })
+  })
+}
 
 // 默认深色
 const isDark = ref(true)
@@ -160,5 +239,16 @@ onMounted(() => {
 .menu-slide-leave-to {
   opacity: 0;
   transform: translateY(-8px);
+}
+
+/* 2026-06-28 OPT-002：搜索弹层过渡 */
+.search-pop-enter-active,
+.search-pop-leave-active {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.search-pop-enter-from,
+.search-pop-leave-to {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
 }
 </style>
