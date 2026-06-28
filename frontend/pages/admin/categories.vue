@@ -13,6 +13,11 @@ const editing = ref<any | null>(null)
 const form = reactive({ name: '', slug: '', description: '', sort: 0, visible: 1 })
 const showModal = ref(false)
 
+const closeModal = () => {
+  showModal.value = false
+  editing.value = null
+}
+
 const load = async () => {
   loading.value = true
   try {
@@ -43,11 +48,6 @@ const startEdit = (c: any) => {
   showModal.value = true
 }
 
-const closeModal = () => {
-  showModal.value = false
-  editing.value = null
-}
-
 // [Bug fix 2026-06-13] handleSave：补 try/catch，后端返回 1002(slug 重复)/400 时 alert 给用户
 // 2026-06-16 改造：alert → $toast
 const handleSave = async () => {
@@ -65,6 +65,16 @@ const handleSave = async () => {
     $toast.error('保存失败：' + (e?.data?.message || e?.message || '未知错误'))
   }
 }
+
+// 2026-06-28 v5.0.0 DEV-001：内联 modal 键盘快捷键（Esc 取消 / Enter 保存）
+// 必须在 closeModal/handleSave 声明之后再调用（TypeScript 严格顺序要求）
+const modalConfirmButtonRef = ref<HTMLButtonElement | null>(null)
+useModalKeyboard({
+  open: showModal,
+  onCancel: closeModal,
+  onConfirm: handleSave,
+  confirmButtonRef: modalConfirmButtonRef
+})
 
 // [Bug fix 2026-06-13]
 // 1) 确认文案修正：后端 deleteCategory 在该分类下仍有文章时会返回 1004 错误并拒绝删除，
@@ -214,7 +224,7 @@ onMounted(load)
         </div>
         <div class="modal-footer">
           <button @click="closeModal" class="btn btn-ghost btn-sm">取消</button>
-          <button @click="handleSave" class="btn btn-primary btn-sm">保存</button>
+          <button @click="handleSave" ref="modalConfirmButtonRef" class="btn btn-primary btn-sm">保存</button>
         </div>
       </div>
     </div>

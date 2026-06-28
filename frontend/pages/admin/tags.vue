@@ -67,6 +67,16 @@ const handleCreate = async () => {
   }
 }
 
+// 2026-06-28 v5.0.0 DEV-001：内联 modal 键盘快捷键（Esc 取消 / Enter 创建）
+// 必须在 closeModal/handleCreate 声明之后再调用（TypeScript 严格顺序要求）
+const tagModalConfirmButtonRef = ref<HTMLButtonElement | null>(null)
+useModalKeyboard({
+  open: showModal,
+  onCancel: closeModal,
+  onConfirm: handleCreate,
+  confirmButtonRef: tagModalConfirmButtonRef
+})
+
 // [Bug fix 2026-06-13] handleDelete：补 try/catch
 // 2026-06-16 改造：confirm → $dialog.confirm，alert → $toast
 const handleDelete = async (t: any) => {
@@ -192,7 +202,7 @@ onMounted(load)
         </div>
         <div class="modal-footer">
           <button @click="closeModal" class="btn btn-ghost btn-sm">取消</button>
-          <button @click="handleCreate" class="btn btn-primary btn-sm">创建</button>
+          <button @click="handleCreate" ref="tagModalConfirmButtonRef" class="btn btn-primary btn-sm">创建</button>
         </div>
       </div>
     </div>

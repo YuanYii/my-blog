@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 全局确认 / 输入对话框（替代浏览器原生 confirm / prompt）
 // 2026-06-16 新增：与 toast 配合，所有 admin 页面统一使用。
+// 2026-06-28 v5.0.0 DEV-001：新增 Enter 触发确认 + 自动聚焦主按钮
 //
 // 渲染逻辑：
 // - 用 defineModel 接收 v-model:open（父组件控制显示）
@@ -9,6 +10,14 @@
 // 两种变体：
 // - confirm 模式：纯文本 + 确认/取消按钮
 // - prompt 模式：额外 input 输入框（v-model:value 双向绑）
+//
+// 键盘行为（v5.0.0+）：
+// - Esc → 取消（handleCancel）
+// - Enter → 确认（handleConfirm），但排除 IME composing（中文/日文输入法回车上屏）+ Shift+Enter
+//   文本输入框中 Enter 也走原生行为（让用户能在 prompt 模式直接回车提交）—— 这与全局 Enter 监听
+//   不冲突，因为文本框的 @keyup.enter 已经在原位置处理；窗口级 keydown 监听主要服务于「焦点在
+//   确认/取消按钮或非输入元素」时的场景（用户 Tab 到主按钮后直接回车）
+// - 打开时：confirm 模式自动聚焦「确定」按钮；prompt 模式聚焦 input（input 已有 autofocus）
 
 const props = defineProps<{
   open: boolean
@@ -31,9 +40,18 @@ const emit = defineEmits<{
 }>()
 
 const inputValue = ref(props.promptDefault || '')
+const confirmButtonRef = ref<HTMLButtonElement | null>(null)
 
-watch(() => props.open, (v) => {
-  if (v) inputValue.value = props.promptDefault || ''
+watch(() => props.open, async (v) => {
+  if (v) {
+    inputValue.value = props.promptDefault || ''
+    await nextTick()
+    // confirm 模式：自动聚焦「确定」按钮（让 Enter 直接命中主按钮）
+    // prompt 模式：input 已有 autofocus 标签，让浏览器把焦点给 input
+    if (!props.prompt) {
+      confirmButtonRef.value?.focus()
+    }
+  }
 })
 
 const handleConfirm = () => {
@@ -47,9 +65,23 @@ const handleCancel = () => {
   emit('update:open', false)
 }
 
-// ESC 关闭
+// 2026-06-28 v5.0.0 DEV-001：增加 Enter 触发确认逻辑
+// 注意：用 keydown 而非 keyup —— keydown 触发在 input 的 @keyup.enter 之前
+// IME composing 状态（中文/日文输入法回车上屏）不触发；Shift+Enter 不触发（保留给将来多行输入）
+// 文本输入元素中的 Enter 也不拦截（让原生回车提交表单行为保留，对应需求"不影响表单内回车"）
 const onKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && props.open) handleCancel()
+  if (!props.open) return
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    handleCancel()
+  } else if (e.key === 'Enter' && !e.isComposing && !e.shiftKey) {
+    const target = e.target as HTMLElement | null
+    // 文本输入/可编辑元素中的回车 → 让浏览器/表单默认行为接管
+    // （prompt 模式 input 已有 @keyup.enter=handleConfirm；非 prompt 模式没有 input）
+    if (target?.tagName === 'TEXTAREA' || target?.isContentEditable) return
+    e.preventDefault()
+    handleConfirm()
+  }
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
@@ -81,6 +113,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <div class="dialog-footer">
               <button @click="handleCancel" class="btn btn-ghost">{{ cancelText || '取消' }}</button>
               <button
+                ref="confirmButtonRef"
                 @click="handleConfirm"
                 class="btn"
                 :class="danger ? 'btn-danger' : 'btn-primary'"
@@ -164,6 +197,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   justify-content: flex-end;
   padding: 12px 24px 20px;
   border-top: 1px solid var(--line-soft);
+}
+
+/* 2026-06-28 v5.0.0 DEV-001：主按钮聚焦样式（键盘用户能看到当前焦点位置） */
+.btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.btn-danger:focus-visible {
+  outline-color: var(--danger);
 }
 
 /* 过渡 */

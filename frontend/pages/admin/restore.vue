@@ -230,6 +230,22 @@ const cancelRestore = () => {
   restoreDialog.value = false
 }
 
+// 2026-06-28 v5.0.0 DEV-001：恢复 modal 键盘快捷键（Esc 取消 / Enter 确认恢复）
+const restoreConfirmButtonRef = ref<HTMLButtonElement | null>(null)
+const restoreErrorConfirmButtonRef = ref<HTMLButtonElement | null>(null)
+useModalKeyboard({
+  open: restoreDialog,
+  onCancel: cancelRestore,
+  onConfirm: confirmRestore,
+  confirmButtonRef: restoreConfirmButtonRef
+})
+// 失败详情弹框（仅关闭按钮，无 confirm 配对）—— 只挂 Esc，不挂 Enter
+useModalKeyboard({
+  open: restoreErrorDialog,
+  onCancel: closeRestoreErrorDialog,
+  confirmButtonRef: restoreErrorConfirmButtonRef
+})
+
 // 订阅恢复任务状态 — 终态时弹 Toast + 刷新历史列表
 // 必须在 setup() 顶层调用（不在 onMounted 内）, onScopeDispose 才能正确触发
 // usePollingTask 内部已用 lastTerminalNotified 防多订阅者重复弹 Toast
@@ -446,7 +462,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="modal-footer">
           <button @click="cancelRestore" class="btn btn-ghost btn-sm">取消</button>
-          <button @click="confirmRestore" class="btn btn-danger btn-sm">确认恢复</button>
+          <button @click="confirmRestore" ref="restoreConfirmButtonRef" class="btn btn-danger btn-sm">确认恢复</button>
         </div>
       </div>
     </div>
@@ -497,7 +513,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="modal-footer">
-          <button @click="closeRestoreErrorDialog" class="btn btn-ghost btn-sm">关闭</button>
+          <button @click="closeRestoreErrorDialog" ref="restoreErrorConfirmButtonRef" class="btn btn-ghost btn-sm">关闭</button>
         </div>
       </div>
     </div>

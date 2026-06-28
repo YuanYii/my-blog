@@ -208,6 +208,14 @@ const closeErrorDialog = () => {
   errorDialogItem.value = null
 }
 
+// 2026-06-28 v5.0.0 DEV-001：失败详情弹框只挂 Esc（无 confirm 配对）
+const backupErrorConfirmButtonRef = ref<HTMLButtonElement | null>(null)
+useModalKeyboard({
+  open: errorDialog,
+  onCancel: closeErrorDialog,
+  confirmButtonRef: backupErrorConfirmButtonRef
+})
+
 // ============= 删除按钮（任务 2）=============
 // 三态分支：
 //  PENDING / RUNNING → UI 禁用 + tooltip（后端 3002 兜底）
@@ -617,7 +625,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="modal-footer">
-          <button @click="closeErrorDialog" class="btn btn-ghost btn-sm">关闭</button>
+          <button @click="closeErrorDialog" ref="backupErrorConfirmButtonRef" class="btn btn-ghost btn-sm">关闭</button>
         </div>
       </div>
     </div>
