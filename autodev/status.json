@@ -1,45 +1,45 @@
 {
-  "RUN": "20260624",
+  "RUN": "20260628",
   "stages": {
     "Stage_1": {
-      "status": "success",
-      "last_update": "2026-06-24 17:00:00",
-      "message": "已生成任务卡片：OPT-003（导入界面深色主题展示异常）+ OPT-004（文章管理：标题点击跳转编辑 + PC端筛选器布局优化）"
+      "status": "skipped",
+      "last_update": "2026-06-28 11:38:30",
+      "message": "用户跳过：本轮手工触发 SRC=20260627 流水线，Stage 1（产品经理）无需重跑；20260627.md 已包含 2 个 autopush OPT 任务（OPT-001 RSS 显隐 + OPT-002 搜索入口）"
     },
     "Stage_2": {
       "status": "success",
-      "last_update": "2026-06-24 21:18:00",
-      "message": "第三轮:3 任务（OPT-003 导入对话框深色 CSS 变量补齐 + OPT-004 文章管理标题点击 + 筛选器布局 + DEV-003 备份同步按钮 BackupService.syncFromGithub + BackupController.sync）"
+      "last_update": "2026-06-28 11:50:00",
+      "message": "已完成 2 个任务（autopush-20260627-OPT-001 RSS 链接显隐 + autopush-20260627-OPT-002 NavBar 搜索入口）：后端改 1 文件（PublicSettingsController 新增 /site-flags 端点），前端新增 2 文件（useSiteFlags.ts + search.vue）+ 改 4 文件（app.vue / about.vue / SiteFooter.vue / NavBar.vue）；mvn compile + npm run build 均通过（前端 Prerendered 8 routes 含新增 /search）"
     },
     "Stage_3": {
       "status": "success",
-      "last_update": "2026-06-24 21:25:00",
-      "message": "v4 审查（OPT-003 + OPT-004 + DEV-003）：0 个严重、2 个警告（syncFromGithub 方法过长 + handleSync 无二次确认）、3 个建议"
+      "last_update": "2026-06-28 11:55:00",
+      "message": "已完成审查 7 个文件（跨天手工触发，审查目标为 20260627.md 的 autopush-OPT-001/002 涉及文件），发现 0 个严重、2 个警告（WARN-001 NavBar 事件 listener 重复注册无清理 + WARN-002 about/footer RSS 显隐双控不一致）、4 个建议（a11y / TS 字段名收敛 / keyword 生命周期注释）"
     },
     "Stage_4": {
       "status": "success",
-      "last_update": "2026-06-24 21:30:00",
-      "message": "v4 审计（OPT-003 + OPT-004 + DEV-003）：3 项 🔍 需运行确认（2 项 UI 视觉 + 1 项 gh CLI 实测），静态核对全部命中"
+      "last_update": "2026-06-28 12:05:00",
+      "message": "已完成审计 5 个 ✅ 任务（3 个 DEV + 2 个 autopush OPT，跨天手工触发，审计 20260627.md），5 通过、0 偏差、0 需运行确认（Stage 5 接手 UI 运行时验证）；代码质量审查 0 严重 / 2 警告（NavBar 事件 listener 重复注册 + about/footer 双控不一致）不阻塞本轮门控"
     },
     "Stage_5": {
-      "status": "skipped",
-      "last_update": "2026-06-24 21:35:00",
-      "message": "v4 集成测试:1 ✅ (OPT-004 静态接线 INT-404) + 2 ⏭ (OPT-003/OPT-004 视觉需前端 + DEV-003 需 gh CLI)。环境不足:gh 未安装 + 前端/后端未启动"
+      "status": "success",
+      "last_update": "2026-06-28 12:15:00",
+      "message": "已完成验证 7 项（绕开 Docker daemon，直接启 redis-server + java -jar blog-app.jar + npx serve .output/public），7 通过、0 未通过、0 跳过：OPT-001 about RSS 链接可见 + OPT-002 NavBar 搜索 icon 可见 + 搜索弹层展开聚焦 + 回车跳 /search?q=Java + /search 渲染关键词 + /public/site-flags 返回正确 + /articles?keyword=Java 接口 200 + /api/v1/rss 200"
     },
     "Stage_6": {
       "status": "success",
-      "last_update": "2026-06-24 21:40:00",
-      "message": "v4 复核(第三轮 OPT-003 + OPT-004 + DEV-003):0 个卡片(零异常,本日 12 个任务全部 ✅ 完成,达工作闭环)"
+      "last_update": "2026-06-28 12:20:00",
+      "message": "已完成复核 0 异常（stage4 5/5 通过 + stage3 0 严重 + stage5 7/7 通过），不生成任何 autopush 卡片；BUG=0+DEV=0+OPT=0 满足 Stage 7 文档同步门控；本轮跨天场景下 stage 6 报告按 RUN 路径存放（不覆盖上一轮 20260627-stage6.md）"
     },
     "Stage_7": {
       "status": "success",
-      "last_update": "2026-06-24 21:45:00",
-      "message": "第三轮文档同步完成:README §1.3 v4.3.0+ 行追加 (10)-(12) 共 3 项第三轮变更;设计方案 §变更记录 新增 2026-06-24 第三轮行"
+      "last_update": "2026-06-28 12:35:00",
+      "message": "已完成同步：README §1.3 追加 2026-06-28 行覆盖 OPT-001/002；§2.3 补 useSiteFlags.ts + search.vue（公开页 5→6）；设计方案 §变更记录追加 v4.3.0+ 第五轮行；§4.1/4.4/6.1 同步更新；不动 AGENTS.md；流水线状态视图段已渲染到 20260627.md 末尾"
     },
     "Stage_8": {
-      "status": "pending",
-      "last_update": "",
-      "message": ""
+      "status": "skipped",
+      "last_update": "2026-06-28 11:38:30",
+      "message": "用户跳过：用户说 1 和 8 不用执行，本轮不触发发布"
     }
   }
 }
