@@ -140,3 +140,4 @@ scripts/deploy-server.env.example
 # 一次性 debug E2E 测试脚本
 frontend/tests/debug-*
 frontend/test-results/
+/autodev/share/
