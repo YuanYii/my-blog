@@ -8,6 +8,8 @@ const { get } = usePublicApi()
 // 2026-06-13：技术栈 / 经历改为后台可维护，走公开端点读取
 //   /public/settings/techstack → { groups: [ { label, items: [ { name, dim } ] } ] }
 //   /public/settings/experience → { items: [ { time, title, desc } ] }
+// 2026-06-28 OPT-001（autopush）：RSS 入口按 advanced.enableRss 显隐
+const { flags: siteFlags } = useSiteFlags()
 const [profileRes, socialRes, techRes, expRes] = await Promise.all([
   useAsyncData('about-profile', () => get<any>('/public/profile')),
   useAsyncData('about-social', () => get<any>('/public/settings/social')),
@@ -97,7 +99,7 @@ const experiences = computed(() => {
             <a :href="`mailto:${social.emailPublic || profile.email || 'hello@example.com'}`" class="social-link" aria-label="邮箱">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
             </a>
-            <a :href="social.rss || '/rss.xml'" class="social-link" aria-label="RSS">
+            <a v-if="siteFlags.enableRss" :href="social.rss || '/rss.xml'" class="social-link" aria-label="RSS">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6.18 15.64a2.18 2.18 0 0 1 2.18 2.18C8.36 19 7.38 20 6.18 20 5 20 4 19 4 17.82a2.18 2.18 0 0 1 2.18-2.18M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27V4.44m0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93V10.1z"/></svg>
             </a>
           </div>
@@ -176,7 +178,7 @@ const experiences = computed(() => {
             <div class="contact-value">@{{ social.twitter?.split('/').pop() || 'yuanyi' }}</div>
           </div>
         </a>
-        <a :href="social.rss || '/rss.xml'" class="contact-card">
+        <a v-if="siteFlags.enableRss" :href="social.rss || '/rss.xml'" class="contact-card">
           <div class="contact-icon">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6.18 15.64a2.18 2.18 0 0 1 2.18 2.18C8.36 19 7.38 20 6.18 20 5 20 4 19 4 17.82a2.18 2.18 0 0 1 2.18-2.18M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27V4.44m0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93V10.1z"/></svg>
           </div>
