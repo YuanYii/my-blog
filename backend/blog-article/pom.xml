@@ -20,6 +20,12 @@
             <artifactId>blog-common</artifactId>
         </dependency>
 
+        <!-- 2026-06-27 DEV-003：文章公开搜索开关 -->
+        <dependency>
+            <groupId>com.blog</groupId>
+            <artifactId>blog-settings</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-boot-starter</artifactId>

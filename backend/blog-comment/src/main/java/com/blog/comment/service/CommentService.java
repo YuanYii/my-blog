@@ -5,6 +5,7 @@ import com.blog.common.Result;
 import com.blog.common.BusinessException;
 import com.blog.common.TrustedProxyUtil;
 import com.blog.common.web.AuthContext;
+import com.blog.settings.service.AdvancedSettingsAccessor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -34,6 +35,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class CommentService {
 
     private final JdbcTemplate jdbc;
+    // 2026-06-27 DEV-003：评论审核开关——开启时新评论 status=0 待审，关闭时 status=1 直接公开
+    private final AdvancedSettingsAccessor advancedSettings;
 
     private static final int COMMENT_LIMIT = 10;
     private static final int COMMENT_WINDOW_SECONDS = 60;
@@ -89,11 +92,13 @@ public class CommentService {
         final String fWebsite = website;
         final String fContent = content;
         final String now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        // 2026-06-27 DEV-003：审核开关关闭 → 评论直接 status=1（公开），开启 → status=0（待审）
+        final int initialStatus = advancedSettings.commentModerationEnabled() ? 0 : 1;
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbc.update((PreparedStatementCreator) connection -> {
             PreparedStatement ps = connection.prepareStatement(
                 "INSERT INTO comment (article_id, parent_id, nickname, email, website, content, status, created_at) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS);
             ps.setLong(1, fArticleId);
             ps.setLong(2, fParentId);
@@ -101,7 +106,8 @@ public class CommentService {
             ps.setString(4, fEmail);
             ps.setString(5, fWebsite);
             ps.setString(6, fContent);
-            ps.setString(7, now);
+            ps.setInt(7, initialStatus);
+            ps.setString(8, now);
             return ps;
         }, keyHolder);
         // 2026-06-22 v4.x polish：SQLite JDBC 不同版本对 RETURN_GENERATED_KEYS 行为不一致——
@@ -124,7 +130,8 @@ public class CommentService {
                 newId, articleSlug, ip, request.getHeader("User-Agent"));
         Map<String, Object> data = new HashMap<>();
         data.put("id", newId);
-        data.put("message", "评论已提交，待审核");
+        data.put("status", initialStatus);
+        data.put("message", initialStatus == 1 ? "评论已发布" : "评论已提交，待审核");
         return Result.success(data);
     }
 

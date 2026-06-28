@@ -47,9 +47,11 @@ public class SiteSettingsService {
     public static final String SECTION_TECHSTACK = "techstack";
     public static final String SECTION_EXPERIENCE = "experience";
 
-    /** 公开可读的 section 白名单（PublicSettingsController 用） */
+    /** 公开可读的 section 白名单（PublicSettingsController 用）
+     *  2026-06-27 DEV-001/002：theme 与 preferences 须公开（前台 useSiteTheme / useSitePreferences 拉取） */
     public static final List<String> PUBLIC_SECTIONS =
-        Arrays.asList(SECTION_BLOG, SECTION_SOCIAL, SECTION_TECHSTACK, SECTION_EXPERIENCE);
+        Arrays.asList(SECTION_BLOG, SECTION_SOCIAL, SECTION_TECHSTACK, SECTION_EXPERIENCE,
+                      SECTION_THEME, SECTION_PREFERENCES);
 
     /** Redis 缓存 key 前缀 */
     private static final String CACHE_KEY_PREFIX = "site_settings:";
@@ -59,6 +61,11 @@ public class SiteSettingsService {
     private final SiteSettingsMapper mapper;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /** 2026-06-27 DEV-003：缓存开关——admin 关闭 enableCache 后所有 section 读穿透 DB（仅排障用） */
+    private volatile boolean cacheEnabled = true;
+    /** 由 AdvancedSettingsAccessor 调用，让此服务知道 advanced.enableCache 当前值 */
+    public void setCacheEnabled(boolean enabled) { this.cacheEnabled = enabled; }
 
     /**
      * 启动兜底：5 个 section 缺则补默认值
@@ -98,22 +105,28 @@ public class SiteSettingsService {
      */
     public Map<String, Object> get(String section) {
         String key = CACHE_KEY_PREFIX + section;
-        try {
-            String cached = redis.opsForValue().get(key);
-            if (cached != null) {
-                return objectMapper.readValue(cached, new TypeReference<Map<String, Object>>() {});
+        // 2026-06-27 DEV-003：cacheEnabled=false 直接穿透 DB，不读不写 Redis（advanced 段例外，保证开关本身的读取）
+        boolean useCache = cacheEnabled || SECTION_ADVANCED.equals(section);
+        if (useCache) {
+            try {
+                String cached = redis.opsForValue().get(key);
+                if (cached != null) {
+                    return objectMapper.readValue(cached, new TypeReference<Map<String, Object>>() {});
+                }
+            } catch (Exception e) {
+                log.warn("[site_settings] redis read fail, fallback DB: section={}", section, e);
             }
-        } catch (Exception e) {
-            log.warn("[site_settings] redis read fail, fallback DB: section={}", section, e);
         }
         SiteSettings row = getRaw(section);
         if (row == null) return null;
         try {
             Map<String, Object> data = objectMapper.readValue(row.getData(), new TypeReference<Map<String, Object>>() {});
-            try {
-                redis.opsForValue().set(key, row.getData(), CACHE_TTL);
-            } catch (Exception e) {
-                log.warn("[site_settings] redis write fail: section={}", section, e);
+            if (useCache) {
+                try {
+                    redis.opsForValue().set(key, row.getData(), CACHE_TTL);
+                } catch (Exception e) {
+                    log.warn("[site_settings] redis write fail: section={}", section, e);
+                }
             }
             return data;
         } catch (Exception e) {
@@ -264,11 +277,12 @@ public class SiteSettingsService {
     }
 
     private static Map<String, Object> defaultAdvanced() {
+        // 2026-06-27 DEV-003：与前端 AdvancedForm 字段对齐，统一用 enableCommentModeration
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("enableCache", true);
         m.put("enableRss", true);
         m.put("enableSearch", true);
-        m.put("commentModeration", true);
+        m.put("enableCommentModeration", true);
         return m;
     }
 

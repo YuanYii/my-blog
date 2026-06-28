@@ -6,8 +6,10 @@ import com.blog.article.entity.ImportRecord;
 import com.blog.article.entity.Tag;
 import com.blog.article.service.ArticleImportService;
 import com.blog.article.service.ArticleService;
+import com.blog.common.BusinessException;
 import com.blog.common.PageResult;
 import com.blog.common.Result;
+import com.blog.settings.service.AdvancedSettingsAccessor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -32,6 +34,8 @@ public class ArticleController {
 
     private final ArticleService articleService;
     private final ArticleImportService articleImportService;
+    // 2026-06-27 DEV-003：高级开关——enableSearch=false 时禁用 keyword 搜索
+    private final AdvancedSettingsAccessor advancedSettings;
 
     @GetMapping
     public Result<PageResult<Map<String, Object>>> list(
@@ -40,6 +44,10 @@ public class ArticleController {
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Long tagId,
             @RequestParam(required = false) String keyword) {
+        // 2026-06-27 DEV-003：搜索开关——关闭时拒绝带 keyword 的请求（普通列表/分类/标签仍正常）
+        if (keyword != null && !keyword.isEmpty() && !advancedSettings.searchEnabled()) {
+            throw new BusinessException(403, "站点搜索已禁用");
+        }
         return articleService.list(page, size, categoryId, tagId, keyword);
     }
 

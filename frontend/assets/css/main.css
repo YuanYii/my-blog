@@ -20,9 +20,32 @@ img, svg, video, iframe { display: block; max-width: 100%; }
 table { max-width: 100%; }
 
 .font-serif { font-family: 'DM Serif Display', 'Noto Serif SC', serif; }
+.font-sans { font-family: 'Outfit', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 .font-mono { font-family: 'JetBrains Mono', monospace; }
+body.font-mono, body.font-sans, body.font-serif { font-family: inherit; }
+body.font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+body.font-sans { font-family: 'Outfit', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+body.font-serif { font-family: 'DM Serif Display', 'Noto Serif SC', 'Outfit', serif; }
+
+/* 2026-06-27 DEV-002：偏好设置 density / codeTheme 落地。
+ * density-compact：列表项行高与卡片 padding 整体收紧约 25%。
+ * code-theme-{name}：覆盖 --code-bg / --code-text，文章页代码块按主题变化。
+ */
+body.density-comfortable { --row-py: 12px; --card-pad: 24px; }
+body.density-compact { --row-py: 6px; --card-pad: 14px; }
+body.density-compact .card { padding: var(--card-pad); }
+body.density-compact .form-group { margin-bottom: 12px; }
+body.density-compact .admin-nav-item, body.density-compact .admin-nav-subitem { padding-top: var(--row-py); padding-bottom: var(--row-py); }
+body.density-compact td, body.density-compact th { padding-top: var(--row-py); padding-bottom: var(--row-py); }
+
+body.code-theme-github { --code-bg: #f7f4ec; --code-text: #1a1f2e; }
+body.code-theme-monokai { --code-bg: #272822; --code-text: #f8f8f2; }
+body.code-theme-nord { --code-bg: #2e3440; --code-text: #d8dee9; }
+body.code-theme-monokai pre, body.code-theme-nord pre { color: var(--code-text); }
+body.code-theme-monokai pre, body.code-theme-nord pre, body.code-theme-monokai code, body.code-theme-nord code { background: var(--code-bg); color: var(--code-text); }
 
 /* ========== Theme: Light ========== */
+/* 2026-06-27 DEV-001：补齐 --color-* 系列别名（NavBar.vue 等组件使用），并允许 useSiteTheme 运行时覆盖 --primary / --accent / --primary-soft */
 :root {
   --bg: #fafaf7;
   --bg-soft: #f3f1ea;
@@ -38,6 +61,13 @@ table { max-width: 100%; }
   --primary-hover: #245947;
   --primary-soft: rgba(47, 111, 94, 0.08);
   --accent: #c97b3f;
+  --color-bg: var(--bg);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-line: var(--line);
+  --color-primary: var(--primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-accent: var(--accent);
   --danger: #c2410c;
   --danger-soft: #fef2f2;
   --success: #16a34a;
@@ -62,6 +92,13 @@ table { max-width: 100%; }
   --primary-hover: #7fc4b0;
   --primary-soft: rgba(95, 176, 154, 0.12);
   --accent: #d99262;
+  --color-bg: var(--bg);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-line: var(--line);
+  --color-primary: var(--primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-accent: var(--accent);
   --danger: #f87171;
   --danger-soft: rgba(248, 113, 113, 0.1);
   --success: #4ade80;

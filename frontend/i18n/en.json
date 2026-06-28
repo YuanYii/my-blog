@@ -1,0 +1,14 @@
+{
+  "nav.home": "Home",
+  "nav.archives": "Archives",
+  "nav.tags": "Tags",
+  "nav.about": "About",
+  "nav.admin": "Admin",
+  "footer.poweredBy": "Powered by Personal Blog System",
+  "common.save": "Save",
+  "common.saving": "Saving…",
+  "common.saved": "Saved ✓",
+  "common.cancel": "Cancel",
+  "common.confirm": "Confirm",
+  "common.loading": "Loading…"
+}

@@ -223,6 +223,27 @@ public class SettingsController {
                 return Result.error(400, "language 必须是 zh-CN / en");
             }
         }
+        // 2026-06-27 DEV-002：偏好设置字段白名单校验
+        if (body.containsKey("density") && body.get("density") != null) {
+            String d = String.valueOf(body.get("density"));
+            if (!Arrays.asList("comfortable", "compact").contains(d)) {
+                return Result.error(400, "density 必须是 comfortable / compact");
+            }
+        }
+        if (body.containsKey("codeTheme") && body.get("codeTheme") != null) {
+            String c = String.valueOf(body.get("codeTheme"));
+            if (!Arrays.asList("github", "monokai", "nord").contains(c)) {
+                return Result.error(400, "codeTheme 必须是 github / monokai / nord");
+            }
+        }
+        if (body.containsKey("timezone") && body.get("timezone") != null) {
+            String tz = String.valueOf(body.get("timezone"));
+            try {
+                java.time.ZoneId.of(tz);
+            } catch (Exception e) {
+                return Result.error(400, "timezone 不是有效的时区 ID");
+            }
+        }
         siteSettingsService.merge(SiteSettingsService.SECTION_PREFERENCES, body);
         logSettingChange(SiteSettingsService.SECTION_PREFERENCES);
         return Result.success(siteSettingsService.get(SiteSettingsService.SECTION_PREFERENCES));

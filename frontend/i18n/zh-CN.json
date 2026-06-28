@@ -1,0 +1,14 @@
+{
+  "nav.home": "首页",
+  "nav.archives": "归档",
+  "nav.tags": "标签",
+  "nav.about": "关于",
+  "nav.admin": "后台管理",
+  "footer.poweredBy": "由个人博客系统驱动",
+  "common.save": "保存设置",
+  "common.saving": "保存中…",
+  "common.saved": "已保存 ✓",
+  "common.cancel": "取消",
+  "common.confirm": "确认",
+  "common.loading": "加载中…"
+}

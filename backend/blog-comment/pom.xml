@@ -20,6 +20,12 @@
             <artifactId>blog-common</artifactId>
         </dependency>
 
+        <!-- 2026-06-27 DEV-003：评论审核开关读取 AdvancedSettingsAccessor -->
+        <dependency>
+            <groupId>com.blog</groupId>
+            <artifactId>blog-settings</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-boot-starter</artifactId>
