@@ -6,7 +6,7 @@ definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
 const router = useRouter()
 const route = useRoute()
-const { get, del, put } = useAdminApi()
+const { get, del, put, hardDeleteArticle, restoreArticle } = useAdminApi()
 const $toast = useToast()
 const $dialog = useDialog()
 // 2026-06-24 BUG-003：删除文章后侧栏数量不刷新——dashboard.vue 在 loadAll 末尾调了
@@ -23,6 +23,10 @@ const filterCategory = ref<number | ''>('')
 const sortBy = ref<'newest' | 'oldest' | 'views'>('newest')
 const loading = ref(false)
 const selected = ref<number[]>([])
+
+// 2026-07-01 BUG-002：3 tab 切换（全部 / 未删除 / 已删除）
+type DeletedFilter = 'all' | '0' | '1'
+const filterDeleted = ref<DeletedFilter>('0')
 
 // 分类（用于下拉）
 const categories = ref<any[]>([])
@@ -53,7 +57,7 @@ const loadStats = async () => {
 const load = async () => {
   loading.value = true
   try {
-    const params: any = { page: page.value, size: size.value }
+    const params: any = { page: page.value, size: size.value, deleted: filterDeleted.value }
     if (filterStatus.value !== '') params.status = filterStatus.value
     if (filterCategory.value) params.categoryId = filterCategory.value
     if (keyword.value) params.keyword = keyword.value
@@ -73,19 +77,27 @@ const load = async () => {
 
 const handleSearch = () => { page.value = 1; load() }
 const handleStatusFilter = () => { page.value = 1; load() }
+// 2026-07-01 BUG-002：3 tab 切换
+const handleDeletedTab = (tab: DeletedFilter) => {
+  filterDeleted.value = tab
+  page.value = 1
+  selected.value = []  // 切换 tab 清掉选中
+  load()
+}
 // 点击统计卡筛选：'' = 全部，1 = 已发布，0 = 草稿。再点已选中的卡 → 取消回全部。
 const setFilter = (status: number | '') => {
   filterStatus.value = filterStatus.value === status ? '' : status
   page.value = 1
   load()
 }
-// 2026-06-13 修复（BUG-048）：三个 handler 补 try/catch，token 过期/设备吊销/网络瞬断
-// 时能给用户看到错误提示，而不是静默失败。
-// 2026-06-16 改造：confirm → $dialog.confirm，alert → $toast
-const handleDelete = async (a: any) => {
+
+// 2026-07-01 BUG-002：删除模式二段化
+// - 未删除 tab（deleted=0）：行操作「删除」→ 软删（DELETE /articles/{id}）
+// - 已删除 tab（deleted=1）：行操作「恢复」+「硬删除」两个按钮
+const handleSoftDelete = async (a: any) => {
   const { confirmed } = await $dialog.confirm({
     title: '删除文章',
-    message: `确认删除「${a.title}」？此操作不可撤销。`,
+    message: `确认删除「${a.title}」？文章会移入「已删除」列表，可后续恢复或硬删除。`,
     confirmText: '删除',
     danger: true
   })
@@ -101,6 +113,54 @@ const handleDelete = async (a: any) => {
     $toast.error('删除失败：' + (e?.data?.message || e?.message || '未知错误'))
   }
 }
+
+const handleRestore = async (a: any) => {
+  const { confirmed } = await $dialog.confirm({
+    title: '恢复文章',
+    message: `确认恢复「${a.title}」？恢复后将回到「未删除」列表。`,
+    confirmText: '恢复'
+  })
+  if (!confirmed) return
+  try {
+    await restoreArticle(a.id)
+    $toast.success('文章已恢复')
+    selected.value = selected.value.filter(id => id !== a.id)
+    load()
+    loadStats()
+    refreshMeta()
+  } catch (e: any) {
+    $toast.error('恢复失败：' + (e?.data?.message || e?.message))
+  }
+}
+
+// 2026-07-01 BUG-002：硬删除二次确认（输入 DELETE 字样）
+// 复用 backup.vue 「输入 DELETE」模式：要求用户输入字面 DELETE 串才能点确认
+const handleHardDelete = async (a: any) => {
+  const { confirmed, value } = await $dialog.prompt({
+    title: '硬删除文章（不可恢复）',
+    message: `硬删除「${a.title}」会清除记录，附件也会一并硬删除。请输入 DELETE 字样以确认操作。`,
+    label: '请输入 DELETE 以确认',
+    placeholder: 'DELETE',
+    confirmText: '硬删除',
+    danger: true
+  })
+  if (!confirmed) return
+  if (value !== 'DELETE') {
+    $toast.error('确认字样错误，已取消')
+    return
+  }
+  try {
+    await hardDeleteArticle(a.id)
+    $toast.success('文章已硬删除')
+    selected.value = selected.value.filter(id => id !== a.id)
+    load()
+    loadStats()
+    refreshMeta()
+  } catch (e: any) {
+    $toast.error('硬删除失败：' + (e?.data?.message || e?.message))
+  }
+}
+
 const handleEdit = (a: any) => router.push(`/admin/edit?id=${a.id}`)
 
 const toggleSelect = (id: number) => {
@@ -112,26 +172,67 @@ const toggleAll = () => {
   else selected.value = articles.value.map(a => a.id)
 }
 
+// 2026-07-01 BUG-002：批量操作根据当前 tab 走不同的 API
 const handleBulkDelete = async () => {
-  const { confirmed } = await $dialog.confirm({
-    title: '批量删除文章',
-    message: `确认删除选中的 ${selected.value.length} 篇文章？此操作不可撤销。`,
-    confirmText: '删除',
-    danger: true
-  })
-  if (!confirmed) return
-  // 并行 + 单条 try，避免一个失败导致整个 Promise.all reject
-  const results = await Promise.allSettled(selected.value.map(id => del(`/articles/${id}`)))
-  const failed = results.filter(r => r.status === 'rejected').length
-  if (failed > 0) {
-    $toast.warning(`批量删除完成：${selected.value.length - failed} 成功，${failed} 失败`)
+  if (filterDeleted.value === '1') {
+    // 已删除 tab → 批量硬删除带二次确认
+    const { confirmed, value } = await $dialog.prompt({
+      title: '批量硬删除（不可恢复）',
+      message: `硬删除选中的 ${selected.value.length} 篇文章？此操作不可撤销。请输入 DELETE 字样以确认。`,
+      label: '请输入 DELETE 以确认',
+      placeholder: 'DELETE',
+      confirmText: '硬删除',
+      danger: true
+    })
+    if (!confirmed || value !== 'DELETE') return
+    const results = await Promise.allSettled(selected.value.map(id => hardDeleteArticle(id)))
+    const failed = results.filter(r => r.status === 'rejected').length
+    if (failed > 0) {
+      $toast.warning(`批量硬删除完成：${selected.value.length - failed} 成功，${failed} 失败`)
+    } else {
+      $toast.success(`已硬删除 ${selected.value.length} 篇`)
+    }
   } else {
-    $toast.success(`已删除 ${selected.value.length} 篇`)
+    // 未删除 / 全部 tab → 软删
+    const { confirmed } = await $dialog.confirm({
+      title: '批量删除文章',
+      message: `确认删除选中的 ${selected.value.length} 篇文章？删除后可在「已删除」tab 恢复或硬删除。`,
+      confirmText: '删除',
+      danger: true
+    })
+    if (!confirmed) return
+    const results = await Promise.allSettled(selected.value.map(id => del(`/articles/${id}`)))
+    const failed = results.filter(r => r.status === 'rejected').length
+    if (failed > 0) {
+      $toast.warning(`批量删除完成：${selected.value.length - failed} 成功，${failed} 失败`)
+    } else {
+      $toast.success(`已删除 ${selected.value.length} 篇`)
+    }
   }
   selected.value = []
   load()
   loadStats()
-  refreshMeta()  // 2026-06-24 BUG-003：批量删除后刷新侧栏
+  refreshMeta()
+}
+
+const handleBulkRestore = async () => {
+  const { confirmed } = await $dialog.confirm({
+    title: '批量恢复文章',
+    message: `确认恢复选中的 ${selected.value.length} 篇文章？`,
+    confirmText: '恢复'
+  })
+  if (!confirmed) return
+  const results = await Promise.allSettled(selected.value.map(id => restoreArticle(id)))
+  const failed = results.filter(r => r.status === 'rejected').length
+  if (failed > 0) {
+    $toast.warning(`批量恢复完成：${selected.value.length - failed} 成功，${failed} 失败`)
+  } else {
+    $toast.success(`已恢复 ${selected.value.length} 篇`)
+  }
+  selected.value = []
+  load()
+  loadStats()
+  refreshMeta()
 }
 
 const handleBulkPublish = async () => {
@@ -177,6 +278,9 @@ onMounted(async () => {
   // 支持从仪表盘带 ?status=0 跳转（草稿）自动套用筛选
   const q = route.query.status
   if (q !== undefined && q !== '') filterStatus.value = Number(q)
+  // 支持从 dashboard.vue "已删除文章" KPI 跳转 ?deleted=1
+  const delQ = route.query.deleted
+  if (delQ === '1') filterDeleted.value = '1'
   await load()
 })
 </script>
@@ -231,8 +335,11 @@ onMounted(async () => {
     <div class="bulk-bar" :class="{ show: selected.length > 0 }">
       <span>已选 <span class="count">{{ selected.length }}</span> 项</span>
       <div class="bulk-actions">
-        <button @click="handleBulkPublish" class="btn btn-ghost btn-sm">批量发布</button>
-        <button @click="handleBulkDelete" class="btn btn-ghost btn-sm" style="color: var(--danger);">批量删除</button>
+        <!-- 2026-07-01 BUG-002：批量操作按 tab 切换 -->
+        <button v-if="filterDeleted !== '1'" @click="handleBulkPublish" class="btn btn-ghost btn-sm">批量发布</button>
+        <button v-if="filterDeleted !== '1'" @click="handleBulkDelete" class="btn btn-ghost btn-sm" style="color: var(--danger);">批量删除</button>
+        <button v-if="filterDeleted === '1'" @click="handleBulkRestore" class="btn btn-ghost btn-sm">批量恢复</button>
+        <button v-if="filterDeleted === '1'" @click="handleBulkDelete" class="btn btn-ghost btn-sm" style="color: var(--danger);">批量硬删除</button>
         <button @click="selected = []" class="btn btn-ghost btn-sm">取消</button>
       </div>
     </div>
@@ -251,9 +358,22 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- 2026-07-01 BUG-002：3 tab 切换（全部 / 未删除 / 已删除） -->
+    <div class="posts-tabs">
+      <button :class="{ active: filterDeleted === 'all' }" @click="handleDeletedTab('all')">全部</button>
+      <button :class="{ active: filterDeleted === '0' }" @click="handleDeletedTab('0')">未删除</button>
+      <button :class="{ active: filterDeleted === '1' }" @click="handleDeletedTab('1')">
+        已删除
+        <span v-if="filterDeleted === '1'" class="tab-hint">回收站</span>
+      </button>
+    </div>
+
     <!-- Table -->
     <div v-if="loading" class="card" style="padding: 40px; text-align: center; color: var(--muted);">加载中…</div>
-    <div v-else-if="!articles.length" class="card" style="padding: 40px; text-align: center; color: var(--muted);">还没有文章，<NuxtLink to="/admin/edit" style="color: var(--primary);">写第一篇</NuxtLink></div>
+    <div v-else-if="!articles.length" class="card" style="padding: 40px; text-align: center; color: var(--muted);">
+      <span v-if="filterDeleted === '1'">回收站是空的</span>
+      <span v-else>还没有文章，<NuxtLink to="/admin/edit" style="color: var(--primary);">写第一篇</NuxtLink></span>
+    </div>
     <div v-else class="table-wrap">
       <table class="table">
         <thead>
@@ -261,11 +381,13 @@ onMounted(async () => {
             <th style="width: 40px;">
               <input type="checkbox" :checked="selected.length === articles.length" @change="toggleAll" />
             </th>
-            <th style="width: 40%;">标题</th>
+            <th style="width: 35%;">标题</th>
             <th>分类</th>
             <th>状态</th>
             <th style="width: 80px;">阅读</th>
-            <th>发布时间</th>
+            <!-- 2026-07-01 OPT-001：新增「附件」列,按行展示 attachmentCount -->
+            <th style="width: 70px;">附件</th>
+            <th>更新时间</th>
             <th style="text-align: right;">操作</th>
           </tr>
         </thead>
@@ -286,18 +408,36 @@ onMounted(async () => {
             <td><span class="badge" style="background: var(--primary-soft); color: var(--primary);">{{ categoryName(a.categoryId) }}</span></td>
             <td><span class="badge" :class="statusBadge(a.status)">{{ statusLabel(a.status) }}</span></td>
             <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">{{ (a.viewCount || 0).toLocaleString() }}</td>
-            <td style="font-size: 12px; color: var(--muted); font-family: 'JetBrains Mono', monospace;">{{ formatDate(a.publishedAt || a.createdAt) }}</td>
+            <!-- 2026-07-01 OPT-001：附件数单元格, 0 时显示 "-" -->
+            <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+              <span v-if="(a.attachmentCount || 0) > 0">📎 {{ a.attachmentCount }}</span>
+              <span v-else style="color: var(--muted);">-</span>
+            </td>
+            <td style="font-size: 12px; color: var(--muted); font-family: 'JetBrains Mono', monospace;">{{ formatDate(a.publishedAt || a.updatedAt || a.createdAt) }}</td>
             <td>
               <div class="row-actions">
                 <button @click="handleEdit(a)" class="row-action" title="编辑">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
                 </button>
-                <a :href="`/post/${a.slug}`" target="_blank" class="row-action" title="查看">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                </a>
-                <button @click="handleDelete(a)" class="row-action danger" title="删除">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                </button>
+                <!-- 2026-07-01 BUG-002：行操作按 tab 切换 -->
+                <!-- 未删除 / 全部 tab：编辑 + 查看 + 删除（软删） -->
+                <template v-if="filterDeleted !== '1'">
+                  <a :href="`/post/${a.slug}`" target="_blank" class="row-action" title="查看">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </a>
+                  <button @click="handleSoftDelete(a)" class="row-action danger" title="删除">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  </button>
+                </template>
+                <!-- 已删除 tab：恢复 + 硬删除 -->
+                <template v-else>
+                  <button @click="handleRestore(a)" class="row-action" title="恢复">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                  </button>
+                  <button @click="handleHardDelete(a)" class="row-action danger" title="硬删除">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></svg>
+                  </button>
+                </template>
               </div>
             </td>
           </tr>
@@ -316,3 +456,38 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 2026-07-01 BUG-002：3 tab 切换样式（与 attachments.vue:115 风格保持一致） */
+.posts-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.posts-tabs button {
+  background: transparent;
+  border: none;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.posts-tabs button:hover {
+  color: var(--text);
+}
+.posts-tabs button.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+.tab-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 4px;
+}
+</style>

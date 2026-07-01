@@ -133,5 +133,41 @@ export const useAdminApi = () => {
     })
   }
 
-  return { request, get, post, put, del, upload }
+  // ============ 2026-07-01 DEV-002：文章附件管理（admin） ============
+
+  /**
+   * 上传文章附件（multipart/form-data）。
+   * POST /admin/articles/{id}/attachment
+   */
+  const uploadAttachment = async <T = any>(articleId: number, file: File): Promise<T> => {
+    return upload<T>(`/admin/articles/${articleId}/attachment`, file)
+  }
+
+  /** 软删附件 DELETE /admin/articles/{id}/attachment */
+  const softDeleteAttachment = <T = any>(articleId: number) =>
+    del<T>(`/admin/articles/${articleId}/attachment`)
+
+  /** 后台列表 GET /admin/attachments?deleted=0|1|all&page=N */
+  const listAttachments = <T = any>(page: number, size: number, deleted: string = '0') =>
+    get<T>('/admin/attachments', { page, size, deleted })
+
+  /** 恢复附件 PUT /admin/attachments/{id}/restore */
+  const restoreAttachment = <T = any>(id: number) =>
+    put<T>(`/admin/attachments/${id}/restore`)
+
+  /** 硬删附件 DELETE /admin/attachments/{id} */
+  const hardDeleteAttachment = <T = any>(id: number) =>
+    del<T>(`/admin/attachments/${id}`)
+
+  // 2026-07-01 BUG-002：文章二段删除（与附件侧同模式，软删+硬删+恢复三段）
+  // 注：后端 ArticleController 类前缀是 /articles，实际完整路径是 /articles/admin/articles/{id}/hard
+  /** 硬删文章 DELETE /articles/admin/articles/{id}/hard（仅 admin/posts.vue「已删除」tab 用） */
+  const hardDeleteArticle = <T = any>(id: number) =>
+    del<T>(`/articles/admin/articles/${id}/hard`)
+
+  /** 恢复文章 PUT /articles/admin/articles/{id}/restore */
+  const restoreArticle = <T = any>(id: number) =>
+    put<T>(`/articles/admin/articles/${id}/restore`)
+
+  return { request, get, post, put, del, upload, uploadAttachment, softDeleteAttachment, listAttachments, restoreAttachment, hardDeleteAttachment, hardDeleteArticle, restoreArticle }
 }
