@@ -169,5 +169,40 @@ export const useAdminApi = () => {
   const restoreArticle = <T = any>(id: number) =>
     put<T>(`/articles/admin/articles/${id}/restore`)
 
-  return { request, get, post, put, del, upload, uploadAttachment, softDeleteAttachment, listAttachments, restoreAttachment, hardDeleteAttachment, hardDeleteArticle, restoreArticle }
+  // ============ 2026-07-01 DEV-004：审计日志查询 ============
+
+  /**
+   * 列表分页 + 筛选（target 模块名 + operation 操作类型）。
+   * GET /admin/audit-logs?page=N&size=N&target=xxx&operation=xxx
+   */
+  const listAuditLogs = <T = any>(
+    page: number,
+    size: number,
+    target: string = 'all',
+    operation: string = 'all'
+  ) => get<T>('/admin/audit-logs', { page, size, target, operation })
+
+  /** 模块名白名单（用于前端下拉筛选） */
+  const listAuditLogTargets = <T = any>() => get<T>('/admin/audit-logs/targets')
+
+  /** 操作类型白名单（用于前端下拉筛选） */
+  const listAuditLogOperations = <T = any>() => get<T>('/admin/audit-logs/operations')
+
+  // ============ 2026-07-01 DEV-006：上传 md 文档批量更新 settings ============
+
+  /**
+   * 上传 md 文档（multipart/form-data）。
+   * POST /admin/settings/upload-md
+   * 返回 { appliedSections: [...], count: N }
+   */
+  const uploadSettingsMd = <T = any>(file: File): Promise<T> =>
+    upload<T>('/admin/settings/upload-md', file)
+
+  return {
+    request, get, post, put, del, upload,
+    uploadAttachment, softDeleteAttachment, listAttachments, restoreAttachment, hardDeleteAttachment,
+    hardDeleteArticle, restoreArticle,
+    listAuditLogs, listAuditLogTargets, listAuditLogOperations,
+    uploadSettingsMd
+  }
 }

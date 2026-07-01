@@ -28,5 +28,7 @@ defineProps<{ name: string; size?: number }>()
     <template v-else-if="name === 'moon'"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></template>
     <!-- 2026-07-01 DEV-003：附件图标（paperclip） -->
     <template v-else-if="name === 'paperclip'"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></template>
+    <!-- 2026-07-01 DEV-004：审计日志图标（clipboard-list） -->
+    <template v-else-if="name === 'clipboard-list'"><path d="M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M8 10h8"/><path d="M8 14h8"/><path d="M8 18h5"/></template>
   </svg>
 </template>

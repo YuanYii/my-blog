@@ -64,6 +64,8 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { to: '/admin/devices',   label: '设备授权', icon: 'device' },
       { to: '/admin/backup',    label: '数据备份', icon: 'backup' },
       { to: '/admin/restore',   label: '数据恢复', icon: 'restore' },
+      // 2026-07-01 DEV-004：审计数据
+      { to: '/admin/audit-logs', label: '审计数据', icon: 'clipboard-list' },
       {
         to: '/admin/settings', label: '站点设置', icon: 'settings',
         children: [
@@ -121,6 +123,7 @@ const pageTitle = computed(() => {
     '/admin/devices': '设备授权',
     '/admin/backup': '数据备份',
     '/admin/restore': '数据恢复',
+    '/admin/audit-logs': '审计数据',
     '/admin/settings':             '个人资料',
     '/admin/settings/':            '个人资料',
     '/admin/settings/profile':     '个人资料',

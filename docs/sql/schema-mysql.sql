@@ -353,6 +353,29 @@ CREATE TABLE IF NOT EXISTS `article_attachment` (
   INDEX `idx_article_attachment_updated` (`updated_at` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ============================================================
+-- audit_log（2026-07-01 DEV-004，审计日志）
+-- ============================================================
+-- AOP 自动拦截 admin 写端点 + 公开下载端点，每条操作一行记录
+-- operator：admin 端点 = AuthContext.username；公开下载 = 'anonymous'
+-- operation：CREATE / UPDATE / DELETE / APPROVE / REJECT / DOWNLOAD
+-- target：模块名称（20 个，含 settings 9 子项，详见 AuditLogAspect 路径映射表）
+-- 配套：AuditLog / AuditLogMapper / AuditLogService / AuditLogAspect / AuditLogController
+CREATE TABLE IF NOT EXISTS `audit_log` (
+  `id`              BIGINT        NOT NULL AUTO_INCREMENT,
+  `operator`        VARCHAR(50)   NOT NULL                COMMENT '操作人 username（admin）或 anonymous（公开下载）',
+  `operation`       VARCHAR(20)   NOT NULL                COMMENT 'CREATE/UPDATE/DELETE/APPROVE/REJECT/DOWNLOAD',
+  `target`          VARCHAR(100)  NOT NULL                COMMENT '模块名称（20 个）',
+  `detail`          VARCHAR(500)  DEFAULT NULL            COMMENT '操作详情',
+  `ip`              VARCHAR(45)   DEFAULT NULL            COMMENT '操作 IP',
+  `created_at`      DATETIME      NOT NULL                COMMENT 'Java 填北京时间',
+  PRIMARY KEY (`id`),
+  INDEX `idx_audit_log_created` (`created_at` DESC),
+  INDEX `idx_audit_log_target` (`target`),
+  INDEX `idx_audit_log_operation` (`operation`),
+  INDEX `idx_audit_log_operator` (`operator`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- type=public → 放行（GET 任意，写方法按 isPublicWriteAllowed 显式允许）
 -- type=admin  → 必须鉴权
 INSERT IGNORE INTO `api_whitelist` (`path_prefix`, `type`, `enabled`, `description`) VALUES
@@ -370,7 +393,11 @@ INSERT IGNORE INTO `api_whitelist` (`path_prefix`, `type`, `enabled`, `descripti
 ('/auth/me', 'admin', 1, '获取当前用户信息'),
 ('/auth/logout', 'admin', 1, '登出'),
 ('/auth/devices', 'admin', 1, '设备管理'),
-('/uploads', 'admin', 1, '文件上传（multipart）');
+('/uploads', 'admin', 1, '文件上传（multipart）'),
+('/admin/articles/{id}/attachment', 'admin', 1, '文章附件上传/软删（2026-07-01 DEV-001）'),
+('/admin/attachments', 'admin', 1, '附件后台列表/恢复/硬删（2026-07-01 DEV-001）'),
+('/admin/audit-logs', 'admin', 1, '审计日志查询（2026-07-01 DEV-004）'),
+('/admin/settings/upload-md', 'admin', 1, '上传 md 文档批量更新 settings（2026-07-01 DEV-005）');
 
 -- 站点设置默认值（按 section 存 JSON）
 -- profile / blog / social / preferences / theme / advanced / techstack / experience

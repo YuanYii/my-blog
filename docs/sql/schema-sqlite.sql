@@ -350,6 +350,29 @@ CREATE INDEX IF NOT EXISTS idx_ip_ban_expire ON ip_ban(expire_at);
 CREATE INDEX IF NOT EXISTS idx_ip_ban_unbanned ON ip_ban(unbanned);
 
 -- ----------------------------------------------------
+-- 14. audit_log 审计日志（2026-07-01 DEV-004）
+-- ----------------------------------------------------
+-- AOP 自动拦截 admin 写端点 + 公开下载端点，每条操作一行记录
+-- operator：admin 端点 = AuthContext.username；公开下载 = 'anonymous'
+-- operation：CREATE / UPDATE / DELETE / APPROVE / REJECT / DOWNLOAD
+-- target：模块名称（20 个，含 settings 9 子项，详见 AuditLogAspect 路径映射表）
+-- detail：操作详情（拼接主体名 / id 等可读信息）
+-- 配套：AuditLog / AuditLogMapper / AuditLogService / AuditLogAspect / AuditLogController
+CREATE TABLE IF NOT EXISTS audit_log (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  operator        VARCHAR(50)  NOT NULL,                     -- 操作人 username（admin）或 'anonymous'（公开下载）
+  operation       VARCHAR(20)  NOT NULL,                     -- CREATE / UPDATE / DELETE / APPROVE / REJECT / DOWNLOAD
+  target          VARCHAR(100) NOT NULL,                     -- 模块名称（20 个）
+  detail          VARCHAR(500),                              -- 操作详情（可空）
+  ip              VARCHAR(45),                               -- 操作 IP
+  created_at      DATETIME     NOT NULL                      -- Java 填北京时间
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_target ON audit_log(target);
+CREATE INDEX IF NOT EXISTS idx_audit_log_operation ON audit_log(operation);
+CREATE INDEX IF NOT EXISTS idx_audit_log_operator ON audit_log(operator);
+
+-- ----------------------------------------------------
 -- 15. _migration_history 增量 SQL 迁移追踪
 -- ----------------------------------------------------
 CREATE TABLE IF NOT EXISTS _migration_history (
@@ -388,7 +411,9 @@ INSERT OR IGNORE INTO api_whitelist (path_prefix, type, enabled, description, cr
   ('/auth/devices', 'admin', 1, '设备管理', datetime('now', 'localtime'), datetime('now', 'localtime')),
   ('/uploads', 'admin', 1, '文件上传（multipart）', datetime('now', 'localtime'), datetime('now', 'localtime')),
   ('/admin/articles/{id}/attachment', 'admin', 1, '文章附件上传/软删', datetime('now', 'localtime'), datetime('now', 'localtime')),
-  ('/admin/attachments', 'admin', 1, '附件后台列表/恢复/硬删', datetime('now', 'localtime'), datetime('now', 'localtime'));
+  ('/admin/attachments', 'admin', 1, '附件后台列表/恢复/硬删', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/admin/audit-logs', 'admin', 1, '审计日志查询（2026-07-01 DEV-004）', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/admin/settings/upload-md', 'admin', 1, '上传 md 文档批量更新 settings（2026-07-01 DEV-005）', datetime('now', 'localtime'), datetime('now', 'localtime'));
 
 -- 站点设置：不预置种子数据，由用户在管理后台初始化填写
 -- SiteSettingsService 在首次 GET 时会自动创建空默认值
