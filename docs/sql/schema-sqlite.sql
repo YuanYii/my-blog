@@ -289,6 +289,28 @@ CREATE INDEX IF NOT EXISTS idx_import_record_started_at ON import_record(started
 CREATE INDEX IF NOT EXISTS idx_import_record_status ON import_record(status);
 
 -- ----------------------------------------------------
+-- 14. article_attachment 文章附件（2026-07-01 DEV-001）
+-- ----------------------------------------------------
+-- 一文一附件：article_id UNIQUE 约束（DB 层兜底，强制"先删旧附件再上传"）
+-- 二段删除：softDelete (deleted=1, 文件保留) → hardDelete (先删文件后删 DB)
+-- 公开下载软删返 410 Gone
+-- 配套：Attachment / AttachmentMapper / AttachmentService / AttachmentController
+CREATE TABLE IF NOT EXISTS article_attachment (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  article_id      BIGINT       NOT NULL,                    -- UNIQUE（一文一附件）
+  file_name       VARCHAR(255) NOT NULL,                    -- 原始文件名（含扩展名）
+  file_path       VARCHAR(500) NOT NULL,                    -- 相对 blog.attachment.local.dir 路径，如 attachments/2026/07/20260701-{uuid}.zip
+  file_size       BIGINT       NOT NULL DEFAULT 0,          -- 字节数
+  mime_type       VARCHAR(100),                             -- 如 application/zip
+  deleted         TINYINT      NOT NULL DEFAULT 0,          -- 0=未删 / 1=软删（文件保留在磁盘）
+  created_at      DATETIME     NOT NULL,                    -- Java 填北京时间
+  updated_at      DATETIME     NOT NULL                     -- Java 填北京时间
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_article_attachment_article ON article_attachment(article_id);
+CREATE INDEX IF NOT EXISTS idx_article_attachment_deleted ON article_attachment(deleted);
+CREATE INDEX IF NOT EXISTS idx_article_attachment_updated ON article_attachment(updated_at);
+
+-- ----------------------------------------------------
 -- 11. article_view_log 历史访问日志（v2.5.0 之前的，0 数据保留 schema 兼容）
 -- ----------------------------------------------------
 CREATE TABLE IF NOT EXISTS article_view_log (
@@ -364,7 +386,9 @@ INSERT OR IGNORE INTO api_whitelist (path_prefix, type, enabled, description, cr
   ('/auth/me', 'admin', 1, '获取当前用户信息', datetime('now', 'localtime'), datetime('now', 'localtime')),
   ('/auth/logout', 'admin', 1, '登出', datetime('now', 'localtime'), datetime('now', 'localtime')),
   ('/auth/devices', 'admin', 1, '设备管理', datetime('now', 'localtime'), datetime('now', 'localtime')),
-  ('/uploads', 'admin', 1, '文件上传（multipart）', datetime('now', 'localtime'), datetime('now', 'localtime'));
+  ('/uploads', 'admin', 1, '文件上传（multipart）', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/admin/articles/{id}/attachment', 'admin', 1, '文章附件上传/软删', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/admin/attachments', 'admin', 1, '附件后台列表/恢复/硬删', datetime('now', 'localtime'), datetime('now', 'localtime'));
 
 -- 站点设置：不预置种子数据，由用户在管理后台初始化填写
 -- SiteSettingsService 在首次 GET 时会自动创建空默认值

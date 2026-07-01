@@ -9,7 +9,8 @@ import { formatDate as formatDateShared, formatDateTime as formatDateTimeShared,
 // → 所有 /post/* 500。修复：safeMarkdown 内 import.meta.client 守卫，SSR 走 ssrSafeHtml 兜底。
 
 const route = useRoute()
-const { get, post } = usePublicApi()
+const { get, post, downloadAttachment } = usePublicApi()
+const $toast = useToast()
 const slug = route.params.slug as string
 
 // 2026-06-13 修复（BUG-050 SEO 严重缺陷）：
@@ -94,6 +95,30 @@ const handleSubmitComment = async () => {
 const formatDate = (d: string | number | null | undefined) => formatDateShared(d)
 const formatDateTime = (d: string | number | null | undefined) => formatDateTimeShared(d)
 
+// ============ 2026-07-01 DEV-002：附件下载（防多点击 + 30s 超时） ============
+const { formatFileSize } = useFileSize()
+const downloading = ref(false)
+const downloadLock = ref<number | null>(null)
+
+const handleDownload = async () => {
+  if (!article.value?.id || !article.value?.attachment) return
+  // 锁：组件级 ref，避免全局 store
+  if (downloading.value) return
+  downloading.value = true
+  if (downloadLock.value) clearTimeout(downloadLock.value)
+  try {
+    await downloadAttachment(article.value.id)
+  } catch (err: any) {
+    $toast.error(err?.message || '下载失败')
+  } finally {
+    // 30s 后解锁
+    downloadLock.value = window.setTimeout(() => {
+      downloading.value = false
+      downloadLock.value = null
+    }, 30000)
+  }
+}
+
 /**
  * SSR 阶段的安全 HTML（auto_fix BUG-003）：
  * - DOMPurify 在 SSR 不可用（默认导出不是函数），会抛 500
@@ -166,6 +191,23 @@ onMounted(async () => {
 
       <!-- 正文 -->
       <div class="prose" v-html="safeMarkdown(article.contentMd)"></div>
+
+      <!-- 2026-07-01 DEV-002：附件下载区（软删显示灰条无下载按钮） -->
+      <section v-if="article.attachment" style="margin: 32px 0; padding: 16px 20px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: 8px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary); flex-shrink: 0;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-size: 14px; font-weight: 500; word-break: break-all;">{{ article.attachment.fileName }}</div>
+            <div style="font-size: 12px; color: var(--muted);">{{ formatFileSize(article.attachment.fileSize) }}</div>
+          </div>
+          <!-- 软删：灰条 + 无下载按钮 -->
+          <span v-if="article.attachment.deleted === 1" style="font-size: 12px; color: var(--muted);">原附件已被作者删除</span>
+          <!-- 未删：下载按钮（防多点击） -->
+          <button v-else @click="handleDownload" :disabled="downloading" class="btn btn-primary btn-sm">
+            {{ downloading ? '下载中…' : '下载附件' }}
+          </button>
+        </div>
+      </section>
 
       <!-- 标签 -->
       <div v-if="article.tagIds?.length" style="margin: 32px 0; padding-top: 24px; border-top: 1px solid var(--line-soft); display: flex; gap: 6px; flex-wrap: wrap;">

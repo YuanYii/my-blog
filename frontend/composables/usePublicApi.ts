@@ -82,5 +82,51 @@ export const usePublicApi = () => {
   const del = <T = any>(path: string) =>
     request<T>(path, { method: 'DELETE' })
 
-  return { request, get, post, put, del }
+  // ============ 2026-07-01 DEV-002：公开附件下载 ============
+
+  /**
+   * 浏览器原生 GET 下载（不走 ofetch，绕过 JSON 解析）。
+   * 后端走 StreamUtils.copy 流式响应，浏览器收到 Content-Disposition 后触发下载。
+   * 用 `<a ref="dlRef" @click.prevent="onDownload">` + ref 锁 + 30s setTimeout 防多点击（按 DEV-002 设计）。
+   */
+  const downloadAttachment = async (articleId: number): Promise<void> => {
+    if (!import.meta.client) return
+    const vid = await ensureVisitorId()
+    const headers: Record<string, string> = {}
+    if (vid) headers['X-Visitor-Id'] = vid
+    const res = await fetch(`${base}/articles/${articleId}/attachment`, {
+      method: 'GET',
+      headers
+    })
+    if (!res.ok) {
+      // 410 Gone（软删） / 404（不存在） / 500
+      let msg = `下载失败 (${res.status})`
+      try {
+        const data = await res.json()
+        if (data?.message) msg = data.message
+      } catch { /* ignore */ }
+      throw new Error(msg)
+    }
+    // 提取文件名（解析 Content-Disposition: attachment; filename="..."; filename*=UTF-8''...）
+    const dispo = res.headers.get('Content-Disposition') || ''
+    let fileName = 'attachment.zip'
+    const utf8Match = dispo.match(/filename\*=UTF-8''([^;]+)/)
+    if (utf8Match) {
+      fileName = decodeURIComponent(utf8Match[1])
+    } else {
+      const quotedMatch = dispo.match(/filename="?([^";]+)"?/)
+      if (quotedMatch) fileName = decodeURIComponent(quotedMatch[1])
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  return { request, get, post, put, del, downloadAttachment }
 }

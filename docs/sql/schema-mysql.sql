@@ -320,7 +320,7 @@ CREATE TABLE IF NOT EXISTS `import_record` (
   `status`          VARCHAR(16)   NOT NULL COMMENT 'PENDING/RUNNING/SUCCESS/FAILED',
   `total_count`     INT           NOT NULL DEFAULT 0,
   `success_count`   INT           NOT NULL DEFAULT 0,
-  `fail_count`      INT           NOT NULL DEFAULT 0,
+  `fail_count`     INT           NOT NULL DEFAULT 0,
   `error_message`   TEXT          DEFAULT NULL,
   `started_at`      DATETIME      NOT NULL,
   `finished_at`     DATETIME      DEFAULT NULL,
@@ -329,6 +329,28 @@ CREATE TABLE IF NOT EXISTS `import_record` (
   PRIMARY KEY (`id`),
   INDEX `idx_import_started` (`started_at` DESC),
   INDEX `idx_import_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- article_attachment（2026-07-01 DEV-001，文章附件）
+-- ============================================================
+-- 一文一附件：article_id UNIQUE 约束（DB 层兜底，强制"先删旧附件再上传"）
+-- 二段删除：softDelete (deleted=1, 文件保留) → hardDelete (先删文件后删 DB)
+-- 公开下载软删返 410 Gone
+CREATE TABLE IF NOT EXISTS `article_attachment` (
+  `id`              BIGINT        NOT NULL AUTO_INCREMENT,
+  `article_id`      BIGINT        NOT NULL                COMMENT '所属文章 ID（UNIQUE，一文一附件）',
+  `file_name`       VARCHAR(255)  NOT NULL                COMMENT '原始文件名（含扩展名）',
+  `file_path`       VARCHAR(500)  NOT NULL                COMMENT '相对 blog.attachment.local.dir 路径',
+  `file_size`       BIGINT        NOT NULL DEFAULT 0      COMMENT '字节数',
+  `mime_type`       VARCHAR(100)  DEFAULT NULL            COMMENT 'MIME 类型，如 application/zip',
+  `deleted`         TINYINT       NOT NULL DEFAULT 0      COMMENT '0=未删 / 1=软删（文件保留在磁盘）',
+  `created_at`      DATETIME      NOT NULL                COMMENT 'Java 填北京时间',
+  `updated_at`      DATETIME      NOT NULL                COMMENT 'Java 填北京时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_article_attachment_article` (`article_id`),
+  INDEX `idx_article_attachment_deleted` (`deleted`),
+  INDEX `idx_article_attachment_updated` (`updated_at` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- type=public → 放行（GET 任意，写方法按 isPublicWriteAllowed 显式允许）

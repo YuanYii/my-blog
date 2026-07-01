@@ -86,6 +86,11 @@ blog:
     #   secret-key: ${OSS_SECRET_KEY}
     #   cdn-domain: ${OSS_CDN_DOMAIN:}
 
+  # 2026-07-01 DEV-001：文章附件本地存储（区别于图片上传——不走 /uploads/ 静态服务）
+  attachment:
+    local:
+      dir: ${ATTACHMENT_DIR:/data/attachments}
+
   # CORS（**生产环境收紧**，只允许你自己的域名）
   cors:
     allowed-origins: ${CORS_ORIGINS:https://blog.croeyai.cn}

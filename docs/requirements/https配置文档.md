@@ -470,7 +470,87 @@ echo | openssl s_client -connect blog.croeyai.cn:443 -servername blog.croeyai.cn
 
 ---
 
-## 11. 实施步骤（待开工）
+## 11. SSL 证书申请操作手册（手动）
+
+> 适用：deploy-server.sh HTTPS 流程未实施前的手动申请方式
+
+### 11.1 前提条件
+
+| 条件 | 说明 |
+|---|---|
+| DNS 解析 | `blog.coreyai.cn` 的 A 记录指向 ECS 公网 IP |
+| 安全组 | 放行 80 + 443 端口 |
+| nginx | 已安装并运行在 80 端口 |
+
+### 11.2 申请步骤
+
+```bash
+# 1. SSH 到服务器
+ssh myblog@<ecs-ip>
+
+# 2. 安装 certbot
+sudo apt update && sudo apt install certbot -y
+
+# 3. 创建 webroot 目录（certbot 校验用）
+sudo mkdir -p /var/www/certbot
+
+# 4. 临时配置 nginx 放行校验路径
+# 在 /etc/nginx/conf.d/myblog.conf 的 server{} 里加：
+#   location /.well-known/acme-challenge/ {
+#       root /var/www/certbot;
+#   }
+sudo nginx -t && sudo systemctl reload nginx
+
+# 5. 申请证书
+sudo certbot certonly --webroot \
+  -w /var/www/certbot \
+  -d blog.coreyai.cn \
+  --email your@email.com \
+  --agree-tos \
+  --no-eff-email
+
+# 6. 证书路径
+# 成功后证书在：/etc/letsencrypt/live/blog.coreyai.cn/
+#   fullchain.pem  ← nginx ssl_certificate 用这个
+#   privkey.pem    ← nginx ssl_certificate_key 用这个
+```
+
+### 11.3 申请成功后配置
+
+```bash
+# /etc/myblog/myblog.env 加两行
+SSL_DOMAIN=blog.coreyai.cn
+CDN_DOMAIN=blog.coreyai.cn    # 如果有 CDN
+
+# 重启服务
+sudo systemctl restart myblog
+```
+
+### 11.4 自动续期（证书 90 天有效）
+
+```bash
+# 添加 cron 每天凌晨 3:30 自动续期
+echo "30 3 * * * certbot renew --quiet --post-hook 'systemctl reload nginx'" | sudo crontab -
+```
+
+### 11.5 验证
+
+```bash
+# 检查证书到期时间
+echo | openssl s_client -connect blog.coreyai.cn:443 -servername blog.coreyai.cn 2>/dev/null | openssl x509 -noout -dates
+```
+
+### 11.6 常见问题
+
+| 问题 | 原因 |
+|---|---|
+| certbot 报 "DNS problem" | DNS A 记录未生效，等 5-10 分钟 |
+| certbot 报 "connection refused" | 80 端口被安全组拦截 |
+| certbot 报 "rate limit" | 同域名每周最多 50 张，等一周或换测试环境 |
+
+---
+
+## 12. 实施步骤（待开工）
 
 1. 在 `docs/nginx/` 下新建 `nginx-http.conf` + `nginx-https.conf`
 2. 修改 `docs/scripts/publish-release.sh`：

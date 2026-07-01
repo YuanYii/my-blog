@@ -53,7 +53,9 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { to: '/admin/posts',     label: '文章', icon: 'file',   badge: () => meta.value.articleCount },
       { to: '/admin/comments',  label: '评论', icon: 'message', badge: () => meta.value.pendingComments, badgeAccent: true, badgeLabel: '待审' },
       { to: '/admin/categories', label: '分类', icon: 'folder' },
-      { to: '/admin/tags',       label: '标签', icon: 'tag' }
+      { to: '/admin/tags',       label: '标签', icon: 'tag' },
+      // 2026-07-01 DEV-003：附件管理入口（"内容"组末尾）
+      { to: '/admin/attachments', label: '附件', icon: 'paperclip' }
     ]
   },
   {
@@ -115,6 +117,7 @@ const pageTitle = computed(() => {
     '/admin/comments': '评论管理',
     '/admin/categories': '分类管理',
     '/admin/tags': '标签管理',
+    '/admin/attachments': '附件管理',
     '/admin/devices': '设备授权',
     '/admin/backup': '数据备份',
     '/admin/restore': '数据恢复',

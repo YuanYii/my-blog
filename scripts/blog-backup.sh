@@ -2,7 +2,7 @@
 # ============================================================
 # my-blog 数据备份脚本(加密 + GitHub Release)
 # ============================================================
-# 把生产服务器的 SQLite db + uploads 目录打包 → 加密 → 上传到独立 GitHub 仓库的 Release
+# 把生产服务器的 SQLite db + uploads + attachments 目录打包 → 加密 → 上传到独立 GitHub 仓库的 Release
 #
 # 用途:
 #   1. admin 后台点击"立即备份" → 后端 ProcessBuilder 调本脚本
@@ -10,6 +10,7 @@
 #
 # 设计依据:
 #   docs/设计文档/博客数据备份方案设计.md (REQ-BACKUP-2026-06-20)
+#   docs/changelogs/2026-07-01-v5.0.0-article-attachment.md (2026-07-01 attachments 加入备份)
 #
 # 用法:
 #   # 通常由后端 ProcessBuilder 调(已设好全部 env,不用传参)
@@ -35,8 +36,10 @@
 #   INSTALL_DIR                  部署根(默认 /opt/myblog)
 #   SQLITE_PATH                  db 路径(默认 /opt/myblog/db/blog.db, 跟 myblog.env 对齐)
 #   UPLOAD_DIR                   上传目录(默认 /opt/myblog/uploads)
+#   ATTACHMENT_DIR               附件目录(默认 $INSTALL_DIR/attachments,2026-07-01 加)
 #   SKIP_UPLOADS=1               跳过 uploads(只备份 db)
-#   SKIP_DB=1                    跳过 db(只备份 uploads)
+#   SKIP_DB=1                    跳过 db(只备份 uploads + attachments)
+#   SKIP_ATTACHMENTS=1           跳过 attachments(只备份 db + uploads)
 #   DRY_RUN=1                    不上传 GitHub,只在 stage 目录产出
 #   DB_EXCLUDE_TABLES            透传给 sqlite-export.sh 的 --exclude
 #
@@ -45,6 +48,7 @@
 #   10 预检失败(必填 env 缺失)
 #   11 db dump 失败
 #   12 uploads 打包/加密失败
+#   18 attachments 打包/加密失败
 #   13 manifest 生成失败
 #   14 SHA256SUMS 生成失败
 #   15 GitHub release 创建失败
@@ -60,6 +64,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="${INSTALL_DIR:-/opt/myblog}"
 SQLITE_PATH="${SQLITE_PATH:-$INSTALL_DIR/db/blog.db}"
 UPLOAD_DIR="${UPLOAD_DIR:-$INSTALL_DIR/uploads}"
+# 2026-07-01 DEV-003：附件目录独立打包，与 uploads 并列
+ATTACHMENT_DIR="${ATTACHMENT_DIR:-$INSTALL_DIR/attachments}"
 STAGE_DIR="${BACKUP_STAGE_DIR:-/tmp/blog-backup-stage}"
 SCRIPT_DIR_LOCAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQLITE_EXPORT_SH=""
@@ -115,11 +121,12 @@ fi
 info "INSTALL_DIR      = $INSTALL_DIR"
 info "SQLITE_PATH      = $SQLITE_PATH"
 info "UPLOAD_DIR       = $UPLOAD_DIR"
+info "ATTACHMENT_DIR   = $ATTACHMENT_DIR"
 info "STAGE_DIR        = $STAGE_DIR"
 info "SQLITE_EXPORT_SH = $SQLITE_EXPORT_SH"
 info "GITHUB_BACKUP_REPO = ${GITHUB_BACKUP_REPO:-<DRY_RUN>}"
 
-# 校验 db / uploads 存在
+# 校验 db / uploads / attachments 存在
 if [[ "${SKIP_DB:-0}" != "1" && ! -f "$SQLITE_PATH" ]]; then
     err "SQLITE_PATH 不存在: $SQLITE_PATH"
     exit 10
@@ -127,6 +134,11 @@ fi
 if [[ "${SKIP_UPLOADS:-0}" != "1" && ! -d "$UPLOAD_DIR" ]]; then
     warn "UPLOAD_DIR 不存在: $UPLOAD_DIR(将自动跳过 uploads 备份)"
     SKIP_UPLOADS=1
+fi
+# 2026-07-01 DEV-003：附件目录不存在时降级跳过(不致命)
+if [[ "${SKIP_ATTACHMENTS:-0}" != "1" && ! -d "$ATTACHMENT_DIR" ]]; then
+    warn "ATTACHMENT_DIR 不存在: $ATTACHMENT_DIR(将自动跳过 attachments 备份)"
+    SKIP_ATTACHMENTS=1
 fi
 
 # 校验 gh CLI / curl / jq
@@ -295,6 +307,47 @@ else
     info "跳过 uploads 备份(SKIP_UPLOADS=1)"
 fi
 
+# ============= 4b. 加密 attachments (2026-07-01 DEV-003) =============
+ATTACHMENTS_ENC_FILE=""
+ATTACHMENTS_SIZE=0
+if [[ "${SKIP_ATTACHMENTS:-0}" != "1" ]]; then
+    log_step "ATTACHMENTS_PACK"
+    echo "ATTACHMENTS_PACK_START" > "$PROGRESS_FILE"
+    stage "4b/8 加密 attachments 打包"
+
+    ATTACHMENTS_ENC_FILE="$STAGE_DIR/attachments-${TIMESTAMP}.tar.gz.enc"
+    info "tar $ATTACHMENT_DIR → openssl enc → $ATTACHMENTS_ENC_FILE"
+
+    # 与 uploads 段一致的容错：边备份边改文件 → tar exit 1 仍可用
+    if ! tar -czf - -C "$(dirname "$ATTACHMENT_DIR")" \
+        --warning=no-file-changed \
+        "$(basename "$ATTACHMENT_DIR")" 2>> "$STAGE_DIR/attachments-enc.log" \
+            | openssl enc -aes-256-cbc -pbkdf2 -iter 10 -salt \
+                -pass env:BACKUP_ENCRYPTION_PASSWORD \
+                -out "$ATTACHMENTS_ENC_FILE" 2>> "$STAGE_DIR/attachments-enc.log"; then
+        if grep -q "file changed" "$STAGE_DIR/attachments-enc.log" 2>/dev/null \
+           && [[ -s "$ATTACHMENTS_ENC_FILE" ]]; then
+            warn "attachments 打包出现 'file changed' 警告(边备份边有上传), 产物仍可用, 继续"
+        else
+            err "attachments 打包/加密失败,日志:"
+            cat "$STAGE_DIR/attachments-enc.log" >&2
+            echo "ATTACHMENTS_PACK_FAILED" > "$PROGRESS_FILE"
+            exit 18
+        fi
+    fi
+    ATTACHMENTS_SIZE=$(stat -c%s "$ATTACHMENTS_ENC_FILE" 2>/dev/null || stat -f%z "$ATTACHMENTS_ENC_FILE")
+    info "attachments 加密完成,大小: $ATTACHMENTS_SIZE bytes"
+    echo "ATTACHMENTS_PACK_OK:$ATTACHMENTS_SIZE" > "$PROGRESS_FILE"
+
+    # >1.5GB 警告(与 uploads 同)
+    if [[ $ATTACHMENTS_SIZE -gt 1610612736 ]]; then
+        warn "attachments 加密包 $ATTACHMENTS_SIZE bytes 接近 2GB,GitHub release 2GB 上限"
+        warn "考虑 SKIP_ATTACHMENTS=1 仅备份 db + uploads,或单独清理历史附件"
+    fi
+else
+    info "跳过 attachments 备份(SKIP_ATTACHMENTS=1)"
+fi
+
 # ============= 5. 生成 manifest =============
 log_step "MANIFEST"
 echo "MANIFEST_START" > "$PROGRESS_FILE"
@@ -337,6 +390,14 @@ if [[ "${SKIP_UPLOADS:-0}" != "1" && -d "$UPLOAD_DIR" ]]; then
     UPLOADS_PLAIN_SIZE=$(du -sb "$UPLOAD_DIR" 2>/dev/null | cut -f1 || echo 0)
 fi
 
+# 2026-07-01 DEV-003：attachments 文件数和体积（与 uploads 同等口径）
+ATTACHMENTS_FILE_COUNT=0
+ATTACHMENTS_PLAIN_SIZE=0
+if [[ "${SKIP_ATTACHMENTS:-0}" != "1" && -d "$ATTACHMENT_DIR" ]]; then
+    ATTACHMENTS_FILE_COUNT=$(find "$ATTACHMENT_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
+    ATTACHMENTS_PLAIN_SIZE=$(du -sb "$ATTACHMENT_DIR" 2>/dev/null | cut -f1 || echo 0)
+fi
+
 # 总览 manifest
 cat > "$MANIFEST_FILE" <<EOF
 {
@@ -356,6 +417,12 @@ cat > "$MANIFEST_FILE" <<EOF
     "encrypted_size_bytes": ${UPLOADS_SIZE:-0},
     "plain_size_bytes": ${UPLOADS_PLAIN_SIZE},
     "file_count": ${UPLOADS_FILE_COUNT}
+  },
+  "attachments": {
+    "encrypted_file": "$(basename "${ATTACHMENTS_ENC_FILE:-}")",
+    "encrypted_size_bytes": ${ATTACHMENTS_SIZE:-0},
+    "plain_size_bytes": ${ATTACHMENTS_PLAIN_SIZE},
+    "file_count": ${ATTACHMENTS_FILE_COUNT}
   },
   "encryption": {
     "algorithm": "AES-256-CBC",
@@ -398,6 +465,8 @@ ASSET_URLS_FILE="$STAGE_DIR/.asset_urls"
 ASSETS=()
 [[ -n "$DB_ENC_FILE" && -f "$DB_ENC_FILE" ]] && ASSETS+=("$DB_ENC_FILE")
 [[ -n "$UPLOADS_ENC_FILE" && -f "$UPLOADS_ENC_FILE" ]] && ASSETS+=("$UPLOADS_ENC_FILE")
+# 2026-07-01 DEV-003：attachments 独立上传，与 uploads 并列
+[[ -n "$ATTACHMENTS_ENC_FILE" && -f "$ATTACHMENTS_ENC_FILE" ]] && ASSETS+=("$ATTACHMENTS_ENC_FILE")
 ASSETS+=("$MANIFEST_FILE" "$SHA256SUMS_FILE")
 
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
@@ -533,6 +602,7 @@ cat > "$RESULT_FILE" <<EOF
   "release_url": "$(cat "$ASSET_URLS_FILE" 2>/dev/null || echo '')",
   "db_size": ${DB_SIZE:-0},
   "uploads_size": ${UPLOADS_SIZE:-0},
+  "attachments_size": ${ATTACHMENTS_SIZE:-0},
   "manifest_file": "$MANIFEST_FILE",
   "assets": [
 $(for a in "${ASSETS[@]}"; do

@@ -198,7 +198,7 @@ fi
 
 # ============= 3. 创建部署目录 + 用户 =============
 info "=== 3. Preparing directory structure ==="
-mkdir -p "$INSTALL_DIR"/{logs,frontend,db,uploads} "$INSTALL_DIR/db/backups" "$INSTALL_DIR/logs/archive"
+mkdir -p "$INSTALL_DIR"/{logs,frontend,db,uploads,attachments} "$INSTALL_DIR/db/backups" "$INSTALL_DIR/logs/archive"
 if [ "$LOCAL_SIM" = "1" ]; then
     info "LOCAL_SIM=1, skipping myblog user creation (running as root in container)"
 else
@@ -657,6 +657,11 @@ CORS_ORIGINS=$([ "$LOCAL_SIM" = "1" ] && echo "http://localhost:28000,http://loc
 
 # --- 文件上传 ---
 UPLOAD_DIR=$INSTALL_DIR/uploads
+
+# --- 文章附件（2026-07-01 DEV-001）---
+# 区别于图片上传 /uploads/ 静态服务，附件走应用层流式响应（不直暴露路径）
+# blog-backup.sh 独立打包此处（不混 uploads）
+ATTACHMENT_DIR=$INSTALL_DIR/attachments
 
 # --- Redis(apt 装的 redis-server 默认 localhost:6379 无密码)---
 REDIS_HOST=127.0.0.1
