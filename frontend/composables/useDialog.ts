@@ -77,7 +77,23 @@ export const useDialog = () => {
 
   const open = (opts: Omit<typeof state.value, 'open' | 'resolver'>) => {
     return new Promise<DialogResult>((resolve) => {
-      state.value = { ...state.value, ...opts, open: true, resolver: resolve }
+      // 2026-07-01 BUG-003 修复：opts 不传的字段显式兜底默认值,
+      // 避免之前的 dialog（如 MarkdownEditor "输入 URL"）污染全局 state,
+      // 导致后续不传 cancelText 的 $dialog.confirm() 一直显示旧值。
+      // 之前写法 `...state.value, ...opts` 会保留上次的 cancelText/danger/prompt 等状态。
+      state.value = {
+        ...state.value,
+        ...opts,
+        confirmText: opts.confirmText ?? '',
+        cancelText: opts.cancelText ?? '',
+        danger: opts.danger ?? false,
+        prompt: opts.prompt ?? false,
+        promptLabel: opts.promptLabel ?? '',
+        promptPlaceholder: opts.promptPlaceholder ?? '',
+        promptDefault: opts.promptDefault ?? '',
+        open: true,
+        resolver: resolve
+      }
     })
   }
 
