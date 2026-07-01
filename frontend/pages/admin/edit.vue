@@ -177,7 +177,8 @@ const autoSlug = () => {
 const save = async (publishNow = false) => {
   if (!form.title) { $toast.warning('请填写标题'); return }
   if (!form.slug)  { $toast.warning('请填写 slug'); return }
-  if (!form.categoryId) { $toast.warning('请选择分类'); return }
+  const finalStatus = publishNow ? 1 : form.status
+  if (finalStatus === 1 && !form.categoryId) { $toast.warning('发布文章时请选择分类'); return }
   saving.value = true
   saveStatus.value = 'saving'
   try {
