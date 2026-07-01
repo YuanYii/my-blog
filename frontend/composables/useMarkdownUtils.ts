@@ -143,7 +143,8 @@ function formatYmdHm(date: Date): string {
  */
 export function renderMarkdown(md: string): string {
   if (!md) return ''
-  const lines = md.split('\n')
+  // 2026-06-29 修复：去除 Windows 换行符 \r，避免标题正则匹配失败
+  const lines = md.replace(/\r\n?/g, '\n').split('\n')
   const out: string[] = []
   // 块累积缓冲区
   let buf: string[] = []
