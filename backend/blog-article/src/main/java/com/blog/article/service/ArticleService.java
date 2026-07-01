@@ -42,6 +42,7 @@ public class ArticleService {
     private final CategoryMapper categoryMapper;
     private final TagMapper tagMapper;
     private final AttachmentMapper attachmentMapper;
+    private final AttachmentService attachmentService;
     private final JdbcTemplate jdbc;
 
     /**
@@ -213,7 +214,7 @@ public class ArticleService {
         String countSql = "SELECT COUNT(*) FROM article " + where;
         Long total = jdbc.queryForObject(countSql, Long.class, params.toArray());
 
-        String listSql = "SELECT id, title, slug, summary, cover_url AS coverUrl, status, view_count AS viewCount, "
+        String listSql = "SELECT id, title, slug, summary, cover_url AS coverUrl, status, deleted, view_count AS viewCount, "
                 + "category_id AS categoryId, published_at AS publishedAt, created_at AS createdAt, "
                 + "updated_at AS updatedAt, content_md AS contentMd "
                 + "FROM article " + where + " " + orderBy + " LIMIT ? OFFSET ?";
@@ -231,6 +232,7 @@ public class ArticleService {
             m.put("summary", r.get("summary"));
             m.put("coverUrl", r.get("coverUrl"));
             m.put("status", ((Number) r.get("status")).intValue());
+            m.put("deleted", ((Number) r.get("deleted")).intValue());
             m.put("viewCount", r.get("viewCount") == null ? 0 : ((Number) r.get("viewCount")).longValue());
             m.put("categoryId", r.get("categoryId") == null ? null : ((Number) r.get("categoryId")).longValue());
             m.put("publishedAt", r.get("publishedAt"));
@@ -317,10 +319,10 @@ public class ArticleService {
         if (!article.getSlug().matches("^[a-zA-Z0-9\\u4e00-\\u9fa5\\-]+$")) {
             throw new BusinessException(400, "slug 只能包含字母、数字、中文、连字符");
         }
-        if (article.getCategoryId() == null) {
-            throw new BusinessException(400, "分类不能为空");
+        if (article.getCategoryId() == null && article.getStatus() != null && article.getStatus() == 1) {
+            throw new BusinessException(400, "发布文章时分类不能为空");
         }
-        if (categoryMapper.selectById(article.getCategoryId()) == null) {
+        if (article.getCategoryId() != null && categoryMapper.selectById(article.getCategoryId()) == null) {
             throw new BusinessException(1001, "分类不存在");
         }
         Article existing = articleMapper.selectOne(
@@ -489,6 +491,8 @@ public class ArticleService {
         // 直接 DELETE 不走 logic-delete 过滤（用 jdbc 绕过 selectById 自动 deleted=0）
         int affected = jdbc.update("DELETE FROM article WHERE id = ?", id);
         jdbc.update("DELETE FROM article_tag WHERE article_id = ?", id);
+        // 硬删文章时联动硬删附件（文件 + DB 记录一并清除）
+        attachmentService.hardDeleteByArticleId(id);
         log.info("文章硬删：id={} slug={} affectedRows={} operator={}",
                 id, row.get("slug"), affected, AuthContext.uid(request));
         return Result.success();
