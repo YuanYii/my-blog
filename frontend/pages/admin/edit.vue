@@ -3,11 +3,83 @@ definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
 const route = useRoute()
 const router = useRouter()
-const { get, post, put, upload } = useAdminApi()
+const { get, post, put, upload, uploadAttachment, softDeleteAttachment } = useAdminApi()
 const $toast = useToast()
 const $dialog = useDialog()
+const { formatFileSize } = useFileSize()
 const fileInput = ref<HTMLInputElement | null>(null)
 const coverUploading = ref(false)
+
+// ============ 2026-07-01 DEV-002：附件管理 ============
+const attachmentInput = ref<HTMLInputElement | null>(null)
+const attachmentUploading = ref(false)
+const attachment = ref<{ id: number; fileName: string; fileSize: number; deleted: number } | null>(null)
+
+// 2026-07-01 BUG-004 修复：新建模式（form.id=null）也展示附件区块，
+// 但通过 disabled + toast 引导用户先保存草稿拿 articleId。
+// 之前 v-if=isEdit 直接把整个区块藏起来 → 用户感"按钮不见了"。
+const handleAttachmentClick = () => {
+  if (!form.id) {
+    $toast.warning('请先保存草稿后再上传附件')
+    return
+  }
+  attachmentInput.value?.click()
+}
+const handleAttachmentChange = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !form.id) return
+  // 客户端拦截：超过 5MB / 非 .zip
+  if (file.size > 5 * 1024 * 1024) {
+    $toast.error('附件超过 5MB 上限')
+    input.value = ''
+    return
+  }
+  if (!file.name.toLowerCase().endsWith('.zip')) {
+    $toast.error('仅允许 zip 格式')
+    input.value = ''
+    return
+  }
+  attachmentUploading.value = true
+  try {
+    const res = await uploadAttachment<any>(form.id, file)
+    attachment.value = res.data
+    $toast.success('附件已上传')
+  } catch (err: any) {
+    const msg = err?.data?.message || err?.message || '上传失败'
+    $toast.error(msg)
+  } finally {
+    attachmentUploading.value = false
+    input.value = ''
+  }
+}
+
+const handleAttachmentDelete = async () => {
+  if (!form.id || !attachment.value) return
+  const { confirmed } = await $dialog.confirm({
+    title: '删除附件',
+    message: `确认删除「${attachment.value.fileName}」？软删除后文章页会显示"已删除"提示。`,
+    confirmText: '删除',
+    danger: true
+  })
+  if (!confirmed) return
+  try {
+    await softDeleteAttachment(form.id)
+    attachment.value = { ...attachment.value, deleted: 1 }
+    $toast.success('附件已删除')
+  } catch (err: any) {
+    $toast.error('删除失败：' + (err?.data?.message || err?.message))
+  }
+}
+
+const loadAttachment = async () => {
+  if (!form.id) return
+  try {
+    // 从详情接口拿 attachment 字段（ArticleService.detail 已扩展）
+    const res = await get<any>(`/articles/id/${form.id}`)
+    attachment.value = res.data?.attachment || null
+  } catch { /* ignore */ }
+}
 
 const handleCoverClick = () => fileInput.value?.click()
 
@@ -79,6 +151,8 @@ const loadArticle = async () => {
     selectedTags.value = Array.isArray(a.tagIds) ? [...a.tagIds] : []
     viewCount.value = a.viewCount || 0
     createdAt.value = a.createdAt || ''
+    // 2026-07-01 DEV-002：加载附件信息（detail 已扩展 attachment 字段）
+    attachment.value = a.attachment || null
     // 2026-06-22 修复（BUG-XXX 自动保存误触发）：
     // 上面的 Object.assign 会逐字段触发 watch，3 秒后自动 save(false) 把原文存一遍——
     // 用户没编辑就写了一次库。
@@ -278,6 +352,36 @@ onMounted(async () => {
           <div class="meta-row">
             <span class="meta-label">创建时间</span>
             <span style="font-size: 11px;">{{ createdAt }}</span>
+          </div>
+        </div>
+
+        <!-- 2026-07-01 DEV-002 + BUG-004：附件管理（新建态也展示，disabled + toast 引导）-->
+        <div class="sidebar-card">
+          <div class="sidebar-card-title">附件</div>
+          <input ref="attachmentInput" type="file" accept=".zip" style="display: none;" @change="handleAttachmentChange" />
+          <!-- 无附件：显示上传按钮 -->
+          <div v-if="!attachment" class="cover-upload" @click="handleAttachmentClick" :style="{ opacity: (attachmentUploading || !form.id) ? 0.5 : 1, cursor: !form.id ? 'not-allowed' : 'pointer' }">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            <span>{{ attachmentUploading ? '上传中…' : '上传附件（zip / ≤5MB）' }}</span>
+          </div>
+          <!-- 有附件：文件名 + 大小 + 删除按钮 -->
+          <div v-else>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--bg-soft); border-radius: 6px; margin-bottom: 8px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary); flex-shrink: 0;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              <div style="flex: 1; min-width: 0;">
+                <div style="font-size: 12px; font-weight: 500; word-break: break-all;">{{ attachment.fileName }}</div>
+                <div style="font-size: 11px; color: var(--muted);">{{ formatFileSize(attachment.fileSize) }}</div>
+              </div>
+            </div>
+            <div v-if="attachment.deleted === 1" style="font-size: 11px; color: var(--danger); margin-bottom: 6px;">⚠ 附件已软删除（公开页显示"已删除"）</div>
+            <button v-if="attachment.deleted === 0" @click="handleAttachmentDelete" type="button" class="btn btn-ghost btn-sm" style="width: 100%; color: var(--danger);">
+              删除附件
+            </button>
+          </div>
+          <div style="font-size: 11px; margin-top: 6px; line-height: 1.4;">
+            <!-- 2026-07-01 BUG-004 修复：新建模式提示文案, 引导先保存草稿 -->
+            <span v-if="!form.id" style="color: var(--warning, #d97706);">先保存草稿后可上传附件</span>
+            <span v-else style="color: var(--muted);">仅 zip · 最大 5MB · 一文一附件（重复上传会提示"先删除旧附件"）</span>
           </div>
         </div>
       </aside>
