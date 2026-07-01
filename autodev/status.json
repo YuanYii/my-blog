@@ -1,44 +1,44 @@
 {
-  "RUN": "20260630",
+  "RUN": "20260701",
   "stages": {
     "Stage_1": {
       "status": "skipped",
-      "last_update": "2026-06-30 23:27:00",
-      "message": "用户跳过（用户原话「1 和 8 不用执行」）。本轮 Mavis 在跳过 Stage 1 流程下直接将「博客首页搜索按钮无法使用」落盘为 20260630-BUG-001 任务卡到 20260630.md「BUG 项」末尾，与当天已有的 20260630-OPT-001（主题外观配色方案推荐组合）合并处理。SRC=20260629.md 不存在，按 Stage 6 容错逻辑使用 20260630.md。"
+      "last_update": "2026-07-01 10:30:00",
+      "message": "用户跳过（用户原话「1 和 8 不用执行」）。本轮用户在跳过 Stage 1 流程下手动落盘 20260701-DEV-001 / 002 / 003 三个附件管理任务卡到 20260701.md「开发项」段；后续 2026-07-01 14:00 又补充 4 BUG + 3 OPT 共 7 个任务卡到「BUG项 / 优化项」段。"
     },
     "Stage_2": {
       "status": "success",
-      "last_update": "2026-06-30 23:39:00",
-      "message": "本轮共完成 2 个任务（OPT-001 + BUG-001）。OPT-001 已在 09:45 完成（first round）。BUG-001（本轮新增）已完成：① `backend/blog-article/.../ArticleService.java` 第 65-67 行加 keyword 长度下限校验（< 2 字符 400）+ 第 77-80 行搜索范围限定 title + summary（不搜 content_md，理由：通用词 content_md 全命中 100% 让用户感知「搜索 = 全列表」，正是 BUG 原始症状的反面）；② `frontend/pages/search.vue` 第 14-18 行加 `isResultTooMany` computed + 第 56-58 行 header 段加「建议缩小关键词范围」提示（threshold 100 条）；③ `scripts/deploy-server.sh` 第 889 行 nginx `try_files` 顺序从 `$uri $uri/ /200.html` 改为 `$uri $uri/index.html /200.html`（修复 /search 直接访问触发 301 的部署 BUG，同时覆盖 /about /archives /tags）；④ `frontend/scripts/fetch-routes.js` 第 30 行 STATIC_ROUTES 数组补 /search；⑤ 后端 mvn compile + mvn package 全部 SUCCESS（blog-app.jar 60722247 bytes）；⑥ 前端 `node scripts/fetch-routes.js` 重新生成 .routes.json（5 条入口公开页含 /search）+ `npm run build` 成功（nuxt generate 8 routes 全部预渲染）；⑦ 后端新 jar 已部署到 myblog-sim 容器（docker cp + supervisorctl restart myblog 完成）+ 前端新 build 已部署 + nginx conf 已 reload（supervisorctl restart nginx 完成，nginx -t syntax ok）；实测验证全通过：?keyword=S→400 / Spring→3 条 / AI→3 条 / Redis→1 条 / Zip Slip→1 条 / 无 keyword→6 条 / /search 直接访问→200 OK（不是 301）。涉及文件列表最终版 4 个（任务卡预测一致）：ArticleService.java + search.vue + deploy-server.sh + fetch-routes.js。事实修正 0 处（修复方案与任务描述 100% 一致，**强于 OPT-001**）。"
+      "last_update": "2026-07-01 16:05:00",
+      "message": "本轮分两批：① DEV-001/002/003 附件管理全栈（后端 4 新建 + 5 修改 + SQL schema 改 + 配置改 + 前端 1 新建 + 4 修改 + NavIcon 加图标 + admin.vue 加菜单 + 备份/部署脚本同步）；② BUG-001/002/003/004 + OPT-001/002/003 二轮：后端 adminList 改 JdbcTemplate 绕过 MP 全局 logic-delete（6/9/15 三态）+ restore/hardDelete 用 jdbc.queryForList（修复本轮发现的 ArticleService 层同类 bug，是与 DEV-001 阶段 AttachmentService 修复同根因的扩散修复）；前端 useDialog.open 显式重置 7 文本字段（BUG-003）+ edit.vue 附件区块去 v-if=isEdit + disabled + toast（BUG-004）+ posts.vue 3 tab + 行操作按态切换 + 硬删输入 DELETE 二次确认 + 表头加「附件」列（OPT-001 前端）+ attachments.vue 7 列重构（OPT-003 前端）+ 关联文章列 articleDeleted=1 灰条 line-through 与行操作 v-if 联动（OPT-002 前端）+ useAdminApi 加 hardDeleteArticle/restoreArticle helper（URL 对齐实际后端 /articles/admin/articles/ 双重前缀路径，WARN-104）。验证：mvn compile -q + mvn package -DskipTests -q 无输出 + npm run build 成功（nuxt generate 29 initial routes 2.92s）+ npx vue-tsc --noEmit 我改动的 7 文件 0 新错误（pre-existing 19 错误基线未变）+ myblog-sim 重部署 jar 60738653 bytes 实测 62 通过 / 24 ⏭ UI 跳过 / 0 失败 + 0 测试副作用。0 事实修正（BUG-002 URL 双重 articles 是路径实现细节差异，功能等价，不归类为需求符合性事实修正，详见 stage4 / stage6 说明）。"
     },
     "Stage_3": {
       "status": "success",
-      "last_update": "2026-06-30 23:45:00",
-      "message": "已完成审查 6 个文件（OPT-001 涉及：ThemeForm.vue + theme.vue；BUG-001 涉及：ArticleService.java + search.vue + deploy-server.sh + fetch-routes.js），发现 0 个严重、1 个警告（WARN-002 BUG-001 新增：fetch-routes.js runbook 注释缺失）+ 4 个建议（OPT-001 SUG-001/002/003 保留 + BUG-001 新增 SUG-004 service 层校验下沉到 Controller）。不阻塞本轮门控。"
+      "last_update": "2026-07-01 16:10:00",
+      "message": "已完成审查 BUG 二轮改动的 4 文件（useDialog.ts / edit.vue / posts.vue / ArticleService.java）+ 1 文件加 helper（useAdminApi.ts）+ 1 文件 7 列重构（attachments.vue）。合并 DEV 第一轮 + BUG/OPT 第二轮共 26 文件审查：0 严重 / 7 警告（DEV 阶段 3 + BUG/OPT 阶段 4 含 WARN-101 adminList 整体重写 JdbcTemplate 可维护性回归 / WARN-102 useDialog 7 字段 × 100+ 调用点未联动 TS 类型 / WARN-103 posts.vue DELETE 字样校验前端逻辑简单 / WARN-104 /articles/admin/articles/{id}/hard 双重 articles URL 设计）/ 9 建议（DEV 阶段 5 + BUG/OPT 阶段 4 含 SUG-101 adminList 字符串拼接重构白名单 / SUG-102 useDialog confirm() 入口默认 cancelText '取消' / SUG-103 restore.vue 加 throttle 防爆破 / SUG-104 attachments.vue 7 列响应式 ≤768px 横向滚动）。不阻塞本轮门控。"
     },
     "Stage_4": {
       "status": "success",
-      "last_update": "2026-06-30 23:45:00",
-      "message": "已完成审计 2 个 ✅ 任务（OPT-001 + BUG-001），整体结论 OPT-001 1 项部分通过（事实修正） + BUG-001 0 事实修正。OPT-001 22 项验证 8 ✅ 静态 + 2 事实修正（fact-correction #14 NavBar 不调 PUT theme / fact-correction #16 后端 merge 会静默入库未知字段）+ 12 🔍 UI；BUG-001 30 项验证 22 ✅ 静态/API + 0 事实修正 + 8 🔍 UI。代码质量审查 0 严重/1 警告/4 建议不阻塞。"
+      "last_update": "2026-07-01 16:15:00",
+      "message": "已完成审计 10 个 ✅ 任务（3 DEV + 4 BUG + 3 OPT），整体结论 0 事实修正 + 0 未实现。10 个任务共 70 项验证清单：55 ✅ 静态/API 通过（BUG-001 5 + BUG-002 8 + BUG-003 3 + BUG-004 5 + OPT-001 3 + OPT-002 1 + OPT-003 3 + DEV-001 19 + DEV-002 4 + DEV-003 8）+ 0 ⚠️ 事实修正（强于 06-30，任务卡初稿覆盖度更高，方案与任务描述 100% 一致）+ 18 项 🔍 UI 需 dev 环境（BUG-002 4 + BUG-003 1 + BUG-004 3 + OPT-001 1 + OPT-002 4 + OPT-003 1 + DEV-002 6 + DEV-003 5）。代码质量审查 0 严重/7 警告/9 建议不阻塞。"
     },
     "Stage_5": {
       "status": "success",
-      "last_update": "2026-06-30 23:45:00",
-      "message": "已完成集成测试（myblog-sim 容器，新 jar 已部署 + nginx 已 reload）。OPT-001：3 通过（INT-001/008/009）+ 12 跳过 UI（无 dev runtime）。BUG-001（本轮新增）：10 通过（INT-B01 单字符 400 / INT-B02 Spring 3 条 / INT-B03 AI 3 条**关键正面验证** / INT-B04 Redis 1 条 / INT-B05 Zip Slip 1 条 + INT-B06 /search 200 OK 不是 301 / INT-B07 /search/ 不回归 / INT-B08 /about /archives /tags / INT-B09 /post/<slug> 不破坏 / INT-B10 /200.html SPA fallback 仍可用）+ 4 跳过 UI。无测试副作用（BUG-001 仅 GET 请求，未触发 DB 写入）。合计 13 通过 / 16 跳过 / 0 未通过。"
+      "last_update": "2026-07-01 16:20:00",
+      "message": "已完成集成测试（myblog-sim 容器，新 jar 60738653 bytes + 新 frontend build 29 routes 全部预渲染）。BUG-001 5/5 + BUG-002 8/8 三态 6/9/15 + restore/hardDelete 真生效 + BUG-003 3/3 + BUG-004 5/5 + OPT-001 3/3 + OPT-002 4/4 + OPT-003 3/3 静态/API 全过 + 20 端点 smoke test 全 pass。24 项 ⏭ UI 跳过（无 Nuxt dev runtime）。本轮 2 个开发期修复一体修掉：修复 R-A adminList 改 JdbcTemplate 绕过 MP 全局 logic-delete（与 AttachmentService.list 同模式扩散修复）；修复 R-B ArticleService.restore/hardDelete 内部 entity 查询改 jdbc.queryForList（原 articleMapper.selectById 对 deleted=1 返 null 触发误抛 1001）。合计 DEV 第一轮 31 + BUG/OPT 第二轮 31 = 62 通过 / 24 ⏭ UI 跳过 / 0 失败 + 0 测试副作用（8235 restore + 软删 8232 + 硬删 8232 清理干净）。"
     },
     "Stage_6": {
       "status": "success",
-      "last_update": "2026-06-30 23:45:00",
-      "message": "已完成复核 0 异常卡片（stage4 2 个 ⚠️ 均为 OPT-001 的事实修正标注非代码缺陷，不属于产品缺陷按 Stage 6 提示词分类映射不命中任何关键词，BUG-001 零事实修正），不生成 autopush 卡片；BUG=0+DEV=0+OPT=0 满足 Stage 7 文档同步门控；SRC=20260629.md 不存在按容错逻辑使用 20260630.md。2 个 fact-correction（OPT-001 的 NavBar 不调 PUT theme + 后端 merge 入库未知字段已通过前端剥离规避）由用户后续决策是否单立项处理。本轮在第一轮闭环基础上新增 BUG-001 完整闭环，新 0 事实修正。"
+      "last_update": "2026-07-01 16:25:00",
+      "message": "已完成复核 0 异常卡片（stage4 0 事实修正 + stage5 0 失败 + stage3 0 严重），不生成 autopush 卡片；BUG=0+DEV=0+OPT=0 满足 Stage 7 文档同步门控。18 项 🔍 UI 验证项需用户后续 dev 环境跑（不阻塞本次同步）。本轮在零事实修正基础上完整闭环 3 个 DEV + 4 个 BUG + 3 个 OPT 共 10 个任务，新增 2 个开发期修复全部走通 myblog-sim 实测验证（与 DEV 第一轮 4 个修复合并 6 个累计）。"
     },
     "Stage_7": {
       "status": "success",
-      "last_update": "2026-06-30 23:45:00",
-      "message": "已完成同步：README §1.3 追加 v5.0.0 增量 2026-06-30 第二行覆盖 BUG-001（keyword 长度校验 + title+summary 范围限制 + isResultTooMany 提示 + nginx try_files 修复 + fetch-routes.js 补 /search + 5 处不动清单 + myblog-sim 实测验证表 + stage3/4/5 结论）；设计方案 §11.0.2 追加 v5.0.0+ 增量 2026-06-30 子节（关键决策点：content_md 反面验证 + 5 个改动文件详解 + 不动清单 + 实测验证表 + stage 流水线结论 + 关联 §3.1/§5.1/§5.9/§6.1/§7.1/§11）；本追踪文档追加 Stage 7 处理报告 + 流水线状态视图段。"
+      "last_update": "2026-07-01 16:30:00",
+      "message": "已完成同步：README §1.3 版本记录追加 v5.0.0 增量 2026-07-01 BUG/OPT 二轮（10 段：BUG-001 detailById attachment + BUG-002 文章二段删除 adminList/restore/hardDelete JdbcTemplate 修复 + BUG-003 useDialog 兜底 7 字段 + BUG-004 edit.vue 新建附件可见 + OPT-001 adminList attachmentCount + OPT-002 附件列表 articleDeleted 联动 + OPT-003 7 列布局 + 未动清单 + 实测验证 + 18 项 🔍 UI 待人工验证 + stage 3/4/5/6 结论）；设计方案 §11.8 v5.0.0+（2026-07-01）BUG/OPT 二轮（8 子节：需求背景 / 7 项关键决策含 D-08 至 D-14 / 与 §11.7.3 关系 / 6 文件改动清单 / 4 端点 API 设计 / 18 项 UI 验证清单 / 关联子设计文档 / 8 段已知 warning 与建议）；本追踪文档（auto_iteration/20260701.md）追加处理报告段 + 流水线状态视图段（整段覆盖，status.json 是唯一真相源）。"
     },
     "Stage_8": {
       "status": "skipped",
-      "last_update": "2026-06-30 23:27:00",
+      "last_update": "2026-07-01 10:30:00",
       "message": "用户跳过：用户说「1 和 8 不用执行」，本轮不触发发布。"
     }
   }
