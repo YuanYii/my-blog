@@ -33,6 +33,13 @@ const save = async () => {
 const uploadFn = (path: string, file: File) => upload<any>(path, file)
 
 onMounted(load)
+
+// 2026-07-01 DEV-006：监听 md 上传成功后的事件，reload 当前 profile 数据
+const bus = useSettingsEventBus()
+const unsubscribe = bus.on('settings-updated', (payload) => {
+  if (payload.sections.includes('profile')) load()
+})
+onBeforeUnmount(unsubscribe)
 </script>
 
 <template>

@@ -7,6 +7,7 @@ import com.blog.auth.entity.User;
 import com.blog.auth.mapper.UserMapper;
 import com.blog.common.Result;
 import com.blog.common.web.AuthContext;
+import com.blog.settings.service.SettingsMdImporter;
 import com.blog.settings.service.SiteSettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.PostConstruct;
 import java.io.File;
@@ -39,6 +41,8 @@ public class SettingsController {
 
     private final UserMapper userMapper;
     private final SiteSettingsService siteSettingsService;
+    // 2026-07-01 DEV-005：md 文档导入器（解析 + 4 段原子写入）
+    private final SettingsMdImporter settingsMdImporter;
 
     /**
      * FR-3.7：配置修改 INFO（含 key 名 + 操作人）。
@@ -420,4 +424,23 @@ public class SettingsController {
 
     // 2026-06-21 清理：原 POST /admin/settings/upload 端点已删除——前端所有上传（avatar/cover/markdown）
     // 全部走 UploadController(/admin/uploads)，本方法无任何调用方。唯一上传入口。
+
+    // ========== 2026-07-01 DEV-005：上传 md 文档批量更新 4 段 settings ==========
+
+    /**
+     * 上传 md 文档（YAML frontmatter + 4 段：profile/blog/techstack/experience），
+     * 整体原子事务写入 4 段。任一段校验失败或写入失败 → 全部回滚。
+     *
+     * @param file md 文件（≤2MB，仅 .md 格式）
+     * @return {appliedSections: [...], count: N} 成功导入的段名列表
+     */
+    @PostMapping("/upload-md")
+    public Result<Map<String, Object>> uploadMd(@RequestParam("file") MultipartFile file) {
+        List<String> applied = settingsMdImporter.importFromMd(file);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("appliedSections", applied);
+        data.put("count", applied.size());
+        logSettingChange("upload-md");
+        return Result.success(data);
+    }
 }

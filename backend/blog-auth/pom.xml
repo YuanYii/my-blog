@@ -57,6 +57,18 @@
             <version>5.8.27</version>
         </dependency>
 
+        <!-- 2026-07-01 DEV-004：AOP 依赖，给 AuditLogAspect 用（@Around + @Aspect） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
+        <!-- 2026-07-01 DEV-004：审计日志读写 DB 需要 JdbcTemplate -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

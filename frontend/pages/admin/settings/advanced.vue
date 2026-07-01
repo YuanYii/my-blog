@@ -9,5 +9,7 @@ const { saving, message, save } = useAdminSettingsTab({ endpoint: '/admin/settin
   <div>
     <AdminSettingsAdvancedForm :advanced="state" @update:advanced="Object.assign(state, $event)" />
     <AdminSettingsSaveBar :saving="saving" :message="message" @save="save" />
+    <!-- 2026-07-01 DEV-006：高级 tab 底部「上传 md 文档」区块 -->
+    <AdminSettingsMdUploader />
   </div>
 </template>
