@@ -260,6 +260,33 @@ public class AttachmentService {
                 id, a.getArticleId(), a.getFileName(), AuthContext.uid(request));
     }
 
+    /**
+     * 按文章 ID 硬删所有附件（含软删记录）——文章硬删时联动调用。
+     * 先删文件再删 DB，文件不存在容错。
+     */
+    public void hardDeleteByArticleId(Long articleId) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT id, file_path, file_name FROM article_attachment WHERE article_id = ?", articleId);
+        for (Map<String, Object> row : rows) {
+            Long id = ((Number) row.get("id")).longValue();
+            String filePath = (String) row.get("file_path");
+            String fileName = (String) row.get("file_name");
+            if (filePath != null) {
+                Path p = Paths.get(attachmentDir).resolve(filePath);
+                try {
+                    boolean deleted = Files.deleteIfExists(p);
+                    if (!deleted) {
+                        log.warn("硬删附件时文件已不存在：path={}（容错：仍删 DB）", p);
+                    }
+                } catch (IOException e) {
+                    log.error("硬删附件失败：文件删除 IO 异常 id={} path={}", id, p, e);
+                }
+            }
+            jdbc.update("DELETE FROM article_attachment WHERE id = ?", id);
+            log.info("附件硬删（联动文章）：id={} articleId={} fileName={}", id, articleId, fileName);
+        }
+    }
+
     // ==================== Restore ====================
 
     /**

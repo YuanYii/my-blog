@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // 2026-07-01 DEV-003：附件管理后台
 // tab 切换：未删除 / 已删除 / 全部
-// 单条操作：硬删除（二次确认）+ 恢复 + 查看文章
+// 单条操作：删除（软删）/ 恢复 / 硬删除
 // 2026-07-01 OPT-002/003：BLOG-002 待落地时同步隐藏恢复按钮 + 加 7 列布局（文件名|大小|关联文章|上传时间|删除时间|状态|操作）
+// 2026-07-01 OPT-004：未删除 tab 行操作精简——移除「查看文章」，硬删除改为软删除
 definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
-const { get, restoreAttachment, hardDeleteAttachment } = useAdminApi()
+const { get, softDeleteAttachment, restoreAttachment, hardDeleteAttachment } = useAdminApi()
 const $toast = useToast()
 const $dialog = useDialog()
 const { formatFileSize } = useFileSize()
@@ -71,6 +72,25 @@ const handleHardDelete = async (item: any) => {
   }
 }
 
+// 2026-07-01 OPT-004：软删除附件（未删除 tab 行操作）
+const handleSoftDelete = async (item: any) => {
+  const { confirmed } = await $dialog.confirm({
+    title: '删除附件',
+    message: `确认删除「${item.fileName}」？附件将移入已删除列表，可恢复。`,
+    confirmText: '删除',
+    danger: true
+  })
+  if (!confirmed) return
+  try {
+    await softDeleteAttachment(item.articleId)
+    $toast.success('附件已删除')
+    load()
+    loadSoftDeletedCount()
+  } catch (e: any) {
+    $toast.error('删除失败：' + (e?.data?.message || e?.message))
+  }
+}
+
 const handleRestore = async (item: any) => {
   try {
     await restoreAttachment(item.id)
@@ -129,7 +149,7 @@ onMounted(async () => {
     </div>
 
     <!-- 2026-07-01 OPT-003：表头 7 列（文件名|大小|关联文章|上传时间|删除时间|状态|操作） -->
-    <div v-else class="card" style="padding: 0; overflow: hidden;">
+    <div v-else class="table-wrap">
       <table class="attach-table">
         <thead>
           <tr>
@@ -181,12 +201,12 @@ onMounted(async () => {
             </td>
             <td>
               <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <!-- 2026-07-01 OPT-002：文章被硬删/回收时,「查看文章」按钮隐藏(公开页 410,跳过去无意义) -->
-                <button v-if="item.articleId && item.articleDeleted !== 1" @click="handleViewArticle(item)" class="btn btn-ghost btn-xs">查看文章</button>
-                <!-- 2026-07-01 OPT-002：文章被硬删/回收时,「恢复」按钮隐藏(恢复后文章页还是不展示,软删附件形同虚设) -->
+                <!-- 2026-07-01 OPT-004：未删除 tab 仅显示「删除」（软删） -->
+                <button v-if="item.deleted === 0" @click="handleSoftDelete(item)" class="btn btn-ghost btn-xs" style="color: var(--danger);">删除</button>
+                <!-- 2026-07-01 OPT-002：文章被硬删/回收时,「恢复」按钮隐藏 -->
                 <button v-if="item.deleted === 1 && item.articleDeleted !== 1" @click="handleRestore(item)" class="btn btn-ghost btn-xs">恢复</button>
-                <!-- 硬删除始终保留 -->
-                <button @click="handleHardDelete(item)" class="btn btn-ghost btn-xs" style="color: var(--danger);">硬删除</button>
+                <!-- 硬删除仅已删除 tab 显示 -->
+                <button v-if="item.deleted === 1" @click="handleHardDelete(item)" class="btn btn-ghost btn-xs" style="color: var(--danger);">硬删除</button>
               </div>
             </td>
           </tr>
@@ -195,11 +215,14 @@ onMounted(async () => {
     </div>
 
     <!-- 分页 -->
-    <div v-if="total > size" style="display: flex; justify-content: center; gap: 8px; margin-top: 16px;">
-      <button class="btn btn-ghost btn-sm" :disabled="page === 1" @click="page--; load()">上一页</button>
-      <span style="font-size: 13px; padding: 6px 12px; color: var(--muted);">第 {{ page }} 页 / 共 {{ Math.ceil(total / size) }} 页</span>
-      <button class="btn btn-ghost btn-sm" :disabled="page * size >= total" @click="page++; load()">下一页</button>
-    </div>
+    <AdminPagination
+      :page="page"
+      :size="size"
+      :total="total"
+      @update:page="(v: number) => page = v"
+      @update:size="(v: number) => size = v"
+      @change="load"
+    />
   </div>
 </template>
 
@@ -252,6 +275,7 @@ onMounted(async () => {
 .attach-table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 800px;
 }
 .attach-table th {
   background: var(--bg-soft);
