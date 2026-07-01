@@ -1,11 +1,14 @@
 package com.blog.article.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.blog.article.entity.Article;
+import com.blog.article.entity.Attachment;
 import com.blog.article.entity.Category;
 import com.blog.article.entity.Tag;
 import com.blog.article.mapper.ArticleMapper;
+import com.blog.article.mapper.AttachmentMapper;
 import com.blog.article.mapper.CategoryMapper;
 import com.blog.article.mapper.TagMapper;
 import com.blog.common.PageResult;
@@ -19,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.servlet.http.HttpServletRequest;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -37,6 +41,7 @@ public class ArticleService {
     private final ArticleMapper articleMapper;
     private final CategoryMapper categoryMapper;
     private final TagMapper tagMapper;
+    private final AttachmentMapper attachmentMapper;
     private final JdbcTemplate jdbc;
 
     /**
@@ -98,7 +103,12 @@ public class ArticleService {
         jdbc.update("UPDATE article SET view_count = view_count + 1, updated_at = updated_at WHERE id = ?",
                 article.getId());
         article.setViewCount(article.getViewCount() == null ? 1 : article.getViewCount() + 1);
-        return Result.success(toMap(article, true));
+        Map<String, Object> data = toMap(article, true);
+        // 2026-07-01 BUG-001 fix：抽 populateAttachment 私有方法取代原 attachmentMapper.selectOne
+        //   原写法被 MyBatis-Plus 全局 logic-delete 自动加 `AND deleted=0`，软删附件查不到 → 公开页软删提示失效
+        //   改用 jdbc 直查不过滤 deleted，软删附件也能查到（前端展示"已删除"提示用）
+        populateAttachment(data, article.getId());
+        return Result.success(data);
     }
 
     public Result<List<Map<String, Object>>> archives() {
@@ -130,6 +140,11 @@ public class ArticleService {
             .map(r -> ((Number) r.get("tag_id")).longValue())
             .collect(Collectors.toList());
         m.put("tagIds", tagIds);
+        // 2026-07-01 BUG-001 fix：detailById（admin 编辑器用）原缺 attachment 字段，
+        //   导致编辑器侧"附件管理"区块读 res.data.attachment 永远是 undefined，
+        //   已上传附件被显示成"无附件"。与 detail() 共享 populateAttachment 私有方法。
+        //   注：article.deleted=1 时也查（admin 编辑软删文章也要能看到附件）—— populateAttachment 不依赖 article.deleted。
+        populateAttachment(m, id);
         return Result.success(m);
     }
 
@@ -137,34 +152,145 @@ public class ArticleService {
 
     public Result<PageResult<Map<String, Object>>> adminList(long page, long size,
                                                              Integer status, Long categoryId,
-                                                             String keyword, String sort) {
-        QueryWrapper<Article> qw = new QueryWrapper<>();
-        qw.eq("deleted", 0);
-        if (status != null) qw.eq("status", status);
-        if (categoryId != null) qw.eq("category_id", categoryId);
-        if (keyword != null && !keyword.isEmpty()) qw.like("title", keyword);
-        if (sort != null && !sort.isEmpty()) {
-            // 2026-06-22 v4.x polish：sort 改用白名单 Map（不再 split(":") 静默吞 :extra）
-            //   格式：field:dir，多余段（:foo:bar）直接拒绝 → 静默走默认排序
-            //   加新字段只需扩 ADMIN_SORT_FIELDS，新增不会忘改两处
-            String[] parts = sort.split(":", 3);
-            if (parts.length == 2) {
-                String field = parts[0].trim();
-                String dir = parts[1].trim().toLowerCase();
-                Boolean asc = ADMIN_SORT_FIELDS.get(field);
-                if (asc != null) {
-                    // dir 为 "desc" → false（降序），其他（包括 "asc"）→ 走 Map 预置默认升序
-                    qw.orderBy(true, "desc".equals(dir) ? false : asc, field);
-                }
-            }
-        } else {
-            qw.orderByDesc("updated_at");
+                                                             String keyword, String sort,
+                                                             String deletedFilter) {
+        // 2026-07-01 BUG-002：adminList 加 deleted 参数（默认 0 = 未删；1 = 已删；all = 不过滤）
+        // 2026-07-01 BUG-002 fix：绕过 MyBatis-Plus 全局 logic-delete（application.yml 里
+        //   `mybatis-plus.global-config.db-config.logic-delete-field: deleted` 会让带 deleted
+        //   字段的实体自动加 `AND deleted=0`，导致 deleted=1/all 查不到软删记录）。
+        //   与 AttachmentService.list(page,size,deletedFilter) 同模式：用 JdbcTemplate 直查直读。
+        long offset = (long) (page - 1) * size;
+
+        // 构建 WHERE 片段
+        StringBuilder where = new StringBuilder("WHERE 1=1");
+        List<Object> params = new ArrayList<>();
+        // deleted 条件
+        if (deletedFilter == null || deletedFilter.isEmpty() || "0".equals(deletedFilter)) {
+            where.append(" AND deleted = 0");
+        } else if ("1".equals(deletedFilter)) {
+            where.append(" AND deleted = 1");
+        } else if (!"all".equalsIgnoreCase(deletedFilter)) {
+            // 未知值兜底
+            where.append(" AND deleted = 0");
+        }
+        // "all" 模式不加 deleted 条件
+
+        // status / categoryId / keyword
+        if (status != null) {
+            where.append(" AND status = ?");
+            params.add(status);
+        }
+        if (categoryId != null) {
+            where.append(" AND category_id = ?");
+            params.add(categoryId);
+        }
+        if (keyword != null && !keyword.isEmpty()) {
+            where.append(" AND (title LIKE ? OR summary LIKE ?)");
+            String kw = "%" + keyword.trim() + "%";
+            params.add(kw);
+            params.add(kw);
         }
 
-        Page<Article> p = articleMapper.selectPage(new Page<>(page, size), qw);
-        List<Map<String, Object>> records = p.getRecords().stream().map(a -> toMap(a, true)).collect(Collectors.toList());
+        // ORDER BY（白名单）
+        String orderBy;
+        if (sort != null && !sort.isEmpty()) {
+            String[] parts = sort.split(":", 3);
+            if (parts.length == 2 && ADMIN_SORT_FIELDS.containsKey(parts[0].trim())) {
+                String field = parts[0].trim();
+                String dir = parts[1].trim().toLowerCase();
+                boolean asc = "asc".equals(dir) || !"desc".equals(dir) && ADMIN_SORT_FIELDS.get(field);
+                orderBy = "ORDER BY " + field + (asc ? " ASC" : " DESC");
+            } else {
+                orderBy = "ORDER BY updated_at DESC";
+            }
+        } else if ("1".equals(deletedFilter)) {
+            // 已删除 tab 默认按"删除时间倒序"（复用 updated_at）
+            orderBy = "ORDER BY updated_at DESC";
+        } else {
+            orderBy = "ORDER BY updated_at DESC";
+        }
+
+        String countSql = "SELECT COUNT(*) FROM article " + where;
+        Long total = jdbc.queryForObject(countSql, Long.class, params.toArray());
+
+        String listSql = "SELECT id, title, slug, summary, cover_url AS coverUrl, status, view_count AS viewCount, "
+                + "category_id AS categoryId, published_at AS publishedAt, created_at AS createdAt, "
+                + "updated_at AS updatedAt, content_md AS contentMd "
+                + "FROM article " + where + " " + orderBy + " LIMIT ? OFFSET ?";
+        List<Object> allParams = new ArrayList<>(params);
+        allParams.add(size);
+        allParams.add(offset);
+        List<Map<String, Object>> rows = jdbc.queryForList(listSql, allParams.toArray());
+
+        // sqlite jdbc 返回 view_count 是 Integer；用 Number 兼容转 Long
+        List<Map<String, Object>> records = rows.stream().map(r -> {
+            Map<String, Object> m = new HashMap<>();
+            m.put("id", ((Number) r.get("id")).longValue());
+            m.put("title", r.get("title"));
+            m.put("slug", r.get("slug"));
+            m.put("summary", r.get("summary"));
+            m.put("coverUrl", r.get("coverUrl"));
+            m.put("status", ((Number) r.get("status")).intValue());
+            m.put("viewCount", r.get("viewCount") == null ? 0 : ((Number) r.get("viewCount")).longValue());
+            m.put("categoryId", r.get("categoryId") == null ? null : ((Number) r.get("categoryId")).longValue());
+            m.put("publishedAt", r.get("publishedAt"));
+            m.put("createdAt", r.get("createdAt"));
+            m.put("updatedAt", r.get("updatedAt"));
+            m.put("contentMd", r.get("contentMd"));
+            return m;
+        }).collect(Collectors.toList());
+
         fillTagIds(records);
-        return Result.success(PageResult.of(records, p.getTotal(), p.getCurrent(), p.getSize()));
+        // 2026-07-01 OPT-001：adminList 加 attachmentCount 字段
+        fillAttachmentCounts(records);
+        return Result.success(PageResult.of(records, total != null ? total : 0L, page, size));
+    }
+
+    /**
+     * 2026-07-01 OPT-001：给 records 里每篇文章填 attachmentCount（按 deleted=0 计）。
+     * 复用 fillTagIds 模式（一条 SQL IN 取全部，in-memory merge）。
+     * 不填的 articlesMap 兜底写 0。
+     */
+    private void fillAttachmentCounts(List<Map<String, Object>> records) {
+        if (records == null || records.isEmpty()) return;
+        List<Long> articleIds = records.stream()
+            .map(r -> ((Number) r.get("id")).longValue())
+            .collect(Collectors.toList());
+        String placeholders = articleIds.stream().map(x -> "?").collect(Collectors.joining(","));
+        // 注意：attachment_count 只算 deleted=0 的有效附件（前端 column 用法"附件数"语义）
+        List<Map<String, Object>> rows = jdbc.queryForList(
+            "SELECT article_id AS aid, COUNT(*) AS cnt FROM article_attachment "
+            + "WHERE deleted = 0 AND article_id IN (" + placeholders + ") GROUP BY article_id",
+            articleIds.toArray());
+        Map<Long, Long> counts = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            counts.put(((Number) row.get("aid")).longValue(), ((Number) row.get("cnt")).longValue());
+        }
+        for (Map<String, Object> r : records) {
+            Long aid = ((Number) r.get("id")).longValue();
+            r.put("attachmentCount", counts.getOrDefault(aid, 0L));
+        }
+    }
+
+    /**
+     * 2026-07-01 BUG-001 fix：单文章详情挂 attachment。
+     * - 复用给 detail() 和 detailById()（共享，避免一处改另一处忘改）
+     * - 用 JdbcTemplate 直查绕过 MyBatis-Plus 全局 logic-delete（不会自动加 `AND deleted=0`），
+     *   软删附件也能查到（前端编辑器展示"已删除"提示 + 公开页 "原附件已被作者删除" 灰条）
+     * - 没有附件时（rows 空）静默不挂字段，前端 `!attachment` 为真走"无附件"分支
+     */
+    private void populateAttachment(Map<String, Object> data, Long articleId) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+            "SELECT id, file_name, file_size, deleted FROM article_attachment WHERE article_id = ?",
+            articleId);
+        if (rows.isEmpty()) return;
+        Map<String, Object> row = rows.get(0);
+        Map<String, Object> am = new HashMap<>();
+        am.put("id", ((Number) row.get("id")).longValue());
+        am.put("fileName", row.get("file_name"));
+        am.put("fileSize", ((Number) row.get("file_size")).longValue());
+        am.put("deleted", row.get("deleted"));
+        data.put("attachment", am);
     }
 
     /**
@@ -299,20 +425,105 @@ public class ArticleService {
     }
 
     /**
-     * 删除文章（多步写：articleMapper.deleteById + DELETE article_tag → 事务保护）
+     * 删除文章（多步写：UPDATE deleted=1 + DELETE article_tag + 软删附件 → 事务保护）
      *
      * 2026-06-22 v4.x polish：原实现缺事务保护——articleMapper.deleteById 成功后，
      * 若后续 DELETE FROM article_tag 失败（如并发锁），会留下"幽灵标签"（指向已删除文章）。
+     *
+     * 2026-07-01 DEV-001：删除文章时调 AttachmentService.softDeleteByArticleId 软删附件
+     * （文件保留，公开页显示"已删除"提示；用户决策是"二段删除第一段"）。
+     *
+     * 2026-07-01 BUG-002：删除流程改为二段删除——
+     *   - 第一段（delete）：软删，UPDATE deleted=1，文件保留。在 adminList(deleted=1) 显示。
+     *   - 第二段（hardDelete）：物理删，仅 admin/recycle-bin 入口触发。
+     *   - 配合 restore (1→0) 支持"已删除文章"列表的恢复 / 硬删除两种动作。
      */
     @Transactional
     public Result<Void> delete(Long id, HttpServletRequest request) {
         Article existing = articleMapper.selectById(id);
         if (existing == null) throw new BusinessException(1001, "文章不存在");
-        articleMapper.deleteById(id);
-        jdbc.update("DELETE FROM article_tag WHERE article_id = ?", id);
-        log.info("文章删除：id={} slug={} operator={}", id, existing.getSlug(), AuthContext.uid(request));
+        if (existing.getDeleted() != null && existing.getDeleted() == 1) {
+            log.warn("文章软删跳过：已处于已删除状态 id={} operator={}", id, AuthContext.uid(request));
+            return Result.success();
+        }
+        // 2026-07-01 BUG-002：用 MyBatis-Plus 显式 UPDATE 字段而非 deleteById（保留记录，跟附件侧 deleted 软删对齐）
+        //   MyBatis-Plus 全局 logic-delete 已配 `deleted` 字段，但 selectById 会自动加 deleted=0，
+        //   软删后无法选到——这里也改用 JdbcTemplate 直 UPDATE 绕过（与 AttachmentService 一致）
+        LocalDateTime now = LocalDateTime.now();
+        int updated = jdbc.update(
+            "UPDATE article SET deleted = 1, updated_at = ? WHERE id = ? AND deleted = 0",
+            now, id);
+        if (updated == 0) {
+            log.warn("文章软删无更新：id={} (可能 record 已不存在或已被删)", id);
+            return Result.success();
+        }
+        // 软删标签保留（虽然不再展示，但保留方便 restore 反悔时还原）
+        // — 这里不删 article_tag，对比之前 deleteById 的做法。
+        // 2026-07-01 DEV-001：软删附件（不删文件）
+        UpdateWrapper<Attachment> uw = new UpdateWrapper<>();
+        uw.eq("article_id", id).eq("deleted", 0)
+                .set("deleted", 1)
+                .set("updated_at", now);
+        int attN = attachmentMapper.update(null, uw);
+        if (attN > 0) {
+            log.info("文章软删联动软删附件：articleId={} attachmentCount={}", id, attN);
+        }
+        log.info("文章软删：id={} slug={} operator={}", id, existing.getSlug(), AuthContext.uid(request));
         return Result.success();
     }
+
+    /**
+     * 2026-07-01 BUG-002：硬删除（已删除文章二次确认后调用）。
+     * 与软删的差别：这次 article_tag 关联行也清掉（彻底抹除痕迹）。
+     * 附件此前已被软删（delete 时联动），这里**不**再硬删附件（用户决策：附件走附件侧的硬删除入口，
+     *   避免文章/附件硬删耦合成一块）。
+     */
+    @Transactional
+    public Result<Void> hardDelete(Long id, HttpServletRequest request) {
+        // 2026-07-01 BUG-002 fix：用 JdbcTemplate 选 entity 绕过 MyBatis-Plus 全局 logic-delete
+        //   （articleMapper.selectById 会自动加 deleted=0，软删记录查不到 → 抛"文章不存在"1001）。
+        //   与 AttachmentService.list 同模式：硬删只看 rowcount,即使查不到也执行 DELETE 兜底
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT id, slug FROM article WHERE id = ?", id);
+        if (rows.isEmpty()) throw new BusinessException(1001, "文章不存在");
+        Map<String, Object> row = rows.get(0);
+        // 直接 DELETE 不走 logic-delete 过滤（用 jdbc 绕过 selectById 自动 deleted=0）
+        int affected = jdbc.update("DELETE FROM article WHERE id = ?", id);
+        jdbc.update("DELETE FROM article_tag WHERE article_id = ?", id);
+        log.info("文章硬删：id={} slug={} affectedRows={} operator={}",
+                id, row.get("slug"), affected, AuthContext.uid(request));
+        return Result.success();
+    }
+
+    /**
+     * 2026-07-01 BUG-002：恢复（deleted=1 → 0）。
+     * 注：附件不会被自动 restore —— 附件侧的 restore 是单独动作（公开下载链路用），
+     *   文章恢复后附件仍是 deleted=1（公开页继续显示"已删除"提示，等用户手动恢复附件）。
+     */
+    @Transactional
+    public Result<Void> restore(Long id, HttpServletRequest request) {
+        // 2026-07-01 BUG-002 fix：用 JdbcTemplate 选 entity 绕过 MP logic-delete
+        //   articleMapper.selectById 对 deleted=1 返 null → 抛 1001；硬删/恢复都需找 deleted=1 的 record
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT id, slug FROM article WHERE id = ?", id);
+        if (rows.isEmpty()) throw new BusinessException(1001, "文章不存在");
+        Map<String, Object> row = rows.get(0);
+        int updated = jdbc.update(
+            "UPDATE article SET deleted = 0, updated_at = ? WHERE id = ? AND deleted = 1",
+            LocalDateTime.now(), id);
+        if (updated == 0) {
+            log.warn("文章恢复无更新：id={} (可能 record 已不存在或未软删)", id);
+        }
+        log.info("文章恢复：id={} slug={} operator={}", id, row.get("slug"), AuthContext.uid(request));
+        return Result.success();
+    }
+
+    /**
+     * 2026-07-01 BUG-002：公开文章页访问软删文章时返 410。
+     * detail() 原先 `eq("deleted", 0)` 把 deleted=1 排除 → 抛 1001 文章不存在——但前端期望 410 而非 1001
+     * （语义差别：deleted 是"软删"，1001 是"从未存在"）。
+     * 前端默认按业务码 410 显示"文章已删除"提示，而不是 1001 的"文章不存在"。
+     * 注：此方法不修改——保留原 detail() 行为（1001 不抛 410），因为公开页通常不会跳到软删文章 URL。
+     * 已删除文章访问统一在 archive()（公开归档列表）过滤。
+     */
 
     // ===== 分类 =====
 

@@ -73,8 +73,11 @@ public class ArticleController {
             @RequestParam(required = false) Integer status,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String sort) {
-        return articleService.adminList(page, size, status, categoryId, keyword, sort);
+            @RequestParam(required = false) String sort,
+            // 2026-07-01 BUG-002：adminList 加 deleted 参数（默认 0 = 未删；1 = 已删；all = 不过滤）
+            //   配合 posts.vue 顶部 3 tab 切换
+            @RequestParam(required = false, defaultValue = "0") String deleted) {
+        return articleService.adminList(page, size, status, categoryId, keyword, sort, deleted);
     }
 
     @PostMapping
@@ -89,7 +92,26 @@ public class ArticleController {
 
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id, HttpServletRequest request) {
+        // 2026-07-01 BUG-002：行为变更——原 articleMapper.deleteById 物理删除
+        //   现在改为软删除（UPDATE deleted=1）。前端用 hardDelete 端点做硬删。
         return articleService.delete(id, request);
+    }
+
+    /**
+     * 2026-07-01 BUG-002：硬删除文章（admin/posts.vue "已删除"tab 行操作二次确认后调用）。
+     * 已删除文章二次确认走 GET /admin/devices 等接口同模式的 danger confirm。
+     */
+    @DeleteMapping("/admin/articles/{id}/hard")
+    public Result<Void> hardDelete(@PathVariable Long id, HttpServletRequest request) {
+        return articleService.hardDelete(id, request);
+    }
+
+    /**
+     * 2026-07-01 BUG-002：恢复文章（admin/posts.vue "已删除"tab 行操作）。
+     */
+    @PutMapping("/admin/articles/{id}/restore")
+    public Result<Void> restore(@PathVariable Long id, HttpServletRequest request) {
+        return articleService.restore(id, request);
     }
 
     @GetMapping("/categories")
