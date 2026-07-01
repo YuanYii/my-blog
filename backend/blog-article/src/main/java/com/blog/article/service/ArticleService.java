@@ -59,11 +59,25 @@ public class ArticleService {
                                                         Long categoryId, Long tagId, String keyword) {
         if (page < 1) throw new BusinessException(400, "page 必须 >= 1");
         if (size < 1 || size > 100) throw new BusinessException(400, "size 必须在 1-100 之间");
+        // 2026-06-30 BUG-001：关键词长度下限校验。
+        // 单字符 / 通用词（如"的"、"用"、"？"）会命中几乎所有文章 title，导致"搜索结果 = 全部"
+        // 用户感知为"搜索按钮无法使用"。trim 后长度 < 2 字符直接 400 拒绝。
+        if (keyword != null && !keyword.isEmpty() && keyword.trim().length() < 2) {
+            throw new BusinessException(400, "关键词至少 2 个字符");
+        }
 
         QueryWrapper<Article> qw = new QueryWrapper<>();
         qw.eq("status", 1).eq("deleted", 0);
         if (categoryId != null) qw.eq("category_id", categoryId);
-        if (keyword != null && !keyword.isEmpty()) qw.like("title", keyword);
+        // 2026-06-30 BUG-001：搜索范围限定 title + summary（**不**搜 content_md）。
+        //   关键决策：content_md 全表 LIKE 命中率 100%（所有文章正文都讨论"AI/Redis/博客"等通用词），
+        //   会导致"搜 AI → 返全部 6 篇"→ 用户感知为"搜索 = 没用"。
+        //   限定 title + summary 让搜索更精准（"Zip Slip"等只在 summary 命中的也能找到）。
+        //   关键词在正文里但不在 title/summary 的场景，**留给将来加 ES/FTS 索引**（OPT-003）。
+        if (keyword != null && !keyword.isEmpty()) {
+            String kw = keyword.trim();
+            qw.and(w -> w.like("title", kw).or().like("summary", kw));
+        }
         if (tagId != null) {
             // A1（2026-06-20）：占位符参数化
             qw.exists(true, "SELECT 1 FROM article_tag at WHERE at.article_id = article.id AND at.tag_id = {0}", tagId);

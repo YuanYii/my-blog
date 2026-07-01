@@ -1,45 +1,45 @@
 {
-  "RUN": "20260628",
+  "RUN": "20260630",
   "stages": {
     "Stage_1": {
       "status": "skipped",
-      "last_update": "2026-06-28 11:38:30",
-      "message": "用户跳过：本轮手工触发 SRC=20260628 流水线，Stage 1（产品经理）无需重跑；20260628.md 已包含 1 个 DEV 任务（DEV-001 全站确认/取消按钮键盘快捷键支持）"
+      "last_update": "2026-06-30 23:27:00",
+      "message": "用户跳过（用户原话「1 和 8 不用执行」）。本轮 Mavis 在跳过 Stage 1 流程下直接将「博客首页搜索按钮无法使用」落盘为 20260630-BUG-001 任务卡到 20260630.md「BUG 项」末尾，与当天已有的 20260630-OPT-001（主题外观配色方案推荐组合）合并处理。SRC=20260629.md 不存在，按 Stage 6 容错逻辑使用 20260630.md。"
     },
     "Stage_2": {
       "status": "success",
-      "last_update": "2026-06-28 22:10:00",
-      "message": "已完成 1 个任务（20260628-DEV-001 全站确认/取消按钮键盘快捷键）：前端改 1 文件（GlobalDialog.vue 加 Enter 监听 + 自动聚焦主按钮 + focus-visible 样式）+ 新增 1 文件（composables/useModalKeyboard.ts 统一封装内联 modal 键盘逻辑）+ 改 4 文件（categories.vue / tags.vue / restore.vue / backup.vue 4 个内联 modal 接入 composable）+ 新增 1 文件（tests/dialog-keyboard.spec.ts e2e 10 个 case）；npm run build 通过（Prerendered 8 routes），npx vue-tsc --noEmit 0 个新错误（18 个剩余错误全部 pre-existing，与 git stash 验证一致）"
+      "last_update": "2026-06-30 23:39:00",
+      "message": "本轮共完成 2 个任务（OPT-001 + BUG-001）。OPT-001 已在 09:45 完成（first round）。BUG-001（本轮新增）已完成：① `backend/blog-article/.../ArticleService.java` 第 65-67 行加 keyword 长度下限校验（< 2 字符 400）+ 第 77-80 行搜索范围限定 title + summary（不搜 content_md，理由：通用词 content_md 全命中 100% 让用户感知「搜索 = 全列表」，正是 BUG 原始症状的反面）；② `frontend/pages/search.vue` 第 14-18 行加 `isResultTooMany` computed + 第 56-58 行 header 段加「建议缩小关键词范围」提示（threshold 100 条）；③ `scripts/deploy-server.sh` 第 889 行 nginx `try_files` 顺序从 `$uri $uri/ /200.html` 改为 `$uri $uri/index.html /200.html`（修复 /search 直接访问触发 301 的部署 BUG，同时覆盖 /about /archives /tags）；④ `frontend/scripts/fetch-routes.js` 第 30 行 STATIC_ROUTES 数组补 /search；⑤ 后端 mvn compile + mvn package 全部 SUCCESS（blog-app.jar 60722247 bytes）；⑥ 前端 `node scripts/fetch-routes.js` 重新生成 .routes.json（5 条入口公开页含 /search）+ `npm run build` 成功（nuxt generate 8 routes 全部预渲染）；⑦ 后端新 jar 已部署到 myblog-sim 容器（docker cp + supervisorctl restart myblog 完成）+ 前端新 build 已部署 + nginx conf 已 reload（supervisorctl restart nginx 完成，nginx -t syntax ok）；实测验证全通过：?keyword=S→400 / Spring→3 条 / AI→3 条 / Redis→1 条 / Zip Slip→1 条 / 无 keyword→6 条 / /search 直接访问→200 OK（不是 301）。涉及文件列表最终版 4 个（任务卡预测一致）：ArticleService.java + search.vue + deploy-server.sh + fetch-routes.js。事实修正 0 处（修复方案与任务描述 100% 一致，**强于 OPT-001**）。"
     },
     "Stage_3": {
       "status": "success",
-      "last_update": "2026-06-28 22:20:00",
-      "message": "已完成审查 7 个文件（DEV-001 涉及：GlobalDialog.vue + useModalKeyboard.ts + categories/tags/restore/backup 4 个 admin 页面 + e2e dialog-keyboard.spec.ts），发现 0 个严重、1 个警告（经澄清为误报，已在 useModalKeyboard.ts 顶部加 4 行「边界前提」注释）、4 个建议（focus-visible 留给全局 main.css / e2e 防重断言放宽可改严 / 跨 modal 边界场景测试 / 文档补 usage 示例）"
+      "last_update": "2026-06-30 23:45:00",
+      "message": "已完成审查 6 个文件（OPT-001 涉及：ThemeForm.vue + theme.vue；BUG-001 涉及：ArticleService.java + search.vue + deploy-server.sh + fetch-routes.js），发现 0 个严重、1 个警告（WARN-002 BUG-001 新增：fetch-routes.js runbook 注释缺失）+ 4 个建议（OPT-001 SUG-001/002/003 保留 + BUG-001 新增 SUG-004 service 层校验下沉到 Controller）。不阻塞本轮门控。"
     },
     "Stage_4": {
       "status": "success",
-      "last_update": "2026-06-28 22:30:00",
-      "message": "已完成审计 1 个 ✅ 任务（20260628-DEV-001 全站确认/取消按钮键盘快捷键），1 通过、0 偏差、0 需运行确认（Stage 5 接手）；11 项验证清单 10 项命中 + 1 项 N/A（嵌套 dialog 需求措辞与实际 singleton 架构不一致，串行场景已正确处理）；代码质量审查 0 严重 / 1 警告（已澄清为误报）/ 4 建议不阻塞本轮门控"
+      "last_update": "2026-06-30 23:45:00",
+      "message": "已完成审计 2 个 ✅ 任务（OPT-001 + BUG-001），整体结论 OPT-001 1 项部分通过（事实修正） + BUG-001 0 事实修正。OPT-001 22 项验证 8 ✅ 静态 + 2 事实修正（fact-correction #14 NavBar 不调 PUT theme / fact-correction #16 后端 merge 会静默入库未知字段）+ 12 🔍 UI；BUG-001 30 项验证 22 ✅ 静态/API + 0 事实修正 + 8 🔍 UI。代码质量审查 0 严重/1 警告/4 建议不阻塞。"
     },
     "Stage_5": {
       "status": "success",
-      "last_update": "2026-06-28 22:50:00",
-      "message": "已完成验证 10 项（Playwright e2e 全过，17.5s 跑完），10 通过、0 未通过、0 跳过：INT-001/002/003 GlobalDialog Esc/Enter/Tab + INT-004/005/006/007/008 categories/tags 内联 modal Esc/Enter/IME composing + INT-009 防重 3 次 Enter 仅 1 次 POST + INT-010 焦点环；为支持 e2e 临时新增 _e2e-server.mjs（static + /api proxy）+ pre-approve e2e-keyboard-test-device 设备（admin_device 表 status=approved）"
+      "last_update": "2026-06-30 23:45:00",
+      "message": "已完成集成测试（myblog-sim 容器，新 jar 已部署 + nginx 已 reload）。OPT-001：3 通过（INT-001/008/009）+ 12 跳过 UI（无 dev runtime）。BUG-001（本轮新增）：10 通过（INT-B01 单字符 400 / INT-B02 Spring 3 条 / INT-B03 AI 3 条**关键正面验证** / INT-B04 Redis 1 条 / INT-B05 Zip Slip 1 条 + INT-B06 /search 200 OK 不是 301 / INT-B07 /search/ 不回归 / INT-B08 /about /archives /tags / INT-B09 /post/<slug> 不破坏 / INT-B10 /200.html SPA fallback 仍可用）+ 4 跳过 UI。无测试副作用（BUG-001 仅 GET 请求，未触发 DB 写入）。合计 13 通过 / 16 跳过 / 0 未通过。"
     },
     "Stage_6": {
       "status": "success",
-      "last_update": "2026-06-28 22:55:00",
-      "message": "已完成复核 0 异常（stage4 1/1 通过 + stage3 0 严重/1 警告已澄清 + stage5 10/10 通过），不生成任何 autopush 卡片；BUG=0+DEV=0+OPT=0 满足 Stage 7 文档同步门控；本轮非跨天场景，stage 6 报告按 SRC 路径（auto_audit/20260628/）存放"
+      "last_update": "2026-06-30 23:45:00",
+      "message": "已完成复核 0 异常卡片（stage4 2 个 ⚠️ 均为 OPT-001 的事实修正标注非代码缺陷，不属于产品缺陷按 Stage 6 提示词分类映射不命中任何关键词，BUG-001 零事实修正），不生成 autopush 卡片；BUG=0+DEV=0+OPT=0 满足 Stage 7 文档同步门控；SRC=20260629.md 不存在按容错逻辑使用 20260630.md。2 个 fact-correction（OPT-001 的 NavBar 不调 PUT theme + 后端 merge 入库未知字段已通过前端剥离规避）由用户后续决策是否单立项处理。本轮在第一轮闭环基础上新增 BUG-001 完整闭环，新 0 事实修正。"
     },
     "Stage_7": {
       "status": "success",
-      "last_update": "2026-06-28 23:00:00",
-      "message": "已完成同步：README §1.3 追加 2026-06-28 v5.0.0 行覆盖 DEV-001（GlobalDialog Enter 监听 + useModalKeyboard composable + 4 个 admin 页面接入 + 10 个 e2e case + 测试基础设施 _e2e-server.mjs + pre-approve 设备）；设计方案 §变更记录追加 v5.0.0 行（含 stage3/4/5 结论 + 5 处不动清单 + 设计依据）；本追踪文档追加 Stage 7 处理报告 + 流水线状态视图段"
+      "last_update": "2026-06-30 23:45:00",
+      "message": "已完成同步：README §1.3 追加 v5.0.0 增量 2026-06-30 第二行覆盖 BUG-001（keyword 长度校验 + title+summary 范围限制 + isResultTooMany 提示 + nginx try_files 修复 + fetch-routes.js 补 /search + 5 处不动清单 + myblog-sim 实测验证表 + stage3/4/5 结论）；设计方案 §11.0.2 追加 v5.0.0+ 增量 2026-06-30 子节（关键决策点：content_md 反面验证 + 5 个改动文件详解 + 不动清单 + 实测验证表 + stage 流水线结论 + 关联 §3.1/§5.1/§5.9/§6.1/§7.1/§11）；本追踪文档追加 Stage 7 处理报告 + 流水线状态视图段。"
     },
     "Stage_8": {
       "status": "skipped",
-      "last_update": "2026-06-28 11:38:30",
-      "message": "用户跳过：用户说 1 和 8 不用执行，本轮不触发发布"
+      "last_update": "2026-06-30 23:27:00",
+      "message": "用户跳过：用户说「1 和 8 不用执行」，本轮不触发发布。"
     }
   }
 }

@@ -27,7 +27,8 @@ const API_BASE = process.env.API_BASE
   || 'http://localhost:8080/api/v1'
 
 // 固定入口公开页
-const STATIC_ROUTES = ['/', '/about', '/archives', '/tags']
+// 2026-06-30 BUG-001：补 /search 路由（与 docs/design/博客系统设计方案.md §5.9 / §11 文档化一致）
+const STATIC_ROUTES = ['/', '/about', '/archives', '/tags', '/search']
 
 async function fetchJson(url, timeout = 10000) {
   const ctrl = new AbortController()

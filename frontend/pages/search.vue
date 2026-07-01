@@ -12,6 +12,10 @@ const loading = ref(false)
 const total = ref(0)
 const page = ref(Number(route.query.page) || 1)
 const size = 20
+// 2026-06-30 BUG-001：结果过多提示阈值（size=20，>5 页 ≈ 100 条认为过多）。
+// 用户搜通用词（如"的"、"用"、"？"）时后端 articleService.list 会命中全部，
+// 没有这条提示用户感知不到"搜索是否生效"——提示缩小关键词范围让 UX 闭环。
+const isResultTooMany = computed(() => total.value > size * 5)
 
 async function fetchResults() {
   if (!keyword.value) {
@@ -53,6 +57,9 @@ useHead({ title: headTitle })
       <p v-if="keyword" style="color: var(--muted); font-size: 14px;">
         关键词：<strong style="color: var(--text);">{{ keyword }}</strong>
         <span v-if="!loading"> · 共 {{ total }} 条结果</span>
+        <span v-if="!loading && isResultTooMany" style="color: var(--color-warning, #d97706); margin-left: 8px;">
+          · 建议缩小关键词范围以获得更精准结果
+        </span>
       </p>
       <p v-else style="color: var(--muted); font-size: 14px;">从顶部导航栏的搜索图标输入关键词</p>
     </header>

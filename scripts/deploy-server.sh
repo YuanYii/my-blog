@@ -886,7 +886,14 @@ server {
     # 前端静态文件(v2.7.0 全静态)
     root         NGINX_ROOT/frontend;
     index        index.html;
-    try_files    $uri $uri/ /200.html;
+    # 2026-06-30 BUG-001：try_files 顺序调整避免目录 301 redirect
+    # 原：try_files $uri $uri/ /200.html;   ← $uri/ 命中目录时 nginx 触发 301 加 slash，
+    #                                          Location 用 server_name 拼 host 不带端口（如 http://localhost/search/），
+    #                                          浏览器跟随后连接失败。本地 docker (myblog-sim 28000 → 80)、
+    #                                          生产 ECS (443) 都受影响。
+    # 新：先试 $uri/index.html（直接命中 search/index.html），跳过 $uri/ 的 301 行为。
+    #    同时覆盖 /about /archives /tags /search 等所有"目录形"路由。
+    try_files    $uri $uri/index.html /200.html;
 
     # Nuxt 生成的 SPA fallback
     location = /200.html { add_header Cache-Control "no-cache"; }
