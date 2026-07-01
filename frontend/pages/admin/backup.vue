@@ -49,7 +49,7 @@ interface BackupItem {
 const list = ref<BackupItem[]>([])
 const total = ref(0)
 const page = ref(1)
-const size = 20
+const size = ref(20)
 const loading = ref(false)
 
 // v4.3.0 polish：备份轮询改用模块级 usePollingTask ——
@@ -183,7 +183,7 @@ restorePollingTask.subscribe((state) => {
 const fetchList = async () => {
   loading.value = true
   try {
-    const res = await get<any>('/admin/backup/list', { page: page.value, size })
+    const res = await get<any>('/admin/backup/list', { page: page.value, size: size.value })
     list.value = res?.data?.records || []
     total.value = res?.data?.total || 0
   } catch (e: any) {
@@ -559,22 +559,15 @@ onBeforeUnmount(() => {
       </table>
     </div>
 
-    <!-- 分页(对齐 admin 设计系统 .admin-pagination) -->
-    <div v-if="total > size" class="admin-pagination">
-      <button
-        @click="page = Math.max(1, page - 1); fetchList()"
-        :disabled="page === 1"
-        class="btn btn-sm"
-      >上一页</button>
-      <div class="pages">
-        <span style="padding: 6px 12px; color: var(--muted); font-size: 13px;">{{ page }} / {{ Math.ceil(total / size) }}</span>
-      </div>
-      <button
-        @click="page = page + 1; fetchList()"
-        :disabled="page * size >= total"
-        class="btn btn-sm"
-      >下一页</button>
-    </div>
+    <!-- 分页 -->
+    <AdminPagination
+      :page="page"
+      :size="size"
+      :total="total"
+      @update:page="(v: number) => page = v"
+      @update:size="(v: number) => size = v"
+      @change="fetchList"
+    />
 
     <!-- 失败详情弹框(任务 4 方案 A) -->
     <div v-if="errorDialog" class="modal-backdrop" @click.self="closeErrorDialog">

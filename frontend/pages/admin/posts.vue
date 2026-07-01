@@ -446,14 +446,14 @@ onMounted(async () => {
     </div>
 
     <!-- Pagination -->
-    <div v-if="totalPages > 1" class="admin-pagination">
-      <span>共 {{ total }} 条</span>
-      <div class="pages">
-        <button class="page-btn" :disabled="page === 1" @click="page--; load()">‹</button>
-        <button v-for="p in totalPages" :key="p" class="page-btn" :class="{ active: p === page }" @click="page = p; load()">{{ p }}</button>
-        <button class="page-btn" :disabled="page === totalPages" @click="page++; load()">›</button>
-      </div>
-    </div>
+    <AdminPagination
+      :page="page"
+      :size="size"
+      :total="total"
+      @update:page="(v: number) => page = v"
+      @update:size="(v: number) => size = v"
+      @change="load"
+    />
   </div>
 </template>
 

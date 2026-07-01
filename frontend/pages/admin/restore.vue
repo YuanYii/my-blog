@@ -30,7 +30,7 @@ interface RestoreItem {
 const restoreList = ref<RestoreItem[]>([])
 const restoreTotal = ref(0)
 const restorePage = ref(1)
-const restoreSize = 20
+const restoreSize = ref(20)
 const restoreLoading = ref(false)
 
 // ============= 备份列表（用于下拉选择）============
@@ -101,7 +101,7 @@ const fetchSuccessBackups = async () => {
 const fetchRestoreList = async () => {
   restoreLoading.value = true
   try {
-    const res = await get<any>('/admin/restore/list', { page: restorePage.value, size: restoreSize })
+    const res = await get<any>('/admin/restore/list', { page: restorePage.value, size: restoreSize.value })
     restoreList.value = res?.data?.records || []
     restoreTotal.value = res?.data?.total || 0
   } catch (e: any) {
@@ -411,21 +411,14 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 分页 -->
-    <div v-if="restoreTotal > restoreSize" class="admin-pagination" style="margin-top: 16px;">
-      <button
-        @click="restorePage = Math.max(1, restorePage - 1); fetchRestoreList()"
-        :disabled="restorePage === 1"
-        class="btn btn-sm"
-      >上一页</button>
-      <div class="pages">
-        <span style="padding: 6px 12px; color: var(--muted); font-size: 13px;">{{ restorePage }} / {{ Math.ceil(restoreTotal / restoreSize) }}</span>
-      </div>
-      <button
-        @click="restorePage = restorePage + 1; fetchRestoreList()"
-        :disabled="restorePage * restoreSize >= restoreTotal"
-        class="btn btn-sm"
-      >下一页</button>
-    </div>
+    <AdminPagination
+      :page="restorePage"
+      :size="restoreSize"
+      :total="restoreTotal"
+      @update:page="(v: number) => restorePage = v"
+      @update:size="(v: number) => restoreSize = v"
+      @change="fetchRestoreList"
+    />
 
     <!-- 恢复 Dialog -->
     <div v-if="restoreDialog" class="modal-backdrop" @click.self="cancelRestore">

@@ -12,6 +12,14 @@ const newName = ref('')
 const showModal = ref(false)
 const newTag = reactive({ name: '' })
 
+// 分页
+const page = ref(1)
+const size = ref(10)
+const paginatedTags = computed(() => {
+  const start = (page.value - 1) * size.value
+  return tags.value.slice(start, start + size.value)
+})
+
 const load = async () => {
   loading.value = true
   try {
@@ -127,7 +135,7 @@ onMounted(load)
     <div class="card" style="padding: 12px 16px; margin-bottom: 14px; display: flex; gap: 8px; align-items: center;">
       <input v-model="newName" @keyup.enter="handleCreateQuick" class="form-control" placeholder="快速添加标签（回车提交）…" style="max-width: 280px; font-size: 13px;" />
       <button @click="handleCreateQuick" class="btn btn-ghost btn-sm">添加</button>
-      <span style="margin-left: auto; color: var(--muted); font-size: 13px;">共 {{ tags.length }} 个</span>
+      <span style="margin-left: auto; color: var(--muted); font-size: 13px;">共 {{ tags.length }} 个标签</span>
     </div>
 
     <!-- 标签云 -->
@@ -162,7 +170,7 @@ onMounted(load)
           </tr>
         </thead>
         <tbody>
-          <tr v-for="t in tags" :key="t.id">
+          <tr v-for="t in paginatedTags" :key="t.id">
             <td>
               <div class="cat-cell">
                 <div class="cat-icon" style="background: var(--primary-soft);">#</div>
@@ -183,6 +191,14 @@ onMounted(load)
           </tr>
         </tbody>
       </table>
+      <AdminPagination
+        :page="page"
+        :size="size"
+        :total="tags.length"
+        @update:page="(v: number) => page = v"
+        @update:size="(v: number) => size = v"
+        @change="() => {}"
+      />
     </div>
 
     <!-- 新建标签 modal -->
