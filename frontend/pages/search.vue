@@ -22,7 +22,7 @@ async function fetchResults() {
   loading.value = true
   try {
     const res = await get<any>('/articles', {
-      params: { keyword: keyword.value, page: page.value, size }
+      keyword: keyword.value, page: page.value, size
     })
     articles.value = res.data?.records || res.data?.list || []
     total.value = res.data?.total ?? articles.value.length
