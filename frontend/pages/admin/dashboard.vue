@@ -83,11 +83,21 @@ const services = computed(() => {
   if (!h) return []
   const out: Array<{ name: string; status: 'success' | 'warning' | 'danger'; value: string }> = []
 
-  // 1. 服务运行（uptime → "X 天"）
+  // 0. 版本号
+  if (h.version && h.version !== 'unknown') {
+    out.push({ name: '版本', status: 'success', value: `v${h.version}` })
+  }
+
+  // 1. 服务运行（uptime → "X 天 Y 小时 Z 分钟"）
   if (h.uptimeSec != null && h.uptimeSec >= 0) {
     const d = Math.floor(h.uptimeSec / 86400)
     const h1 = Math.floor((h.uptimeSec % 86400) / 3600)
-    out.push({ name: '服务运行', status: 'success', value: `正常 · ${d} 天 ${h1} 小时` })
+    const m = Math.floor((h.uptimeSec % 3600) / 60)
+    const parts = []
+    if (d > 0) parts.push(`${d} 天`)
+    if (h1 > 0) parts.push(`${h1} 小时`)
+    if (m > 0 || parts.length === 0) parts.push(`${m} 分钟`)
+    out.push({ name: '服务运行', status: 'success', value: `正常 · ${parts.join(' ')}` })
   } else {
     out.push({ name: '服务运行', status: 'success', value: '正常' })
   }

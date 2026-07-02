@@ -55,7 +55,7 @@
                   v-model="searchKeyword"
                   type="search"
                   class="form-control flex-1"
-                  placeholder="搜索文章…"
+                  placeholder="搜索文章…（至少 2 字符）"
                   autocomplete="off"
                 />
                 <button type="submit" class="btn btn-primary btn-sm">搜索</button>
@@ -166,6 +166,7 @@ const closeSearch = () => { isSearchOpen.value = false }
 const onSearchSubmit = () => {
   const q = searchKeyword.value.trim()
   if (!q) return
+  if (q.length < 2) { useToast().warning('搜索关键词至少 2 个字符'); return }
   closeSearch()
   router.push({ path: '/search', query: { q } })
 }
