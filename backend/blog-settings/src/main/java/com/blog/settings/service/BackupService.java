@@ -66,6 +66,7 @@ public class BackupService {
     private final BackupRecordMapper backupRecordMapper;
     private final RestoreRecordMapper restoreRecordMapper;
     private final ObjectMapper objectMapper;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     /**
      * 自注入代理（@Lazy 解决循环依赖）
@@ -147,6 +148,9 @@ public class BackupService {
             log.warn("备份触发拒绝: GITHUB_BACKUP_REPO 未配置");
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "GITHUB_BACKUP_REPO 未配置,例 owner/my-blog-backup");
         }
+
+        // 1.5 数据完整性校验：确保关键表存在且有数据（恢复后常见丢失）
+        validateCriticalTables();
 
         // 2. 并发控制：已有 RUNNING 任务?
         // v4.3.0 (REQ-RESTORE-2026-06-20): 双向互斥, restore 进行中也不能触发备份
@@ -237,6 +241,8 @@ public class BackupService {
         pb.environment().put("BACKUP_STAGE_DIR", backupStageDir);
         // 2026-06-20 修 P0-1: 把 record_id 传给 shell, 用于 .result.json 命名
         pb.environment().put("BACKUP_RECORD_ID", String.valueOf(recordId));
+        // shell 脚本 date 命令走系统时区, 透传 TZ 确保与 JVM (Asia/Shanghai) 一致
+        pb.environment().put("TZ", "Asia/Shanghai");
         // stdout/stderr 合并到一个临时日志文件,便于失败时回看
         File logFile = new File(System.getProperty("java.io.tmpdir"), "blog-backup-" + recordId + ".log");
 
@@ -846,6 +852,38 @@ public class BackupService {
             return "DUMP";
         }
         return "SCRIPT";
+    }
+
+    /**
+     * 备份前校验关键表完整性。
+     * 数据恢复后 api_whitelist / user 表可能被清空，导致恢复后无法登录。
+     * 在备份前检测并报警，避免带着残缺数据做备份。
+     */
+    private void validateCriticalTables() {
+        try {
+            // user 表必须有 admin 用户
+            Integer userCount = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM user WHERE username='admin'", Integer.class);
+            if (userCount == null || userCount == 0) {
+                log.warn("数据完整性校验失败: user 表缺少 admin 用户");
+                throw new BusinessException(ResultCode.INTERNAL_ERROR,
+                    "数据完整性校验失败: user 表缺少 admin 用户，请先恢复用户数据");
+            }
+
+            // api_whitelist 表必须有 /auth/login 条目
+            Integer whitelistCount = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM api_whitelist WHERE path_prefix='/auth/login'", Integer.class);
+            if (whitelistCount == null || whitelistCount == 0) {
+                log.warn("数据完整性校验失败: api_whitelist 缺少 /auth/login 条目");
+                throw new BusinessException(ResultCode.INTERNAL_ERROR,
+                    "数据完整性校验失败: api_whitelist 缺少 /auth/login 条目，请先恢复 API 白名单数据");
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            // 表不存在等异常，记录但不阻塞（可能是新库还没初始化）
+            log.warn("数据完整性校验异常(不阻塞): {}", e.getMessage());
+        }
     }
 
     private String resolveOperatorName(HttpServletRequest request) {

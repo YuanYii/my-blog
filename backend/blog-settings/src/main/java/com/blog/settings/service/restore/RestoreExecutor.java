@@ -123,6 +123,8 @@ public class RestoreExecutor {
                 ensureAdminUser();
                 // 恢复后清空设备授权表，让下次登录触发 bootstrap 重新授权
                 clearDevices();
+                // 恢复后确保 API 白名单存在（备份可能不含白名单数据，导致登录 401）
+                ensureApiWhitelist();
                 // 恢复后清除站点设置 Redis 缓存，让下次读强制走已替换的 SQLite
                 evictSettingsCache();
             } catch (RestoreException re) {
@@ -550,6 +552,47 @@ public class RestoreExecutor {
             log.info("[Restore-IMPORT] clearDevices: 已清空设备授权表 (rows={})", rows);
         } catch (Exception e) {
             log.warn("[Restore-IMPORT] clearDevices 失败(不阻断): {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 恢复后确保 API 白名单存在。
+     * 备份数据库可能不含 api_whitelist 种子数据，导致 AdminAuthFilter 对 POST /auth/login
+     * 走 default-deny 分支返回 401。重新插入必要条目。
+     */
+    private void ensureApiWhitelist() {
+        try {
+            // 始终执行 INSERT OR IGNORE，确保关键条目存在（不依赖 COUNT 判断）
+            String now = java.time.LocalDateTime.now().toString().replace('T', ' ').substring(0, 19);
+            String sql = "INSERT OR IGNORE INTO api_whitelist (path_prefix, type, enabled, description, created_at, updated_at) VALUES (?, ?, 1, ?, ?, ?)";
+            Object[][] rows = {
+                {"/auth/login", "public", "登录", now, now},
+                {"/auth/me/password", "public", "改密", now, now},
+                {"/public/", "public", "公开端点", now, now},
+                {"/articles", "public", "文章公开端点", now, now},
+                {"/comments", "public", "评论公开端点", now, now},
+                {"/health", "public", "健康检查", now, now},
+                {"/v3/api-docs", "public", "Swagger API 文档", now, now},
+                {"/swagger-ui", "public", "Swagger UI", now, now},
+                {"/admin/", "admin", "所有 admin/* 路径必须鉴权", now, now},
+                {"/auth/me", "admin", "获取当前用户信息", now, now},
+                {"/auth/logout", "admin", "登出", now, now},
+                {"/auth/devices", "admin", "设备管理", now, now},
+                {"/uploads", "admin", "文件上传", now, now},
+                {"/admin/articles/{id}/attachment", "admin", "文章附件上传/软删", now, now},
+                {"/admin/attachments", "admin", "附件后台列表/恢复/硬删", now, now},
+                {"/admin/audit-logs", "admin", "审计日志查询", now, now},
+                {"/admin/settings/upload-md", "admin", "上传 md 文档批量更新 settings", now, now},
+                {"/admin/settings/exec-sql", "admin", "紧急 SQL 执行", now, now},
+            };
+            int inserted = 0;
+            for (Object[] row : rows) {
+                jdbcTemplate.update(sql, row);
+                inserted++;
+            }
+            log.info("[Restore-IMPORT] ensureApiWhitelist: 已插入 {} 条白名单", inserted);
+        } catch (Exception e) {
+            log.warn("[Restore-IMPORT] ensureApiWhitelist 失败(不阻断): {}", e.getMessage());
         }
     }
 

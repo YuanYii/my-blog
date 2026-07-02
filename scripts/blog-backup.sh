@@ -2,6 +2,8 @@
 # ============================================================
 # my-blog 数据备份脚本(加密 + GitHub Release)
 # ============================================================
+# 确保 date 命令使用北京时间(与 JVM -Duser.timezone=Asia/Shanghai 一致)
+export TZ=Asia/Shanghai
 # 把生产服务器的 SQLite db + uploads + attachments 目录打包 → 加密 → 上传到独立 GitHub 仓库的 Release
 #
 # 用途:
@@ -553,7 +555,7 @@ else
     # curl + GitHub REST API 兜底
     info "curl GitHub API create release"
     CREATE_RESP=$(mktemp)
-    HTTP_CODE=$(curl -s -o "$CREATE_RESP" -w "%{http_code}" \
+    HTTP_CODE=$(curl -s --tls-max 1.2 -o "$CREATE_RESP" -w "%{http_code}" \
         -X POST "https://api.github.com/repos/$GITHUB_BACKUP_REPO/releases" \
         -H "Authorization: token $BACKUP_GITHUB_TOKEN" \
         -H "Accept: application/vnd.github+json" \
@@ -573,7 +575,7 @@ else
     for asset in "${ASSETS[@]}"; do
         bn=$(basename "$asset")
         info "  upload $bn"
-        UP_CODE=$(curl -s -o "$STAGE_DIR/upload-$bn.json" -w "%{http_code}" \
+        UP_CODE=$(curl -s --tls-max 1.2 -o "$STAGE_DIR/upload-$bn.json" -w "%{http_code}" \
             -X POST "${UPLOAD_URL}?name=$bn" \
             -H "Authorization: token $BACKUP_GITHUB_TOKEN" \
             -H "Content-Type: application/octet-stream" \

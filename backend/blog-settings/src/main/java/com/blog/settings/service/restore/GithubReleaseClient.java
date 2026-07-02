@@ -217,7 +217,21 @@ public class GithubReleaseClient {
     }
 
     private HttpURLConnection openConn(String url, String token, String accept) throws IOException {
-        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        java.net.URL u = new URL(url);
+        java.net.URLConnection rawConn = u.openConnection();
+        // Docker Desktop for Mac VPNKit 与 GitHub CDN 的 TLS 1.3 握手存在兼容性问题
+        // 强制 TLS 1.2 避免 "Remote host terminated the handshake"
+        if (rawConn instanceof javax.net.ssl.HttpsURLConnection) {
+            javax.net.ssl.HttpsURLConnection sslConn = (javax.net.ssl.HttpsURLConnection) rawConn;
+            try {
+                javax.net.ssl.SSLContext ctx = javax.net.ssl.SSLContext.getInstance("TLSv1.2");
+                ctx.init(null, null, null);
+                sslConn.setSSLSocketFactory(ctx.getSocketFactory());
+            } catch (Exception e) {
+                log.warn("[Restore] 设置 TLS 1.2 失败,使用默认: {}", e.getMessage());
+            }
+        }
+        HttpURLConnection conn = (HttpURLConnection) rawConn;
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
         conn.setReadTimeout(READ_TIMEOUT_MS);
