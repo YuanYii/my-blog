@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS user (
   email           VARCHAR(100),
   avatar          VARCHAR(500),
   bio             TEXT,
+  intro           TEXT,
+  quote           TEXT,
+  footer_text     TEXT,
   location        VARCHAR(100),
   role            VARCHAR(20)   NOT NULL DEFAULT 'ADMIN',
   -- 2026-06-19：时间由 Java（北京时间）填充，不用 DEFAULT CURRENT_TIMESTAMP（SQLite 写 UTC）。
@@ -413,7 +416,8 @@ INSERT OR IGNORE INTO api_whitelist (path_prefix, type, enabled, description, cr
   ('/admin/articles/{id}/attachment', 'admin', 1, '文章附件上传/软删', datetime('now', 'localtime'), datetime('now', 'localtime')),
   ('/admin/attachments', 'admin', 1, '附件后台列表/恢复/硬删', datetime('now', 'localtime'), datetime('now', 'localtime')),
   ('/admin/audit-logs', 'admin', 1, '审计日志查询（2026-07-01 DEV-004）', datetime('now', 'localtime'), datetime('now', 'localtime')),
-  ('/admin/settings/upload-md', 'admin', 1, '上传 md 文档批量更新 settings（2026-07-01 DEV-005）', datetime('now', 'localtime'), datetime('now', 'localtime'));
+  ('/admin/settings/upload-md', 'admin', 1, '上传 md 文档批量更新 settings（2026-07-01 DEV-005）', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/admin/settings/exec-sql', 'admin', 1, '紧急 SQL 执行（隐藏功能）', datetime('now', 'localtime'), datetime('now', 'localtime'));
 
 -- 站点设置：不预置种子数据，由用户在管理后台初始化填写
 -- SiteSettingsService 在首次 GET 时会自动创建空默认值

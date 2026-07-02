@@ -28,7 +28,7 @@ public final class SettingsMdTemplate {
 
     // ============ profile 段字段白名单（user 表）============
     public static final Set<String> PROFILE_FIELDS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-            "nickname", "email", "avatar", "bio", "location"
+            "nickname", "email", "avatar", "bio", "intro", "quote", "footerText", "location"
     )));
 
     // ============ blog 段字段白名单（site_settings.section=blog）============

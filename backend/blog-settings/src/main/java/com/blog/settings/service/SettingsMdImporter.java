@@ -353,9 +353,10 @@ public class SettingsMdImporter {
         return SettingsMdTemplate.SECTION_PROFILE;
     }
 
-    /** user 实体字段 → DB 列名映射（lombok @Data 字段与 DB 列名一致，但 avatar/bio 等是同名字段）*/
+    /** user 实体字段 → DB 列名映射（camelCase → snake_case）*/
     private static String fieldToColumn(String field) {
-        // 当前 entity 与 DB 列名一致（snake_case 自动映射走 MP 默认），直接返回
+        // footerText → footer_text（MP UpdateWrapper 需要 DB 列名）
+        if ("footerText".equals(field)) return "footer_text";
         return field;
     }
 

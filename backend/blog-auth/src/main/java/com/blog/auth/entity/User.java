@@ -25,6 +25,9 @@ public class User {
     private String email;
     private String avatar;
     private String bio;
+    private String intro;
+    private String quote;
+    private String footerText;
     private String location;
     private String role;
     @TableField(fill = FieldFill.INSERT)

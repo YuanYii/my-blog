@@ -39,6 +39,9 @@ public class PublicProfileController {
             data.put("nickname", user.getNickname());
             data.put("avatar", user.getAvatar() != null ? user.getAvatar() : "");
             data.put("bio", user.getBio() != null ? user.getBio() : "");
+            data.put("intro", user.getIntro() != null ? user.getIntro() : "");
+            data.put("quote", user.getQuote() != null ? user.getQuote() : "");
+            data.put("footerText", user.getFooterText() != null ? user.getFooterText() : "");
             data.put("location", user.getLocation() != null ? user.getLocation() : "");
         }
         return Result.success(data);

@@ -4,7 +4,7 @@ definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 const { get, put, upload } = useAdminApi()
 const { updateUser } = useAuth()
 
-const profile = reactive({ nickname: '', email: '', bio: '', location: '', avatar: '' })
+const profile = reactive({ nickname: '', email: '', bio: '', intro: '', quote: '', footerText: '', location: '', avatar: '' })
 const saving = ref(false)
 const message = ref('')
 

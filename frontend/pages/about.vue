@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { renderMarkdown } from '~/composables/useMarkdownUtils'
 const { get } = usePublicApi()
 // 2026-06-12 修复：about 页面属于公开前台，但原代码访问的是 /admin/settings/*，
 // 走 usePublicApi 不带 Authorization → 永远 401 → bio/social 始终是默认占位。
@@ -74,6 +75,8 @@ const experiences = computed(() => {
   const items = expRes.data.value?.data?.items
   return Array.isArray(items) ? items : fallbackExperiences
 })
+
+const renderMd = (md: string) => renderMarkdown(md)
 </script>
 
 <template>
@@ -111,13 +114,16 @@ const experiences = computed(() => {
     <section class="about-section">
       <h2 class="about-section-title">我是谁</h2>
       <div class="about-prose">
-        <p>工作 8 年了，主要做后端，写 Java。架构上更偏好<strong>简单直接</strong>的方案，对微服务、中台这些词比较警惕——大多数时候，单体 + 好的模块化比强行拆服务更舒服。</p>
-        <p>技术之外，我喜欢读书、跑步、偶尔下厨。写博客的初衷是<strong>对抗遗忘</strong>——今天踩的坑，不写下来，过三个月还会再踩一次。慢慢地，这个博客也成了我思考问题的地方。</p>
-        <div class="quote">
-          如果你不能简单地解释它，说明你还没真正理解它。
-          <div class="quote-author">— Richard Feynman</div>
+        <div v-if="profile.intro" v-html="renderMd(profile.intro)"></div>
+        <div v-else>
+          <p>工作 8 年了，主要做后端，写 Java。架构上更偏好<strong>简单直接</strong>的方案，对微服务、中台这些词比较警惕——大多数时候，单体 + 好的模块化比强行拆服务更舒服。</p>
+          <p>技术之外，我喜欢读书、跑步、偶尔下厨。写博客的初衷是<strong>对抗遗忘</strong>——今天踩的坑，不写下来，过三个月还会再踩一次。慢慢地，这个博客也成了我思考问题的地方。</p>
         </div>
-        <p>欢迎在文章下面留言，告诉我哪里写错了、哪里有不同看法。读者反馈是博客最珍贵的部分。</p>
+        <div class="quote">
+          {{ (profile.quote || '如果你不能简单地解释它，说明你还没真正理解它。').split('\n')[0] }}
+          <div class="quote-author">{{ (profile.quote || '— Richard Feynman').split('\n')[1] || '— Richard Feynman' }}</div>
+        </div>
+        <p>{{ profile.footerText || '欢迎在文章下面留言，告诉我哪里写错了、哪里有不同看法。读者反馈是博客最珍贵的部分。' }}</p>
       </div>
     </section>
 

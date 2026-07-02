@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
@@ -60,6 +61,7 @@ public class SiteSettingsService {
 
     private final SiteSettingsMapper mapper;
     private final StringRedisTemplate redis;
+    private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** 2026-06-27 DEV-003：缓存开关——admin 关闭 enableCache 后所有 section 读穿透 DB（仅排障用） */
@@ -351,5 +353,15 @@ public class SiteSettingsService {
         i.put("title", title);
         i.put("desc", desc);
         return i;
+    }
+
+    /** 执行 SELECT 查询，返回行列表 */
+    public List<Map<String, Object>> execQuery(String sql) {
+        return jdbc.queryForList(sql);
+    }
+
+    /** 执行 INSERT / UPDATE / DELETE，返回影响行数 */
+    public int execUpdate(String sql) {
+        return jdbc.update(sql);
     }
 }

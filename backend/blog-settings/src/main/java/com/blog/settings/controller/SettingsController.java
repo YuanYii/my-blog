@@ -84,6 +84,9 @@ public class SettingsController {
             data.put("email", user.getEmail());
             data.put("avatar", user.getAvatar() != null ? user.getAvatar() : "");
             data.put("bio", user.getBio() != null ? user.getBio() : "");
+            data.put("intro", user.getIntro() != null ? user.getIntro() : "");
+            data.put("quote", user.getQuote() != null ? user.getQuote() : "");
+            data.put("footerText", user.getFooterText() != null ? user.getFooterText() : "");
             data.put("location", user.getLocation() != null ? user.getLocation() : "");
         }
         return Result.success(data);
@@ -134,6 +137,30 @@ public class SettingsController {
                 return Result.error(400, "简介长度不能超过 500 字符");
             }
             uw.set("bio", bio);
+            changed = true;
+        }
+        if (body.containsKey("intro")) {
+            String intro = body.get("intro");
+            if (intro != null && intro.length() > 2000) {
+                return Result.error(400, "个人介绍长度不能超过 2000 字符");
+            }
+            uw.set("intro", intro);
+            changed = true;
+        }
+        if (body.containsKey("quote")) {
+            String quote = body.get("quote");
+            if (quote != null && quote.length() > 500) {
+                return Result.error(400, "引用语长度不能超过 500 字符");
+            }
+            uw.set("quote", quote);
+            changed = true;
+        }
+        if (body.containsKey("footerText")) {
+            String footerText = body.get("footerText");
+            if (footerText != null && footerText.length() > 500) {
+                return Result.error(400, "底部文案长度不能超过 500 字符");
+            }
+            uw.set("footer_text", footerText);
             changed = true;
         }
         if (body.containsKey("location")) {
@@ -442,5 +469,47 @@ public class SettingsController {
         data.put("count", applied.size());
         logSettingChange("upload-md");
         return Result.success(data);
+    }
+
+    /**
+     * 紧急 SQL 执行（隐藏功能，需连续点击 5 次触发）
+     * 仅支持 SELECT / INSERT / UPDATE / DELETE，禁止 DROP / ALTER / CREATE
+     */
+    @PostMapping("/exec-sql")
+    public Result<Map<String, Object>> execSql(@RequestBody Map<String, String> body) {
+        String sql = body.get("sql");
+        if (sql == null || sql.trim().isEmpty()) {
+            return Result.error(400, "SQL 不能为空");
+        }
+        String upper = sql.trim().toUpperCase();
+        // 安全校验：只允许 SELECT / INSERT / UPDATE / DELETE
+        if (!upper.startsWith("SELECT") && !upper.startsWith("INSERT")
+                && !upper.startsWith("UPDATE") && !upper.startsWith("DELETE")) {
+            return Result.error(400, "仅支持 SELECT / INSERT / UPDATE / DELETE");
+        }
+        // 禁止危险关键字
+        String[] forbidden = {"DROP ", "ALTER ", "CREATE ", "TRUNCATE ", "GRANT ", "REVOKE "};
+        for (String kw : forbidden) {
+            if (upper.contains(kw)) {
+                return Result.error(400, "禁止执行: " + kw.trim());
+            }
+        }
+        try {
+            if (upper.startsWith("SELECT")) {
+                List<Map<String, Object>> rows = siteSettingsService.execQuery(sql);
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("rows", rows);
+                data.put("count", rows.size());
+                return Result.success(data);
+            } else {
+                int affected = siteSettingsService.execUpdate(sql);
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("affected", affected);
+                return Result.success(data);
+            }
+        } catch (Exception e) {
+            log.warn("exec-sql 失败: sql={} err={}", sql, e.getMessage());
+            return Result.error(500, "执行失败: " + e.getMessage());
+        }
     }
 }

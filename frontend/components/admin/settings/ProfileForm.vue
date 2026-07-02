@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const props = defineProps<{
-  profile: { nickname: string; email: string; bio: string; location: string; avatar: string }
+  profile: { nickname: string; email: string; bio: string; intro: string; quote: string; footerText: string; location: string; avatar: string }
   upload: (path: string, file: File) => Promise<any>
 }>()
 const emit = defineEmits<{ (e: 'update:profile', v: typeof props.profile): void }>()
@@ -59,8 +59,26 @@ const handleAvatarChange = async (e: Event) => {
       </div>
     </div>
     <div class="form-group">
-      <label class="form-label">个人简介</label>
-      <textarea :value="profile.bio" @input="emit('update:profile', { ...profile, bio: ($event.target as HTMLTextAreaElement).value })" class="form-control" rows="3" placeholder="一句话介绍你"></textarea>
+      <label class="form-label">个人标语（关于页顶部）</label>
+      <textarea :value="profile.bio" @input="emit('update:profile', { ...profile, bio: ($event.target as HTMLTextAreaElement).value })" class="form-control" rows="2" placeholder="后端工程师，在上海工作。日常写 Java / Spring Boot，偶尔折腾前端。"></textarea>
+      <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">关于页面顶部的个人介绍标语，留空显示默认内容。</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">我的介绍（关于页面「我是谁」）</label>
+      <textarea :value="profile.intro" @input="emit('update:profile', { ...profile, intro: ($event.target as HTMLTextAreaElement).value })" class="form-control" rows="6" placeholder="支持 Markdown 格式，用于关于页面的「我是谁」段落。留空则显示默认内容。"></textarea>
+      <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">支持 Markdown 格式，可包含段落、加粗、链接等。留空显示默认介绍。</div>
+    </div>
+    <div class="form-row-2">
+      <div class="form-group" style="margin: 0;">
+        <label class="form-label">引用语（关于页引用块）</label>
+        <textarea :value="profile.quote" @input="emit('update:profile', { ...profile, quote: ($event.target as HTMLTextAreaElement).value })" class="form-control" rows="2" placeholder="如果你不能简单地解释它，说明你还没真正理解它。&#10;— Richard Feynman"></textarea>
+        <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">关于页引用块内容，第一行为引用文本，第二行以「—」开头为作者。留空显示默认。</div>
+      </div>
+      <div class="form-group" style="margin: 0;">
+        <label class="form-label">底部欢迎语（关于页底部）</label>
+        <textarea :value="profile.footerText" @input="emit('update:profile', { ...profile, footerText: ($event.target as HTMLTextAreaElement).value })" class="form-control" rows="2" placeholder="欢迎在文章下面留言，告诉我哪里写错了、哪里有不同看法。读者反馈是博客最珍贵的部分。"></textarea>
+        <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">关于页底部的欢迎语。留空显示默认。</div>
+      </div>
     </div>
     <div class="form-row-2">
       <div class="form-group" style="margin: 0;">
