@@ -549,8 +549,8 @@ public class ArticleService {
         Map<Long, Long> counts = new HashMap<>();
         for (Map<String, Object> row : rows) {
             Object cid = row.get("cid");
-            if (cid == null) continue;
-            counts.put(((Number) cid).longValue(), ((Number) row.get("cnt")).longValue());
+            long key = cid == null ? -1 : ((Number) cid).longValue();
+            counts.put(key, ((Number) row.get("cnt")).longValue());
         }
         return Result.success(counts);
     }

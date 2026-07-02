@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>博客数据备份与恢复机制流程图 · 2026-07-01</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --bg-card: #ffffff;
+    --line: #e9e3d6;
+    --line-soft: #f0eadc;
+    --text: #14171e;
+    --text-2: #3a4256;
+    --muted: #7c7a72;
+    --primary: #2f6f5e;
+    --primary-soft: rgba(47, 111, 94, 0.08);
+    --accent: #c97b3f;
+    --accent-soft: rgba(201, 123, 63, 0.08);
+    --danger: #b06367;
+    --info: #4a6a8a;
+    --info-soft: rgba(74, 106, 138, 0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 16px;
+    min-height: 100dvh;
+    position: relative;
+  }
+
+  /* 微背景渐变 — 两个角 5% 透明度 */
+  body::before {
+    content: "";
+    position: fixed;
+    top: -200px; left: -200px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, var(--primary-soft) 0%, transparent 70%);
+    z-index: 0;
+    pointer-events: none;
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    bottom: -200px; right: -200px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, var(--accent-soft) 0%, transparent 70%);
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 56px 32px 80px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Hero */
+  .hero {
+    margin-bottom: 56px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--line);
+  }
+  .eyebrow {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    color: var(--primary);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 40px;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  .hero p {
+    color: var(--text-2);
+    font-size: 16px;
+    max-width: 880px;
+  }
+
+  /* Section */
+  .section {
+    margin-bottom: 56px;
+  }
+  h2 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 24px;
+    font-weight: 400;
+    color: var(--text);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  h2 .badge {
+    font-family: 'Outfit', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    padding: 3px 10px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    vertical-align: middle;
+  }
+  h2 .badge.flow-a { background: var(--primary-soft); color: var(--primary); }
+  h2 .badge.flow-b { background: var(--accent-soft); color: var(--accent); }
+  h2 .badge.guard { background: var(--info-soft); color: var(--info); }
+
+  .section-meta {
+    font-size: 15px;
+    color: var(--muted);
+    margin-bottom: 20px;
+    padding-left: 12px;
+    border-left: 2px solid var(--line);
+  }
+
+  /* Card */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  }
+  .card + .card { margin-top: 16px; }
+
+  /* Mermaid container */
+  .mermaid-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 32px 24px;
+    overflow-x: auto;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  }
+  .mermaid {
+    text-align: center;
+    font-family: 'Outfit', sans-serif !important;
+  }
+
+  /* Legend */
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+    padding: 16px 20px;
+    background: var(--bg-card);
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    color: var(--text-2);
+  }
+  .legend-dot {
+    width: 14px; height: 14px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  /* KV file list */
+  .file-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 12px;
+  }
+  .file-card {
+    padding: 14px 18px;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+  .file-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+    border-color: var(--primary);
+  }
+  .file-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    color: var(--primary);
+    margin-bottom: 4px;
+    word-break: break-all;
+  }
+  .file-desc {
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  /* Step list */
+  .step-list {
+    list-style: none;
+    counter-reset: step;
+    padding: 0;
+    margin: 0;
+  }
+  .step-list li {
+    counter-increment: step;
+    position: relative;
+    padding: 12px 0 12px 40px;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 15px;
+    color: var(--text-2);
+  }
+  .step-list li:last-child { border-bottom: none; }
+  .step-list li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0; top: 12px;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 2-col layout for guards */
+  .guards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .guard-card {
+    padding: 18px;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--info);
+    border-radius: 8px;
+  }
+  .guard-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--info);
+    margin-bottom: 6px;
+  }
+  .guard-text {
+    font-size: 14px;
+    color: var(--text-2);
+    line-height: 1.55;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 56px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .footer code {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--line-soft);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: var(--text-2);
+  }
+
+  /* Mermaid node sizing override */
+  .mermaid .nodeLabel { font-size: 18px !important; font-family: 'Outfit', sans-serif !important; }
+  .mermaid .edgeLabel { font-size: 15px !important; font-family: 'JetBrains Mono', monospace !important; background: var(--bg-card) !important; }
+
+  /* Mobile */
+  @media (max-width: 768px) {
+    .container { padding: 32px 16px 60px; }
+    h1 { font-size: 40px; }
+    h2 { font-size: 20px; }
+    .mermaid-wrap { padding: 16px 8px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Hero -->
+  <header class="hero">
+    <div class="eyebrow">My-Blog · Backup & Restore · Flow Diagram</div>
+    <h1>博客数据备份与恢复机制流程图</h1>
+    <p>梳理当前项目（v5.0.0+）从触发入口到磁盘落盘的端到端链路，覆盖 admin 后台 / publish-release / sqlite-export / sqlite-import / blog-backup / RestoreExecutor 6 个核心组件，以及双库守护 + 孤儿回收 2 个后台守护机制。</p>
+  </header>
+
+  <!-- ============================================
+       流程 A — 数据备份
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>流程 A · 数据备份链路</span>
+      <span class="badge flow-a">BACKUP</span>
+    </h2>
+    <p class="section-meta">触发入口 3 种 → 备份脚本 2 个 → 加密压缩 → 上传 GitHub Release → 写 backup_record 表 → 启动 reconciler 兜底</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    T1["<b>触发入口 ①</b><br/>admin 后台<br/>POST /admin/backup/run"]
+    T2["<b>触发入口 ②</b><br/>开发者本地<br/>EXPORT_DB=1<br/>./publish-release.sh"]
+    T3["<b>触发入口 ③</b><br/>服务器端人工<br/>bash scripts/sqlite-export.sh"]
+
+    S1["<b>BackupController</b><br/>写入 backup_record (PENDING → RUNNING)"]
+    S2["<b>BackupService.triggerBackup</b><br/>@Async 起线程"]
+    S3["<b>blog-backup.sh</b> (v4.2.0)<br/>① 准备 stage 目录<br/>② 调 sqlite-export.sh dump db<br/>③ 打包 uploads/ tar.gz.enc<br/>④ 打包 attachments/ tar.gz.enc"]
+    S4["<b>sqlite-export.sh</b> (v4.0.0)<br/>sqlite3 .dump → gzip<br/>→ openssl enc -aes-256-cbc<br/>-pbkdf2 -iter 10 -salt<br/>→ .sql.gz.enc"]
+    S5["<b>GitHub Release 上传</b><br/>gh release create<br/>assets: db.enc / uploads.tar.gz.enc<br/>/ attachments.tar.gz.enc<br/>+ manifest.json + .blog-backup-result.{id}.json"]
+    S6["<b>备份成功</b><br/>backup_record.status=SUCCESS<br/>db_size / uploads_size<br/>/ attachments_size 落库"]
+    S7["<b>trimOldRecords</b><br/>删除超过 N 天的 SUCCESS<br/>+ best-effort 删 GitHub Release"]
+    S8["<b>FAILED</b><br/>status=FAILED<br/>error_stage + error_message 落库<br/>+ warn 日志含 traceId"]
+
+    P1["<b>publish-release.sh</b><br/>① git tag + jar 打包<br/>② EXPORT_DB=1 时调 sqlite-export.sh<br/>③ gh release create<br/>+ dev-blog-dump.sql.gz.enc"]
+
+    M1[("📋 backup_record<br/>status / tag / sizes<br/>asset_urls / trace_id")]
+    M2[("💾 staging 目录<br/>.sql.gz.enc + tar.gz.enc<br/>+ manifest.json")]
+
+    T1 --> S1 --> S2 --> S3
+    T2 --> P1
+    T3 --> S4
+
+    S3 --> S4
+    S3 --> M2
+    S4 --> M5{{"失败?"}}
+    M5 -- 否 --> S6
+    M5 -- 是 --> S8
+    S6 --> S7
+    S4 --> M1
+    S6 --> M1
+    S8 --> M1
+    P1 --> M1
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef script fill:#fff5eb,stroke:#c97b3f,stroke-width:2px,color:#14171e
+    classDef success fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#2f6f5e
+    classDef fail fill:#fce8ea,stroke:#b06367,stroke-width:2px,color:#b06367
+    classDef db fill:#f0e9d6,stroke:#7c7a72,stroke-width:1px,color:#14171e
+    classDef disk fill:#eef2f7,stroke:#4a6a8a,stroke-width:1px,color:#14171e
+
+    class T1,T2,T3 entry
+    class S1,S2,S3,S4,P1 script
+    class S6,S7 success
+    class S8 fail
+    class M1 db
+    class M2 disk
+      </pre>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#e8f1ed;border:2px solid #2f6f5e;"></div>触发入口</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fff5eb;border:2px solid #c97b3f;"></div>备份脚本/Service</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#e8f1ed;border:2px solid #2f6f5e;"></div>成功路径</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fce8ea;border:2px solid #b06367;"></div>失败路径</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f0e9d6;border:1px solid #7c7a72;"></div>DB 表</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#eef2f7;border:1px solid #4a6a8a;"></div>磁盘/网络</div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       流程 B — 数据恢复
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>流程 B · 数据恢复链路</span>
+      <span class="badge flow-b">RESTORE</span>
+    </h2>
+    <p class="section-meta">触发入口 2 种 → RestoreService (12 步执行) → SqliteOnlineBackup 整 db 替换 → write restore_record + result.json</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    T1["<b>触发入口 ①</b><br/>admin 后台<br/>POST /admin/restore/run<br/>(sourceRecordId + scope)"]
+    T2["<b>触发入口 ②</b><br/>服务器端人工<br/>bash scripts/sqlite-import.sh<br/>(不推荐 · 仅 INITIAL 用)"]
+
+    R1["<b>RestoreController</b><br/>验证 scope ∈ DB_ONLY / DB_UPLOADS"]
+    R2["<b>RestoreService.triggerRestore</b><br/>① 写 restore_record (PENDING → RUNNING)<br/>② 写 .restore-meta.{id}.json"]
+    R3["<b>RestoreExecutor.execute</b><br/>@Async 起线程<br/>Step 1 PRECHECK 磁盘/进程"]
+    R4["Step 2 STOP<br/>(docker 模式 kill backend)"]
+    R5["Step 3 DOWNLOAD<br/>curl GitHub Release asset<br/>→ .sql.gz.enc"]
+    R6["Step 4 SHA256<br/>校验 manifest 哈希"]
+    R7["Step 5 DECRYPT<br/>openssl 解密 + gunzip<br/>→ dump.sql"]
+    R8["Step 6 IMPORT<br/><b>SqliteOnlineBackup</b><br/>① buildStagedDbFromSql (临时 db)<br/>② copyOver (整 db 文件替换)<br/>③ smokeTest"]
+    R9["Step 7 UPLOADS<br/>(scope=DB_UPLOADS 时)<br/>解 uploads.tar.gz.enc → 覆盖磁盘"]
+    R10["Step 8 START<br/>(docker 模式重启 backend)"]
+    R11["Step 9 HEALTH<br/>等 200 + 健康检查"]
+    R12["Step 10 VERIFY<br/>table_stats_exact 对比<br/>(仅记录不阻断)"]
+    R13["Step 11 ORPHAN<br/>trap 清理 .restore-meta"]
+    R14["Step 12 UPDATE<br/>restore_record = SUCCESS<br/>+ .restore-result.{id}.json"]
+
+    R15["<b>FAILED</b><br/>restore_record = FAILED<br/>+ error_stage + error_message"]
+    R16["<b>撤销</b><br/>回滚 RUNNING 状态<br/>(遇错保留现场)"]
+
+    DB[("💾 /opt/myblog/blog.db<br/>被 SqliteOnlineBackup<br/>整文件替换")]
+    M1[("📋 restore_record<br/>status / source_tag<br/>scope / trace_id")]
+
+    T1 --> R1 --> R2 --> R3
+    T2 --> S1["<b>sqlite-import.sh</b><br/>解密 + sqlite3 执行 dump.sql<br/>(不走 RestoreExecutor)"] --> DB
+
+    R3 --> R4
+    R3 --> R5 --> R6 --> R7 --> R8
+    R4 -.->|"docker"| R5
+    R8 --> DB
+    R8 --> R9 --> R10 --> R11 --> R12 --> R13 --> R14
+    R12 --> R15
+    R3 -.->|"任意步骤错"| R15
+    R15 --> R16
+    R14 --> M1
+    R15 --> M1
+
+    classDef entry fill:#fff5eb,stroke:#c97b3f,stroke-width:2px,color:#14171e
+    classDef step fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+    classDef critical fill:#fce8ea,stroke:#b06367,stroke-width:2px,color:#b06367
+    classDef success fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#2f6f5e
+    classDef db fill:#f0e9d6,stroke:#7c7a72,stroke-width:1px,color:#14171e
+
+    class T1,T2,S1 entry
+    class R1,R2,R3,R4,R5,R6,R7,R9,R10,R11,R12,R13 step
+    class R8 critical
+    class R14 success
+    class R15,R16 critical
+    class DB,M1 db
+      </pre>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#fff5eb;border:2px solid #c97b3f;"></div>触发入口</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fdfaf3;border:1px solid #c97b3f;"></div>Restore 步骤</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fce8ea;border:2px solid #b06367;"></div>关键/失败路径</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#e8f1ed;border:2px solid #2f6f5e;"></div>成功终点</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f0e9d6;border:1px solid #7c7a72;"></div>DB 表 / 文件</div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       后台守护机制
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>后台守护机制</span>
+      <span class="badge guard">GUARD</span>
+    </h2>
+    <p class="section-meta">3 层守护：DB 唯一索引 → JVM startup reconciler → 5s/60s 定时扫描，回收被强杀进程遗留的孤儿 RUNNING 记录</p>
+
+    <div class="guards-grid">
+      <div class="guard-card">
+        <div class="guard-title">backup_record</div>
+        <div class="guard-text">
+          SQLite partial unique index<br/>
+          <code>WHERE status='RUNNING'</code><br/>
+          单进程并发互斥（第二次 INSERT 直接抛 UNIQUE constraint failed → BusinessException BACKUP_CONFLICT）
+        </div>
+      </div>
+
+      <div class="guard-card">
+        <div class="guard-title">restore_record</div>
+        <div class="guard-text">
+          同款 partial unique index；任一时刻最多 1 条 RUNNING 的备份 / 恢复任务，避免并发写文件相互覆盖
+        </div>
+      </div>
+
+      <div class="guard-card">
+        <div class="guard-title">BackupStartupReconciler</div>
+        <div class="guard-text">
+          @Scheduled：JVM 启动 + 5s 二次 + 60s 周期<br/>
+          扫 RUNNING 备份孤儿 → 读 <code>.blog-backup-result.{id}.json</code><br/>
+          SUCCESS / FAILED / ORPHAN / RESULT_PARSE_FAILED 四态映射
+        </div>
+      </div>
+
+      <div class="guard-card">
+        <div class="guard-title">RestoreStartupReconciler</div>
+        <div class="guard-text">
+          同款机制，扫 RUNNING 恢复孤儿<br/>
+          合并 <code>.restore-meta.{id}.json</code> + <code>.restore-result.{id}.json</code><br/>
+          反向 INSERT 重建记录
+        </div>
+      </div>
+
+      <div class="guard-card">
+        <div class="guard-title">RESULT 文件反查</div>
+        <div class="guard-text">
+          脚本侧用 <code>BACKUP_STAGE_DIR_PARENT/.blog-backup-result.{id}.json</code><br/>
+          携带完整 SUCCESS 字段；result_dir 不被 trap 清理，可被 reconciler 反查
+        </div>
+      </div>
+
+      <div class="guard-card">
+        <div class="guard-title">traceId 串联</div>
+        <div class="guard-text">
+          <code>TraceIdUtil</code> 全链路（AdminAuthFilter / IpRateLimitFilter / GlobalExceptionHandler）<br/>
+          backup_record.trace_id 存当前请求 traceId<br/>
+          失败详情直接展示给 owner 反查 server log
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       关键文件清单
+       ============================================ -->
+  <section class="section">
+    <h2>关键文件清单</h2>
+    <p class="section-meta">按链路参与顺序排列：脚本入口 → Java Service → 备份/恢复核心实现</p>
+
+    <div class="file-grid">
+      <div class="file-card">
+        <div class="file-name">scripts/blog-backup.sh</div>
+        <div class="file-desc">生产环境定时 + 手动备份入口；调 sqlite-export.sh dump db + 打包 uploads/attachments；上传 GitHub Release；写 backup_record</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">scripts/sqlite-export.sh</div>
+        <div class="file-desc">sqlite3 .dump 全表（或按 --exclude 过滤）→ gzip → openssl AES-256-CBC + PBKDF2 10 加密 → 输出 .sql.gz.enc</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">scripts/sqlite-import.sh</div>
+        <div class="file-desc">解密 + 解压 + sqlite3 执行 dump.sql；供 INITIAL_DB=1 部署首次初始化用</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">scripts/publish-release.sh</div>
+        <div class="file-desc">开发者本地发布入口；EXPORT_DB=1 时调 sqlite-export.sh 把 dev db 加密导出随 Release 发版</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">scripts/deploy-server.sh</div>
+        <div class="file-desc">服务器端部署脚本；IMPORT_DB=1 时调 sqlite-import.sh 自动解密导入；DEPLOY_MODE=full/data/code 分流</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">BackupController.java</div>
+        <div class="file-desc">admin 后台触发入口：POST /admin/backup/run（异步执行）/ sync（从 GitHub 拉历史）/ delete（删记录）</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">BackupService.java</div>
+        <div class="file-desc">@Async 调度 + ProcessBuilder 调 blog-backup.sh + write backup_record + trimOldRecords + .blog-backup-result.{id}.json</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">RestoreController.java</div>
+        <div class="file-desc">admin 后台触发入口：POST /admin/restore/run（异步执行） / list / get</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">RestoreService.java</div>
+        <div class="file-desc">写 restore_record + .restore-meta.{id}.json；@Async 调度 RestoreExecutor.execute</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">restore/RestoreExecutor.java</div>
+        <div class="file-desc">12 步执行：PRECHECK → STOP → DOWNLOAD → SHA256 → DECRYPT → IMPORT → UPLOADS → START → HEALTH → VERIFY → ORPHAN → UPDATE</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">restore/SqliteOnlineBackup.java</div>
+        <div class="file-desc">用 SQLite C API（sqlite3_backup_init/step/finish）做在线热备；buildStagedDbFromSql + copyOver 整 db 文件替换</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">restore/EncryptedDumpCodec.java</div>
+        <div class="file-desc">openssl 解密 + gunzip 解压的 codec；与 sqlite-export.sh 加密参数对齐</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">BackupStartupReconciler.java</div>
+        <div class="file-desc">@Scheduled 启动 + 5s + 60s 扫 RUNNING 备份孤儿；读 .result.json 反查 SUCCESS 字段</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">RestoreStartupReconciler.java</div>
+        <div class="file-desc">同款机制，对应恢复任务；按 source_tag 把孤儿 RUNNING 备份修正为 SUCCESS</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <p>分析时间：<code>2026-07-01 22:00</code> · 北京时区 (UTC+8) · 适用版本：v5.0.0+ (DEV-001/002/003 v5.0.0 附件管理已合并) · 任务来源：用户手动需求分析</p>
+  </footer>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'neutral',
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'linear',
+      padding: 8,
+      nodeSpacing: 30,
+      rankSpacing: 25
+    },
+    themeVariables: {
+      fontFamily: "'Outfit', system-ui, sans-serif",
+      fontSize: '15px',
+      primaryColor: '#fdfaf3',
+      primaryTextColor: '#14171e',
+      primaryBorderColor: '#c97b3f',
+      lineColor: '#7c7a72',
+      secondaryColor: '#f7f5f0',
+      tertiaryColor: '#fdfaf3'
+    }
+  });
+</script>
+</body>
+</html>

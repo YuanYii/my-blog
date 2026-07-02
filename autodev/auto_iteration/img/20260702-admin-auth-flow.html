@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>博客 admin 鉴权链路业务逻辑图 · 2026-07-02</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --bg-card: #ffffff;
+    --line: #e9e3d6;
+    --line-soft: #f0eadc;
+    --text: #14171e;
+    --text-2: #3a4256;
+    --muted: #7c7a72;
+    --primary: #2f6f5e;
+    --primary-soft: rgba(47, 111, 94, 0.08);
+    --accent: #c97b3f;
+    --accent-soft: rgba(201, 123, 63, 0.08);
+    --danger: #b06367;
+    --danger-soft: rgba(176, 99, 103, 0.08);
+    --info: #4a6a8a;
+    --info-soft: rgba(74, 106, 138, 0.08);
+    --warn: #c97b3f;
+    --warn-soft: rgba(201, 123, 63, 0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 16px;
+    min-height: 100dvh;
+    position: relative;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    top: -200px; left: -200px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, var(--primary-soft) 0%, transparent 70%);
+    z-index: 0; pointer-events: none;
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    bottom: -200px; right: -200px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, var(--accent-soft) 0%, transparent 70%);
+    z-index: 0; pointer-events: none;
+  }
+
+  .container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 56px 32px 80px;
+    position: relative; z-index: 1;
+  }
+
+  .hero {
+    margin-bottom: 48px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--line);
+  }
+  .eyebrow {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    color: var(--primary);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 40px;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  .hero p {
+    color: var(--text-2);
+    font-size: 16px;
+    max-width: 880px;
+  }
+
+  .section { margin-bottom: 56px; }
+  h2 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    font-weight: 400;
+    color: var(--text);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  h2 .badge {
+    font-family: 'Outfit', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    padding: 3px 10px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    vertical-align: middle;
+  }
+  h2 .badge.flow { background: var(--primary-soft); color: var(--primary); }
+  h2 .badge.decision { background: var(--accent-soft); color: var(--accent); }
+  h2 .badge.boundary { background: var(--warn-soft); color: var(--warn); }
+  h2 .badge.files { background: var(--info-soft); color: var(--info); }
+
+  .section-meta {
+    font-size: 15px;
+    color: var(--muted);
+    margin-bottom: 20px;
+    padding-left: 12px;
+    border-left: 2px solid var(--line);
+  }
+
+  .mermaid-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 28px 20px;
+    overflow-x: auto;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  }
+  .mermaid { text-align: center; font-family: 'Outfit', sans-serif !important; }
+
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+    padding: 16px 20px;
+    background: var(--bg-card);
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; color: var(--text-2);
+  }
+  .legend-dot {
+    width: 14px; height: 14px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  /* Decision grid */
+  .decision-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+  }
+  .decision-card {
+    padding: 18px;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+  }
+  .decision-card.warn { border-left-color: var(--warn); }
+  .decision-card.info { border-left-color: var(--info); }
+  .decision-card.danger { border-left-color: var(--danger); }
+  .decision-stage {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .decision-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .decision-rule {
+    font-size: 16px;
+    color: var(--text-2);
+    line-height: 1.5;
+    margin-bottom: 6px;
+  }
+  .decision-code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--primary);
+    background: var(--primary-soft);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  /* Boundary table */
+  .boundary-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 16px;
+  }
+  .boundary-table th {
+    text-align: left;
+    padding: 12px 16px;
+    background: var(--line-soft);
+    color: var(--text-2);
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    border-bottom: 1px solid var(--line);
+  }
+  .boundary-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--text-2);
+    vertical-align: top;
+  }
+  .boundary-table tr:last-child td { border-bottom: none; }
+  .boundary-table .scenario {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--primary);
+    font-weight: 500;
+  }
+  .boundary-table .response {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .boundary-table .ok { color: var(--primary); }
+  .boundary-table .block { color: var(--danger); }
+  .boundary-table .empty { color: var(--muted); }
+
+  /* File list */
+  .file-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 12px;
+  }
+  .file-card {
+    padding: 14px 18px;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+  .file-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+    border-color: var(--primary);
+  }
+  .file-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    color: var(--primary);
+    margin-bottom: 4px;
+    word-break: break-all;
+  }
+  .file-desc {
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .footer {
+    margin-top: 56px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .footer code {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--line-soft);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: var(--text-2);
+  }
+
+  .mermaid .nodeLabel { font-size: 18px !important; font-family: 'Outfit', sans-serif !important; }
+  .mermaid .edgeLabel { font-size: 15px !important; font-family: 'JetBrains Mono', monospace !important; background: var(--bg-card) !important; }
+
+  @media (max-width: 768px) {
+    .container { padding: 32px 16px 60px; }
+    h1 { font-size: 40px; }
+    h2 { font-size: 28px; }
+    .mermaid-wrap { padding: 16px 8px; }
+    .boundary-table { font-size: 14px; }
+    .boundary-table th, .boundary-table td { padding: 8px 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header class="hero">
+    <div class="eyebrow">My-Blog · Admin Auth · End-to-end Pipeline</div>
+    <h1>博客 admin 鉴权链路业务逻辑图</h1>
+    <p>梳理任意 HTTP 请求进入 Spring 过滤链 → AdminAuthFilter.shouldNotFilter 路径分流 → doFilterInternal 三段鉴权（token / 设备 / token-deviceId 对账）→ AOP 审计日志自动落库的完整链。适用版本：v5.0.0+。</p>
+  </header>
+
+  <!-- ============================================
+       Section 1: 主流程图
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>主流程 · admin 鉴权端到端链路</span>
+      <span class="badge flow">FLOW</span>
+    </h2>
+    <p class="section-meta">2 大阶段：阶段 A 路径分流（shouldNotFilter 决定鉴权/放行/拒绝）→ 阶段 B 三段鉴权（token / 设备白名单 / token-deviceId 一致性）。任一段失败立即返回 401 并打 WARN；AOP 在 controller 完成后异步写 audit_log。</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    Start(["🌐 任意 HTTP 请求进入 Filter 链"])
+
+    A["<b>阶段 A · 路径分流</b><br/>shouldNotFilter 决定鉴权/放行/拒绝<br/><i>10+ 决策点：ADMIN_ROUTES / DB 白名单 / OPTIONS / default-deny</i>"]
+    B["<b>阶段 B · doFilterInternal 鉴权</b><br/>token → 设备白名单 → token-deviceId 对账<br/><i>三段串行，任一失败立即 401 + WARN</i>"]
+    C["<b>阶段 C · Controller + AOP</b><br/>业务执行 + AuditLogAspect 自动落库<br/><i>controller 完成后 @Async 写 audit_log</i>"]
+
+    A_out1(["✅ 放行 / OPTIONS 跳过<br/>3 条 happy path"])
+    A_out2(["❌ default-deny<br/>401 + WARN"])
+    A_out3(["⚠️ 防漏 WARN<br/>unregistered GET 放行"])
+
+    B_out1(["✅ 200 放行<br/>写 AuthContext"])
+    B_out2(["❌ 401/1007/2001/2002<br/>凭证/设备/吊销"])
+
+    C_out1(["✅ 业务响应 + AuditLog<br/>@Async 落库"])
+    C_out2(["✅ 公开下载<br/>匿名 DOWNLOAD + IP 记录"])
+
+    End(["✅ HTTP 200 业务响应"])
+
+    Start --> A
+    A -- "✅ 放行" --> A_out1 --> End
+    A -- "⚠️ WARN 放行" --> A_out3 --> End
+    A -- "❌ default-deny" --> A_out2 --> End
+    A -- "🔒 需鉴权" --> B
+
+    B -- "✅ 200" --> B_out1 --> C
+    B -- "❌ 401 系列" --> B_out2 --> End
+
+    C -- "admin 写端点" --> C_out1 --> End
+    C -- "公开下载" --> C_out2 --> End
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef stage fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+    classDef success fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#2f6f5e
+    classDef fail fill:#fce8ea,stroke:#b06367,stroke-width:2px,color:#b06367
+    classDef warn fill:#fff5eb,stroke:#c97b3f,stroke-width:2px,color:#14171e
+
+    class Start,End success
+    class A,B,C stage
+    class A_out1,B_out1,C_out1,C_out2 success
+    class A_out2,B_out2 fail
+    class A_out3 warn
+      </pre>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#e8f1ed;border:2px solid #2f6f5e;"></div>起点/终点</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fdfaf3;border:1px solid #c97b3f;"></div>阶段/逻辑层</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fff5eb;border:2px solid #c97b3f;"></div>决策点</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#eef2f7;border:1px solid #4a6a8a;"></div>AOP 审计</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fce8ea;border:2px solid #b06367;"></div>401/拒绝</div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Section 1.5: 阶段 A · 路径分流详情
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>阶段 A 详情 · shouldNotFilter 路径分流</span>
+      <span class="badge flow">DETAIL</span>
+    </h2>
+    <p class="section-meta">主流程图概览后的端到端节点展开。10+ 决策点的完整路径，含 default-deny / 防漏 WARN 等关键工程取舍。</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    Start(["🌐 HTTP 请求进入 Filter 链"])
+    A0["<b>阶段 A · shouldNotFilter</b><br/>路径分流判断"]
+    A1["OPTIONS<br/>预检?"]
+    A2["✅ 跳过本 Filter<br/>直接放行下游"]
+    A3["命中<br/>ADMIN_ROUTES?"]
+    A4["🔒 需鉴权<br/>return false → doFilterInternal"]
+    A5["DB public 白名单<br/>whitelistService.matchPath?"]
+    A6["GET / HEAD?"]
+    A7["✅ 公开只读<br/>放行"]
+    A8["PUBLIC_WRITE_ROUTES<br/>(POST /auth/login 等)?"]
+    A9["✅ 公开匿名写<br/>放行"]
+    A10["❌ default-deny<br/>写操作未登记 → 401 + WARN"]
+    A11["GET / HEAD?"]
+    A12["⚠️ 防漏 WARN<br/>warnUnregistered 打 WARN 后放行"]
+    A13["❌ default-deny<br/>写操作未登记 → 401 + WARN"]
+
+    Start --> A0 --> A1
+    A1 -- "是" --> A2
+    A1 -- "否" --> A3
+    A3 -- "是" --> A4
+    A3 -- "否" --> A5
+    A5 -- "是" --> A6
+    A6 -- "是" --> A7
+    A6 -- "否" --> A8
+    A8 -- "是" --> A9
+    A8 -- "否" --> A10
+    A5 -- "否" --> A11
+    A11 -- "是" --> A12
+    A11 -- "否" --> A13
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef stage fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+    classDef decision fill:#fff5eb,stroke:#c97b3f,stroke-width:2px,color:#14171e
+    classDef success fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#2f6f5e
+    classDef warn fill:#fef7e6,stroke:#c97b3f,stroke-width:2px,color:#14171e
+    classDef fail fill:#fce8ea,stroke:#b06367,stroke-width:2px,color:#b06367
+
+    class Start,A2,A7,A9 success
+    class A0,A4 stage
+    class A1,A3,A5,A6,A8,A11 decision
+    class A12 warn
+    class A10,A13 fail
+      </pre>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Section 1.6: 阶段 B · 三段鉴权详情
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>阶段 B 详情 · doFilterInternal 三段鉴权</span>
+      <span class="badge flow">DETAIL</span>
+    </h2>
+    <p class="section-meta">token 解析 → 设备白名单 → token-deviceId 对账。三段串行，任一失败立即 401 + WARN。</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    Start(["🔒 进入 doFilterInternal"])
+    B1["Authorization<br/>Bearer xxx?"]
+    B2["❌ 401 未登录<br/>缺 token → 拒"]
+    B3["<b>JwtUtil.parse(token)</b><br/>catch Expired/Signature/Malformed"]
+    B4["❌ 1007 token 过期或无效<br/>区分打 WARN"]
+    B5["uid claim 存在?"]
+    B6["❌ 1007 token 无效<br/>缺 uid claim → 拒"]
+    B7["<b>DeviceService.verifyOnRequest</b><br/>header X-Device-Id<br/>查 admin_device 表 + status 判定"]
+    B8["deviceId 缺失?"]
+    B9["❌ 401 未登录<br/>请求未带 X-Device-Id"]
+    B10["device 未登记?"]
+    B11["❌ 401 未登录<br/>deviceId 不在白名单"]
+    B12["status = pending?"]
+    B13["❌ 2001 设备待授权<br/>需 admin 后台批准"]
+    B14["status = revoked?"]
+    B15["❌ 2002 设备已吊销<br/>吊销即踢出"]
+    B16["✅ approved<br/>顺便 update last_seen_at"]
+    B17["token.deviceId ==<br/>header X-Device-Id?"]
+    B18["❌ 401 token 与设备不匹配<br/>防 token 借用"]
+    B19["✅ 放行<br/>写 AuthContext: uid/deviceId/username"]
+
+    Start --> B1
+    B1 -- "否" --> B2
+    B1 -- "是" --> B3
+    B3 -- "抛异常" --> B4
+    B3 -- "OK" --> B5
+    B5 -- "否" --> B6
+    B5 -- "是" --> B7
+    B7 --> B8
+    B8 -- "是" --> B9
+    B8 -- "否" --> B10
+    B10 -- "是" --> B11
+    B10 -- "否" --> B12
+    B12 -- "是" --> B13
+    B12 -- "否" --> B14
+    B14 -- "是" --> B15
+    B14 -- "否(approved)" --> B16
+    B16 --> B17
+    B17 -- "否" --> B18
+    B17 -- "是" --> B19
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef stage fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+    classDef decision fill:#fff5eb,stroke:#c97b3f,stroke-width:2px,color:#14171e
+    classDef success fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#2f6f5e
+    classDef fail fill:#fce8ea,stroke:#b06367,stroke-width:2px,color:#b06367
+
+    class Start success
+    class B3,B7,B16,B19 stage
+    class B1,B5,B8,B10,B12,B14,B17 decision
+    class B2,B4,B6,B9,B11,B13,B15,B18 fail
+      </pre>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Section 1.7: 阶段 C · Controller + AOP 详情
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>阶段 C 详情 · Controller + AOP 审计</span>
+      <span class="badge flow">DETAIL</span>
+    </h2>
+    <p class="section-meta">业务执行后，AuditLogAspect 反射 method 注解判定 operation → @Async 落 audit_log；公开下载走 DOWNLOAD anonymous 路径。</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    Start(["✅ chain.doFilter 放行<br/>进入 Controller"])
+    C0["<b>Controller 业务执行</b><br/>@PostMapping/PutMapping/DeleteMapping"]
+    C1["<b>AOP AuditLogAspect</b><br/>execution(* com.blog..controller..*(..))"]
+    C2["admin 写端点?<br/>POST/PUT/DELETE + AuthContext.uid"]
+    C3["<b>HTTP method → operation</b><br/>POST → CREATE / PUT → UPDATE / DELETE → DELETE"]
+    C4["特殊路径判定"]
+    C5["/admin/devices/.../approve → APPROVE"]
+    C6["/admin/devices/.../revoke → REJECT"]
+    C7["/comments/.../status → APPROVE"]
+    C8["<b>公开下载?</b><br/>GET + path含/attachment + 非/admin/"]
+    C9["<b>DOWNLOAD anonymous</b><br/>记录 IP（无 uid）"]
+    C10["<b>AuditLogAspect 调</b><br/>auditLogService.record()<br/>@Async 后台写库"]
+    C11["<b>WARN 兜底</b><br/>aspect 异常吞掉 → 业务不受影响"]
+    End(["✅ HTTP 200 业务响应"])
+
+    Start --> C0
+    C0 -.AOP 拦截.-> C1 --> C2
+    C2 -- "是" --> C3 --> C4
+    C4 -- "approve" --> C5
+    C4 -- "revoke" --> C6
+    C4 -- "评论审核" --> C7
+    C5 & C6 & C7 --> C10
+    C2 -- "否" --> C8
+    C8 -- "是(公开下载)" --> C9 --> C10
+    C8 -- "否" --> End
+    C10 --> C11 --> End
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef stage fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+    classDef decision fill:#fff5eb,stroke:#c97b3f,stroke-width:2px,color:#14171e
+    classDef aop fill:#eef2f7,stroke:#4a6a8a,stroke-width:1px,color:#14171e
+    classDef success fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#2f6f5e
+    classDef warn fill:#fef7e6,stroke:#c97b3f,stroke-width:1px,color:#14171e
+
+    class Start,End success
+    class C0,C3,C10 stage
+    class C2,C4,C8 decision
+    class C1,C5,C6,C7,C9 aop
+    class C11 warn
+      </pre>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Section 2: 关键决策点
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>8 个关键决策点</span>
+      <span class="badge decision">DECISION</span>
+    </h2>
+    <p class="section-meta">每个决策都源自一个具体历史 BUG / OPT —— "为什么不写 if-else 短路" 的工程取舍都列在这里</p>
+
+    <div class="decision-grid">
+
+      <div class="decision-card danger">
+        <div class="decision-stage">阶段 A · 路径分流</div>
+        <div class="decision-title">D-1 · ADMIN_ROUTES 显式路由表 + default-deny</div>
+        <div class="decision-rule">
+          不靠"白名单即安全"的默认放行——admin 表显式枚举每个端点，DB public 白名单兜底已公开 GET，<strong>其余写操作一律 default-deny</strong>。未登记的 GET 防漏 WARN 后放行（防误伤新增公开端点），写操作直接 401 + WARN。代价是新增 admin 端点要登记；好处是不存在"忘了加白名单就被越权"的攻击面。
+        </div>
+        <span class="decision-code">2026-06-20 B2 重构</span>
+      </div>
+
+      <div class="decision-card warn">
+        <div class="decision-stage">阶段 A · 白名单匹配</div>
+        <div class="decision-title">D-2 · ApiWhitelistService 最长前缀优先</div>
+        <div class="decision-rule">
+          <code>refreshCache()</code> 按 <code>pathPrefix.length()</code> 倒序排 → <code>matchPath()</code> for-loop 第一个命中即最长前缀。防止 <code>/admin</code>(admin) 排在 <code>/admin/public-thing</code>(public) 前面时，公开子路径被误截。<strong>路径边界校验</strong>（prefix 必须等于 path 本身或下一字符是 <code>/</code>）防 <code>/articles</code> 误匹配 <code>/articlesXXX</code>。
+        </div>
+        <span class="decision-code">2026-06-12 修复</span>
+      </div>
+
+      <div class="decision-card info">
+        <div class="decision-stage">阶段 B · Token 解析</div>
+        <div class="decision-title">D-3 · JwtUtil 启动时 secret 强度校验（fail-fast）</div>
+        <div class="decision-rule">
+          <code>@PostConstruct validateSecret()</code> 启动时校验 secret ≥ 32 字节（HS256 安全要求）。原实现不校验，弱 secret 一旦上线签名直接不安全。dev 默认值（65 字节）正常通过；prod 没设 <code>JWT_SECRET</code> env → Spring 占位符解析失败 → 更早 fail-fast。
+        </div>
+        <span class="decision-code">2026-06-07 安全加固</span>
+      </div>
+
+      <div class="decision-card danger">
+        <div class="decision-stage">阶段 B · Token 防借用</div>
+        <div class="decision-title">D-4 · token.deviceId claim + Header X-Device-Id 双向校验</div>
+        <div class="decision-rule">
+          JwtUtil.generate 时把 deviceId 塞进 claim，AdminAuthFilter 验 token 后比对 header：<strong>claim 不一致 → 401</strong>。防 token 一旦泄漏被别人拷贝走——别人的浏览器没有原 deviceId，token 即使被偷也是废纸。
+        </div>
+        <span class="decision-code">REQ-L2-2026-06-07</span>
+      </div>
+
+      <div class="decision-card warn">
+        <div class="decision-stage">阶段 B · 设备白名单</div>
+        <div class="decision-title">D-5 · DeviceService bootstrap 首设备自动 approved</div>
+        <div class="decision-rule">
+          "鸡生蛋"问题：首次部署 / 误清空 <code>admin_device</code> 表 → 没有 approved 设备就无法登录后台 → 无法批准别人。修法：表空时第一个密码通过校验的设备直接 approved（<code>approved_by="system-bootstrap"</code>）。安全前提是密码已通过 BCrypt 校验，bootstrap 只是省 admin 自批自己一次。
+        </div>
+        <span class="decision-code">2026-06-12 安全加固</span>
+      </div>
+
+      <div class="decision-card info">
+        <div class="decision-stage">阶段 B · 设备白名单</div>
+        <div class="decision-title">D-6 · trust-migrate 内网限定通道</div>
+        <div class="decision-rule">
+          旧客户端没传 X-Device-Id 时（旧版兼容期）走 trust-migrate 自动建 approved。防止外网任意请求不传 deviceId 就绕过白名单拿 token——<strong>trust-migrate 限内网 IP</strong>（loopback / RFC 1918 私网 / IPv6 ULA），外部请求 reject 成 DEVICE_PENDING。
+        </div>
+        <span class="decision-code">2026-06-07 安全加固</span>
+      </div>
+
+      <div class="decision-card danger">
+        <div class="decision-stage">阶段 A · 防日志放大</div>
+        <div class="decision-title">D-7 · warnUnregistered 去重 + IP 频次</div>
+        <div class="decision-rule">
+          攻击者扫各种未登记路径会打爆日志。<code>warnedKeys</code> 集合（同 method:path 进程内只打一次）+ <code>warnRateMap</code>（同 IP 每分钟最多 <code>unregisteredWarnPerMin</code>=5 条）+ <code>@Scheduled</code> 60s 周期清理过期 entry 防内存泄漏。超阈值降 DEBUG，<strong>防日志放大攻击</strong>。
+        </div>
+        <span class="decision-code">2026-06-22 v4.x polish</span>
+      </div>
+
+      <div class="decision-card">
+        <div class="decision-stage">阶段 C · 审计落库</div>
+        <div class="decision-title">D-8 · AuditLogAspect @Async 异步 + AOP 兜底</div>
+        <div class="decision-rule">
+          切点 <code>execution(* com.blog..controller..*(..))</code> 包所有 controller method；<strong>反射</strong> <code>@PostMapping</code> 等注解拿 HTTP method + path pattern（零字符串拼接）；<code>AuthContext.uid()</code> 存在时才认 admin 写端点。<code>AuditLogService.record()</code> 标 <strong>@Async</strong>，写库失败仅 WARN，不影响业务返回 200。
+        </div>
+        <span class="decision-code">2026-07-01 DEV-004</span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============================================
+       Section 3: 边界场景
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>10 种边界场景</span>
+      <span class="badge boundary">BOUNDARY</span>
+    </h2>
+    <p class="section-meta">覆盖 shouldNotFilter 路径分流 + 三段鉴权的全部非主路径场景</p>
+
+    <table class="boundary-table">
+      <thead>
+        <tr>
+          <th style="width:24%;">场景</th>
+          <th style="width:24%;">触发条件</th>
+          <th style="width:26%;">后端处理</th>
+          <th style="width:14%;">HTTP / code</th>
+          <th style="width:12%;">决策来源</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="scenario">OPTIONS 预检</span></td>
+          <td>浏览器 CORS 预检</td>
+          <td><code>shouldNotFilter</code> 早 return true</td>
+          <td><span class="response ok">放行</span></td>
+          <td>AdminAuthFilter L120</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">未登记 GET（防漏 WARN）</span></td>
+          <td>新公开端点忘了加白名单</td>
+          <td><code>warnUnregistered</code> 打 WARN（同 key 一次 + IP 5/min 上限），然后放行</td>
+          <td><span class="response ok">放行 + WARN</span></td>
+          <td>D-1 + D-7</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">未登记写操作</span></td>
+          <td>POST/PUT/DELETE 忘了登记</td>
+          <td>default-deny + WARN</td>
+          <td><span class="response block">401</span></td>
+          <td>D-1</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">缺 Authorization</span></td>
+          <td>未带 Bearer token</td>
+          <td>doFilterInternal 第一步 WARN</td>
+          <td><span class="response block">401 未登录</span></td>
+          <td>AdminAuthFilter L167</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">token 过期</span></td>
+          <td>签发 > 24h（JwtUtil.expiration）</td>
+          <td><code>ExpiredJwtException</code> → WARN</td>
+          <td><span class="response block">1007 token 过期</span></td>
+          <td>JwtUtil L98</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">token 签名错 / 伪造</span></td>
+          <td>secret 不匹配 / 手动伪造</td>
+          <td><code>SignatureException</code> → WARN</td>
+          <td><span class="response block">1007 签名错</span></td>
+          <td>JwtUtil L102</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">token 缺 uid claim</span></td>
+          <td>旧版 token / 手动构造</td>
+          <td>取 <code>claims.get("uid")</code> 为 null → 拒</td>
+          <td><span class="response block">1007 token 无效</span></td>
+          <td>AdminAuthFilter L179</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">设备未登记</span></td>
+          <td>新 deviceId 调 admin 接口</td>
+          <td><code>verifyOnRequest</code> select 返 null → WARN</td>
+          <td><span class="response block">401 未登记</span></td>
+          <td>DeviceService L293</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">设备 pending / revoked</span></td>
+          <td>登录 / 调用任何 admin 接口</td>
+          <td><code>verifyOnLogin</code> 或 <code>verifyOnRequest</code> 抛 BusinessException</td>
+          <td><span class="response block">2001 待授权 / 2002 已吊销</span></td>
+          <td>DeviceService L107-115</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">token-deviceId 不匹配</span></td>
+          <td>token 被偷 + 别人用自己的 deviceId 调</td>
+          <td>claim.deviceId ≠ header.X-Device-Id → WARN</td>
+          <td><span class="response block">401 token 与设备不匹配</span></td>
+          <td>D-4</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============================================
+       Section 4: 关键文件
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>关键文件清单</span>
+      <span class="badge files">FILES</span>
+    </h2>
+    <p class="section-meta">按链路参与顺序：Filter → JWT → 设备 → 白名单 → Controller → AOP</p>
+
+    <div class="file-grid">
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-app/.../common/security/AdminAuthFilter.java</div>
+        <div class="file-desc">339 行核心。shouldNotFilter 路径分流（ADMIN_ROUTES 23 条 + DB public 白名单 + default-deny）；doFilterInternal 三段鉴权（JWT / 设备 / token-deviceId）；warnUnregistered 防日志放大；@Scheduled 60s 清理 warnRateMap</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-auth/.../auth/util/JwtUtil.java</div>
+        <div class="file-desc">109 行。HS256 签名；generate(uid, username, role, deviceId) 含 deviceId claim；parse 分类打 WARN（过期/签名错/格式错）；@PostConstruct 启动时校验 secret ≥ 32 字节</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-auth/.../auth/service/DeviceService.java</div>
+        <div class="file-desc">329 行。三态机 pending/approved/revoked；<code>verifyOnLogin</code> 处理新设备登记 + bootstrap 首设备 + trust-migrate 内限定；<code>verifyOnRequest</code> "吊销即踢出"；approve/revoke/delete 全部禁自操作</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-auth/.../auth/service/ApiWhitelistService.java</div>
+        <div class="file-desc">99 行。AtomicReference 缓存；最长前缀优先排序；@PostConstruct 启动加载 + @Scheduled 5min 定时；refreshCache() 主动刷新；matchPath 含路径边界校验</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-auth/.../auth/controller/AuthController.java</div>
+        <div class="file-desc">266 行。<code>/auth/login</code>：登录限流（in-memory 5次/分）→ BCrypt 校验（恒定时间）→ DeviceService.verifyOnLogin → JwtUtil.generate → 清零失败计数；<code>/auth/me/password</code> 改密端点（8-64 字符范围）</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-auth/.../auth/service/AuditLogAspect.java</div>
+        <div class="file-desc">320 行 AOP。execution 切点包所有 controller method；反射 @PostMapping 等注解拿 HTTP method + path pattern；AuthContext.uid() 判定 admin；operation 映射（CREATE/UPDATE/DELETE/APPROVE/REJECT/DOWNLOAD）；aspect 异常吞掉兜底</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-auth/.../auth/service/AuditLogService.java</div>
+        <div class="file-desc">@Async 异步写库（@EnableAsync 在 BlogApplication）；record 失败仅 WARN 不影响业务；与 §4.8 日志体系适配（操作人 / 路径 / IP / 操作类型 4 字段固定）</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-common/.../common/web/AuthContext.java</div>
+        <div class="file-desc">request attribute 透传：admin 鉴权通过后 set(uid, deviceId, username)；下游业务（AuditLogAspect / AuthContext.uid 等）零 IO 拿到操作人；traceId 同样透传</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-common/.../common/TrustedProxyUtil.java</div>
+        <div class="file-desc">resolveClientIp(request)：依次取 X-Forwarded-For / X-Real-IP / RemoteAddr；信任代理范围 loopback + RFC 1918 私网 + IPv6 ULA；与 DeviceService.isInternalIp 判定语义一致</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-auth/.../auth/controller/IpBanController.java</div>
+        <div class="file-desc">admin 手动解封端点：GET /admin/ip-bans（列表，activeOnly=true） + DELETE /admin/ip-bans/{id}（调 IpBanService.unban）；受 AdminAuthFilter 全套保护；操作本身写 audit_log</div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p>分析时间：<code>2026-07-02 08:30</code> · 北京时区 (UTC+8) · 适用版本：<code>v5.0.0+</code> · 任务来源：用户主动扩展流程图覆盖</p>
+  </footer>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'neutral',
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'linear',
+      padding: 8
+    },
+    themeVariables: {
+      fontFamily: "'Outfit', system-ui, sans-serif",
+      fontSize: '15px',
+      primaryColor: '#fdfaf3',
+      primaryTextColor: '#14171e',
+      primaryBorderColor: '#c97b3f',
+      lineColor: '#7c7a72',
+      secondaryColor: '#f7f5f0',
+      tertiaryColor: '#fdfaf3'
+    }
+  });
+</script>
+</body>
+</html>

@@ -99,6 +99,7 @@ const handleDelete = async (c: any) => {
 }
 
 const totalArticles = computed(() => Object.values(articleCount.value).reduce((s, n) => s + n, 0))
+const uncategorizedCount = computed(() => articleCount.value[-1] || 0)
 const visibleCount = computed(() => categories.value.filter(c => c.visible === 1).length)
 const hiddenCount = computed(() => categories.value.filter(c => c.visible === 0).length)
 
@@ -184,6 +185,22 @@ onMounted(load)
                 </button>
               </div>
             </td>
+          </tr>
+          <tr v-if="uncategorizedCount > 0">
+            <td>
+              <div class="cat-cell">
+                <div class="cat-icon" style="background: var(--muted-soft); color: var(--muted);">?</div>
+                <div>
+                  <div class="cat-name" style="color: var(--muted);">未分类</div>
+                  <div class="cat-slug">—</div>
+                </div>
+              </div>
+            </td>
+            <td><div class="cat-desc" style="color: var(--muted);">—</div></td>
+            <td><span class="cat-count">{{ uncategorizedCount }}</span></td>
+            <td><span class="cat-sort">—</span></td>
+            <td><span class="badge badge-muted">—</span></td>
+            <td></td>
           </tr>
         </tbody>
       </table>

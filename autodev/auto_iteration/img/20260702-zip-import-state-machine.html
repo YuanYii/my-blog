@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>博客文章 ZIP 导入状态机业务逻辑图 · 2026-07-02</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --bg-card: #ffffff;
+    --line: #e9e3d6;
+    --line-soft: #f0eadc;
+    --text: #14171e;
+    --text-2: #3a4256;
+    --muted: #7c7a72;
+    --primary: #2f6f5e;
+    --primary-soft: rgba(47, 111, 94, 0.08);
+    --accent: #c97b3f;
+    --accent-soft: rgba(201, 123, 63, 0.08);
+    --danger: #b06367;
+    --danger-soft: rgba(176, 99, 103, 0.08);
+    --info: #4a6a8a;
+    --info-soft: rgba(74, 106, 138, 0.08);
+    --warn: #c97b3f;
+    --warn-soft: rgba(201, 123, 63, 0.08);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 16px;
+    min-height: 100dvh;
+    position: relative;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    top: -200px; left: -200px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, var(--primary-soft) 0%, transparent 70%);
+    z-index: 0; pointer-events: none;
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    bottom: -200px; right: -200px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, var(--accent-soft) 0%, transparent 70%);
+    z-index: 0; pointer-events: none;
+  }
+  .container { max-width: 1280px; margin: 0 auto; padding: 56px 32px 80px; position: relative; z-index: 1; }
+  .hero { margin-bottom: 48px; padding-bottom: 32px; border-bottom: 1px solid var(--line); }
+  .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: 0.18em; color: var(--primary); text-transform: uppercase; margin-bottom: 16px; }
+  h1 { font-family: 'DM Serif Display', serif; font-size: 40px; font-weight: 400; letter-spacing: -0.01em; color: var(--text); margin-bottom: 12px; }
+  .hero p { color: var(--text-2); font-size: 16px; max-width: 880px; }
+  .section { margin-bottom: 56px; }
+  h2 { font-family: 'DM Serif Display', serif; font-size: 28px; font-weight: 400; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h2 .badge { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.12em; padding: 3px 10px; border-radius: 4px; text-transform: uppercase; vertical-align: middle; }
+  h2 .badge.flow { background: var(--primary-soft); color: var(--primary); }
+  h2 .badge.decision { background: var(--accent-soft); color: var(--accent); }
+  h2 .badge.boundary { background: var(--warn-soft); color: var(--warn); }
+  h2 .badge.files { background: var(--info-soft); color: var(--info); }
+  .section-meta { font-size: 15px; color: var(--muted); margin-bottom: 20px; padding-left: 12px; border-left: 2px solid var(--line); }
+  .mermaid-wrap { background: var(--bg-card); border: 1px solid var(--line); border-radius: 12px; padding: 28px 20px; overflow-x: auto; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03); }
+  .mermaid { text-align: center; font-family: 'Outfit', sans-serif !important; }
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; padding: 16px 20px; background: var(--bg-card); border: 1px dashed var(--line); border-radius: 10px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--text-2); }
+  .legend-dot { width: 14px; height: 14px; border-radius: 4px; flex-shrink: 0; }
+  .decision-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .decision-card { padding: 18px; background: var(--bg-card); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; }
+  .decision-card.warn { border-left-color: var(--warn); }
+  .decision-card.info { border-left-color: var(--info); }
+  .decision-card.danger { border-left-color: var(--danger); }
+  .decision-stage { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+  .decision-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .decision-rule { font-size: 16px; color: var(--text-2); line-height: 1.5; margin-bottom: 6px; }
+  .decision-code { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--primary); background: var(--primary-soft); padding: 2px 6px; border-radius: 3px; }
+  .boundary-table { width: 100%; border-collapse: collapse; background: var(--bg-card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 16px; }
+  .boundary-table th { text-align: left; padding: 12px 16px; background: var(--line-soft); color: var(--text-2); font-weight: 600; font-size: 15px; letter-spacing: 0.02em; border-bottom: 1px solid var(--line); }
+  .boundary-table td { padding: 12px 16px; border-bottom: 1px solid var(--line-soft); color: var(--text-2); vertical-align: top; }
+  .boundary-table tr:last-child td { border-bottom: none; }
+  .boundary-table .scenario { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--primary); font-weight: 500; }
+  .boundary-table .response { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 500; }
+  .boundary-table .ok { color: var(--primary); }
+  .boundary-table .block { color: var(--danger); }
+  .boundary-table .warn { color: var(--warn); }
+  .boundary-table .empty { color: var(--muted); }
+  .file-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+  .file-card { padding: 14px 18px; background: var(--bg-card); border: 1px solid var(--line); border-radius: 8px; transition: all 0.2s; }
+  .file-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06); border-color: var(--primary); }
+  .file-name { font-family: 'JetBrains Mono', monospace; font-size: 15px; color: var(--primary); margin-bottom: 4px; word-break: break-all; }
+  .file-desc { font-size: 15px; color: var(--muted); line-height: 1.5; }
+  .footer { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 15px; color: var(--muted); text-align: center; }
+  .footer code { font-family: 'JetBrains Mono', monospace; background: var(--line-soft); padding: 1px 6px; border-radius: 3px; color: var(--text-2); }
+  .mermaid .nodeLabel { font-size: 18px !important; font-family: 'Outfit', sans-serif !important; }
+  .mermaid .edgeLabel { font-size: 15px !important; font-family: 'JetBrains Mono', monospace !important; background: var(--bg-card) !important; }
+  @media (max-width: 768px) {
+    .container { padding: 32px 16px 60px; }
+    h1 { font-size: 40px; }
+    h2 { font-size: 28px; }
+    .mermaid-wrap { padding: 16px 8px; }
+    .boundary-table { font-size: 14px; }
+    .boundary-table th, .boundary-table td { padding: 8px 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header class="hero">
+    <div class="eyebrow">My-Blog · Article Import · Async ZIP State Machine</div>
+    <h1>博客文章 ZIP 导入状态机业务逻辑图</h1>
+    <p>梳理 admin 上传 .zip → enqueueImport 同步落 PENDING 记录 → @Async 异步线程池跑解压+解析+落库 → 状态机 PENDING→RUNNING→SUCCESS/FAILED 的端到端链路。涵盖 Zip Slip 防护、压缩炸弹防护、Matter 前置解析、相对路径解析、分类/标签自动 upsert。适用版本：v5.0.0+。</p>
+  </header>
+
+  <!-- Section 1: 主流程图 -->
+  <section class="section">
+    <h2>
+      <span>主流程 · ZIP 导入端到端链路</span>
+      <span class="badge flow">FLOW</span>
+    </h2>
+    <p class="section-meta">2 段链路：同步段（校验 + 建 PENDING 记录 + 立即返回 recordId）→ 异步段（@Async 线程池执行 6 步流水线）。前端按 recordId 轮询 getRecord() 看进度。</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    Start(["📤 admin 上传 .zip<br/>POST /api/v1/articles/admin/import"])
+    S["<b>同步段 · enqueueImport</b><br/>校验：非空 + .zip + ≤5MB<br/>建 ImportRecord PENDING + insert<br/>self.runImportAsync @Async 提交"]
+    Out(["✅ 200 同步返回 recordId<br/>前端轮询"])
+
+    S -.@Async 代理.-> A1["<b>异步段 · runImportAsync</b><br/>状态翻转 PENDING → RUNNING"]
+    A2["<b>parseZip</b><br/>路径校验（防 Zip Slip）+ 后缀 .md/.png<br/>+ 总解压 ≤5MB + 至少 1 篇 md"]
+    A3["<b>遍历每篇 md</b><br/>importOneArticle 落单篇<br/>success++ / fail++ 计数 + WARN 跳过"]
+    A4["<b>每篇：MarkdownImporter.parse</b><br/>frontMatter → title/slug/category/tags<br/>extractImageRefs → resolveZipPath<br/>saveImage + rewriteImagePaths → articleMapper.insert"]
+    A5["<b>收尾</b><br/>status=SUCCESS + finished_at<br/>error_message 500 字截断"]
+
+    S1(["❌ 400：空/.zip/超 5MB"])
+    F1(["❌ FAILED：parseZip 异常/无 md/解压超 5MB"])
+    F2(["❌ FAILED：中途 Exception → error_message 记录"])
+    Poll(["<b>前端轮询</b><br/>GET /articles/admin/import/{id}"])
+    Done(["✅ 状态到达终态<br/>SUCCESS / FAILED"])
+
+    Start --> S
+    S -- "校验失败" --> S1
+    S -- "OK" --> Out
+    S -.异步.-> A1 --> A2
+    A2 -- "异常" --> F1 --> Done
+    A2 -- "OK" --> A3 --> A4 --> A3
+    A3 -- "迭代完" --> A5 --> Done
+    A2 -.Exception.-> F2 --> Done
+    A4 -.Exception.-> F2
+    Poll -.GET.-> A1
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef stage fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+    classDef success fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#2f6f5e
+    classDef fail fill:#fce8ea,stroke:#b06367,stroke-width:2px,color:#b06367
+
+    class Start,Out,Done success
+    class S,A1,A2,A3,A4,A5,Poll stage
+    class S1,F1,F2 fail
+      </pre>
+    </div>
+    class A12,A4 warn
+      </pre>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#e8f1ed;border:2px solid #2f6f5e;"></div>起点/终点</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fdfaf3;border:1px solid #c97b3f;"></div>执行阶段</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fff5eb;border:2px solid #c97b3f;"></div>决策点</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fef7e6;border:1px solid #c97b3f;"></div>WARN 跳过</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fce8ea;border:2px solid #b06367;"></div>FAILED</div>
+    </div>
+  </section>
+
+  <!-- Section 1.5: 同步段校验详情 -->
+  <section class="section">
+    <h2>
+      <span>同步段校验详情 · enqueueImport 6 道关</span>
+      <span class="badge flow">DETAIL</span>
+    </h2>
+    <p class="section-meta">enqueueImport 同步段的端到端校验链：6 道关（空/.zip/≤5MB/读 bytes/建 record/insert）。任一失败立即 400 返回。</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    Start(["📤 admin 上传 .zip<br/>POST /api/v1/articles/admin/import"])
+    S1["<b>ArticleImportService.enqueueImport</b><br/>(file, request)"]
+    S2{"文件空?"}
+    S3["❌ 400 文件不能为空"]
+    S4{"文件名 .zip 结尾?"}
+    S5["❌ 400 仅支持 .zip"]
+    S6{"size ≤ 5MB?"}
+    S7["❌ 400 文件大小不能超过 5MB"]
+    S8["<b>读取 zipBytes</b><br/>MultipartFile.getBytes()"]
+    S9["<b>建 ImportRecord</b><br/>PENDING + totalCount=0<br/>+ successCount=0 + failCount=0<br/>+ started_at=now + operator"]
+    S10["<b>insert record</b><br/>importRecordMapper.insert<br/>(拿 record.id)"]
+    S11["<b>INFO log</b><br/>「文章导入任务创建: id=...」"]
+    S12["<b>异步调用</b><br/>self.runImportAsync(id, zipBytes)<br/>走 @Async 代理 → articleImportExecutor 线程池<br/>(1 个 worker / 队列 16)"]
+    S13(["✅ 同步返回<br/>Map { id: recordId }<br/>HTTP 200 给前端"])
+
+    Start --> S1 --> S2
+    S2 -- "是" --> S3
+    S2 -- "否" --> S4
+    S4 -- "否" --> S5
+    S4 -- "是" --> S6
+    S6 -- "否" --> S7
+    S6 -- "是" --> S8 --> S9 --> S10 --> S11 --> S12 --> S13
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef stage fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+    classDef decision fill:#fff5eb,stroke:#c97b3f,stroke-width:2px,color:#14171e
+    classDef success fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#2f6f5e
+    classDef fail fill:#fce8ea,stroke:#b06367,stroke-width:2px,color:#b06367
+
+    class Start,S13 success
+    class S1,S8,S9,S10,S11,S12 stage
+    class S2,S4,S6 decision
+    class S3,S5,S7 fail
+      </pre>
+    </div>
+  </section>
+
+  <!-- Section 1.6: 异步段流水线详情 -->
+  <section class="section">
+    <h2>
+      <span>异步段详情 · runImportAsync 6 步流水线</span>
+      <span class="badge flow">DETAIL</span>
+    </h2>
+    <p class="section-meta">@Async 跑 6 步流水线：状态翻转 PENDING→RUNNING → parseZip（路径 + 后缀 + 大小）→ 遍历每篇 md → 收尾 SUCCESS/FAILED。前端 GET /import/{id} 轮询拿 status。</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    Start(["🛠 @Async runImportAsync"])
+    A1["<b>取 record</b><br/>selectById(id)"]
+    A2{"record 存在?"}
+    A3["⚠️ ERROR log<br/>静默 return (无状态)"]
+    A4["<b>状态翻转</b><br/>PENDING → RUNNING<br/>updateById"]
+    A5["<b>parseZip</b><br/>解 ZIP → 校验 → 入内存 (ImportContext)"]
+    A5a{"路径含 .. 或绝对?"}
+    A5b["❌ ZIP 包路径不合法"]
+    A5c{"仅 .md / .png?"}
+    A5d["❌ 仅支持 .md 和 .png"]
+    A5e["读 entry 字节累加"]
+    A5f{"解压总大小 > 5MB?"}
+    A5g["❌ 解压后总大小超 5MB"]
+    A5h{"至少 1 篇 .md?"}
+    A5i["❌ 未找到任何 .md 文件"]
+    A6{"解 ZIP 成功?"}
+    A7["❌ FAILED<br/>BusinessException + error_message"]
+    A8["<b>遍历每篇 md</b><br/>for entry: ctx.markdownEntries<br/>逐步 success/fail 计数<br/>importOneArticle 落单篇"]
+    A9{"每篇单篇导入成功?"}
+    A10["success_count++ + updateById"]
+    A11["❌ fail_count++ + errors.add + WARN log 跳过下一篇"]
+    A12["<b>收尾</b><br/>status = SUCCESS<br/>finished_at = now<br/>(含 error_message 500 字截断)"]
+    A13["<b>INFO log</b><br/>「导入完成: total=N success=K fail=M」"]
+    A14{"中途异常?"}
+    A15["❌ FAILED<br/>status=FAILED + error_message=ex 类名+msg<br/>ERROR log"]
+    Poll["<b>前端轮询</b><br/>GET /articles/admin/import/{id}<br/>status + success/fail/total"]
+    Done(["✅ 状态到达终态<br/>SUCCESS / FAILED"])
+
+    Start --> A1 --> A2
+    A2 -- "否" --> A3 --> Done
+    A2 -- "是" --> A4
+    A4 -- "try" --> A5
+    A5 --> A5a
+    A5a -- "是" --> A5b --> A7
+    A5a -- "否" --> A5c
+    A5c -- "否" --> A5d --> A7
+    A5c -- "是" --> A5e --> A5f
+    A5f -- "是" --> A5g --> A7
+    A5f -- "否" --> A5h
+    A5h -- "否" --> A5i --> A7
+    A5h -- "是" --> A6
+    A6 -- "否" --> A7 --> Done
+    A6 -- "是" --> A8 --> A9
+    A9 -- "是" --> A10
+    A9 -- "否" --> A11
+    A10 --> A8
+    A11 --> A8
+    A8 -- "迭代完" --> A12 --> A13
+    A5 -.Exception.-> A14
+    A8 -.Exception.-> A14
+    A14 -- "是" --> A15 --> Done
+    A14 -- "否" --> A13
+    Poll -.GET.-> A1
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef stage fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+    classDef decision fill:#fff5eb,stroke:#c97b3f,stroke-width:2px,color:#14171e
+    classDef success fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#2f6f5e
+    classDef fail fill:#fce8ea,stroke:#b06367,stroke-width:2px,color:#b06367
+    classDef warn fill:#fef7e6,stroke:#c97b3f,stroke-width:1px,color:#14171e
+
+    class Start,Done,A10,A12,A13 success
+    class A1,A4,A5,A8,A5e,Poll stage
+    class A2,A5a,A5c,A5f,A5h,A6,A9,A14 decision
+    class A3 warn
+    class A5b,A5d,A5g,A5i,A7,A11,A15 fail
+      </pre>
+    </div>
+  </section>
+
+  <!-- Section 2: 关键决策点 -->
+  <section class="section">
+    <h2>
+      <span>7 个关键决策点</span>
+      <span class="badge decision">DECISION</span>
+    </h2>
+    <p class="section-meta">2026-06-24 DEV-002 加的整套链路 —— 决策点都围绕"异步 + 解压安全 + 单篇容错"</p>
+
+    <div class="decision-grid">
+
+      <div class="decision-card info">
+        <div class="decision-stage">执行架构</div>
+        <div class="decision-title">D-1 · self 注入走 @Async 代理</div>
+        <div class="decision-rule">
+          <code>@Autowired @Lazy private ArticleImportService self</code> —— Spring 同类内部方法调用不走代理（<code>this.runImportAsync</code> 失效）。<strong>注入 self 走代理</strong>才能让 <code>@Async</code> 生效。@Lazy 防循环依赖。本质是"自我注入"模式。
+        </div>
+        <span class="decision-code">Spring 代理语义</span>
+      </div>
+
+      <div class="decision-card warn">
+        <div class="decision-stage">异步线程池</div>
+        <div class="decision-title">D-2 · articleImportExecutor core/max=1 + AbortPolicy</div>
+        <div class="decision-rule">
+          专门给导入留的线程池：<strong>core/max=1</strong> 同时只跑一个导入任务（避免多 ZIP 并行解压抢内存）；<strong>队列 16</strong>（日常排队够用）；<strong>AbortPolicy</strong>（队列满直接抛异常给前端，让用户重试，不丢任务）。与 pageViewExecutor (DiscardPolicy) 对比：PV 是 best-effort 可丢，导入是用户主动行为不能丢。
+        </div>
+        <span class="decision-code">AsyncConfig L46</span>
+      </div>
+
+      <div class="decision-card danger">
+        <div class="decision-stage">解压安全</div>
+        <div class="decision-title">D-3 · Zip Slip 双重防护</div>
+        <div class="decision-rule">
+          <strong>第一道</strong>（parseZip 入口）：路径含 <code>..</code> / 以 <code>/</code> 或 <code>\\</code> 开头 → 直接抛 400。<strong>第二道</strong>（resolveZipPath → normalizeRelative）：解析 <code>./</code> 和 <code>../</code>，跳出根目录的 <code>../</code> 静默忽略。双层防护防文件名绕过 + 嵌套 <code>../</code> 的特殊构造。
+        </div>
+        <span class="decision-code">ArticleImportService L204, L435</span>
+      </div>
+
+      <div class="decision-card warn">
+        <div class="decision-stage">解压安全</div>
+        <div class="decision-title">D-4 · 压缩炸弹防护（ZIP 5MB + 解压后 5MB 双上限）</div>
+        <div class="decision-rule">
+          <code>MAX_ZIP_SIZE = 5MB</code>（入口检查）+ <code>MAX_EXTRACTED_SIZE = 5MB</code>（解压累加检查 + 单文件检查）。第一道拦"压缩 100MB → 解压 10GB"的攻击，第二道拦"循环读单文件超 5MB"。<strong>双层独立检查</strong>——任一触发立即抛 400，避免解压到一半才发现爆。
+        </div>
+        <span class="decision-code">ArticleImportService L86-89</span>
+      </div>
+
+      <div class="decision-card">
+        <div class="decision-stage">单篇容错</div>
+        <div class="decision-title">D-5 · 部分失败仍 SUCCESS（fail_count 区分）</div>
+        <div class="decision-rule">
+          单篇解析失败（如某 md 内容格式错）→ catch + fail_count++ → continue 跑下一篇。<strong>整体任务仍 SUCCESS</strong>，但 error_message 收 500 字截断的失败清单。前端按 <code>fail_count &gt; 0</code> 单独提示，让用户精准定位哪几篇失败。
+        </div>
+        <span class="decision-code">ArticleImportService L155-160</span>
+      </div>
+
+      <div class="decision-card info">
+        <div class="decision-stage">图片处理</div>
+        <div class="decision-title">D-6 · 相对路径双层解析（md 目录为基准 + 文件名兜底）</div>
+        <div class="decision-rule">
+          <code>resolveZipPath(mdPath, ref)</code>：以 md 所在目录为基准解析 <code>./</code> 或 <code>../</code> 路径，得到 ZIP 内绝对路径。<code>findImageBytes</code>：精确匹配失败时按文件名兜底匹配（<strong>用户写错相对路径也尽量找到图</strong>），找不到才 WARN「跳过」并继续。图片保存到 <code>uploadDir/yyyy/MM/yyyyMMdd-uuid.png</code>（与 UploadController 路径对齐）。
+        </div>
+        <span class="decision-code">ArticleImportService L426, L450</span>
+      </div>
+
+      <div class="decision-card">
+        <div class="decision-stage">标题规范</div>
+        <div class="decision-title">D-7 · 标题以文件名为准（忽略 front matter title）</div>
+        <div class="decision-rule">
+          标题强制从文件名提取（去 .md + 去 YYYY-MM-DD- 前缀 + - 换空格），<strong>忽略 front matter 的 title 字段</strong>。原因：title 字段可能跟 md 文件名不一致，导入后用户搜"标题A"找不到对应文章（用户感知混乱）。front matter 只取 <code>date / view_count / status / summary / cover / categories / tags</code> 6 个业务字段。
+        </div>
+        <span class="decision-code">ArticleImportService L257</span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Section 3: 边界场景 -->
+  <section class="section">
+    <h2>
+      <span>9 种边界场景</span>
+      <span class="badge boundary">BOUNDARY</span>
+    </h2>
+    <p class="section-meta">覆盖同步段校验 + 异步段状态机 + 解压安全 + 单篇解析的全部分支</p>
+
+    <table class="boundary-table">
+      <thead>
+        <tr>
+          <th style="width:24%;">场景</th>
+          <th style="width:24%;">触发条件</th>
+          <th style="width:26%;">后端处理</th>
+          <th style="width:14%;">HTTP / status</th>
+          <th style="width:12%;">决策来源</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="scenario">空文件 / 非 .zip</span></td>
+          <td>上传空 / 选了 .tar.gz</td>
+          <td>enqueueImport 校验拒</td>
+          <td><span class="response block">400</span></td>
+          <td>S2-S5</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">ZIP 自身 &gt; 5MB</span></td>
+          <td>上传 6MB 的 zip</td>
+          <td>size 校验拒（前端已预检）</td>
+          <td><span class="response block">400 文件过大</span></td>
+          <td>S6</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">路径含 ..（Zip Slip）</span></td>
+          <td>恶意构造 ../../etc/passwd</td>
+          <td>parseZip 第一道拒绝</td>
+          <td><span class="response block">400 路径不合法</span></td>
+          <td>D-3</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">解压后总大小 &gt; 5MB</span></td>
+          <td>压缩炸弹攻击</td>
+          <td>累计累加检查</td>
+          <td><span class="response block">400 解压超 5MB</span></td>
+          <td>D-4</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">含非 .md / .png 文件</span></td>
+          <td>用户混了 .jpg / .txt</td>
+          <td>类型白名单拒</td>
+          <td><span class="response block">400 仅支持 .md.png</span></td>
+          <td>P4</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">ZIP 内无 .md</span></td>
+          <td>只放了图片</td>
+          <td>parseZip 末尾兜底校验</td>
+          <td><span class="response block">400 未找到 .md</span></td>
+          <td>P9</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">单篇 md 解析失败</span></td>
+          <td>某篇 front matter 格式错</td>
+          <td>catch + fail_count++ + continue</td>
+          <td><span class="response warn">整体 SUCCESS，部分失败</span></td>
+          <td>D-5</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">正文图片引用未在 ZIP 内</span></td>
+          <td>![](./x.png) 但 ZIP 内无 x.png</td>
+          <td>findImageBytes 兜底仍 null → WARN 跳过</td>
+          <td><span class="response warn">该图不替换，正文原样</span></td>
+          <td>D-6</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">状态机查询（前端轮询）</span></td>
+          <td>前端每 1s 调 getRecord(id)</td>
+          <td>实时返回 status / 计数 / error_message</td>
+          <td><span class="response ok">200</span></td>
+          <td>ImportController L178</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Section 4: 关键文件 -->
+  <section class="section">
+    <h2>
+      <span>关键文件清单</span>
+      <span class="badge files">FILES</span>
+    </h2>
+    <p class="section-meta">按链路参与顺序：Controller → Service 异步 → ZIP 解析 → Markdown 解析 → 异步线程池 → DB entity</p>
+
+    <div class="file-grid">
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-article/.../controller/ArticleController.java</div>
+        <div class="file-desc">L168-175 <code>POST /articles/admin/import</code> MultipartFile 上传 + L177-181 <code>GET /articles/admin/import/{id}</code> 状态查询 + L183-187 <code>GET /articles/admin/import</code> 历史列表（最多 50）+ L191-198 模板下载</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-article/.../service/ArticleImportService.java</div>
+        <div class="file-desc">539 行。enqueueImport 同步段（校验 + 建 PENDING）；runImportAsync 异步段（@Async("articleImportExecutor") + 状态机 + 6 步流水线）；parseZip 双层解压校验；importOneArticle md 解析 + 图片处理 + article 落库</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-article/.../util/MarkdownImporter.java</div>
+        <div class="file-desc">272 行纯工具类。正则拆 front matter（支持浅层 key:value / 数组 / 缩进列表）；extractImageRefs ![alt](path) 提取相对路径；rewriteImagePaths 替换；filenameToTitle / filenameToSlug 标题与 slug 生成；parseStatus (0/1/2 草稿/发布/归档)</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-article/.../config/AsyncConfig.java</div>
+        <div class="file-desc">57 行。<code>@EnableAsync</code> 开启；<code>pageViewExecutor</code>（PV 专用：core=2/max=4/queue=500/DiscardPolicy）+ <code>articleImportExecutor</code>（导入专用：core=1/max=1/queue=16/AbortPolicy）。两个线程池独立配置不互相影响</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-article/.../entity/ImportRecord.java</div>
+        <div class="file-desc">DB entity 字段：id / fileName / status（PENDING/RUNNING/SUCCESS/FAILED）/ totalCount / successCount / failCount / errorMessage（500 字截断）/ startedAt / finishedAt / operatorId / operatorName</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">templates/import-template.zip (classpath)</div>
+        <div class="file-desc">导入模板：readTemplate() 从 classpath: <code>templates/import-template.zip</code> 读出给前端下载，含示例 md + 1 张占位图，新用户可作为 ZIP 格式参考</div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p>分析时间：<code>2026-07-02 09:00</code> · 北京时区 (UTC+8) · 适用版本：<code>v5.0.0+</code> · 任务来源：用户主动扩展流程图覆盖</p>
+  </footer>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'neutral',
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'linear',
+      padding: 8,
+      nodeSpacing: 30,
+      rankSpacing: 25
+    },
+    themeVariables: {
+      fontFamily: "'Outfit', system-ui, sans-serif",
+      fontSize: '15px',
+      primaryColor: '#fdfaf3',
+      primaryTextColor: '#14171e',
+      primaryBorderColor: '#c97b3f',
+      lineColor: '#7c7a72',
+      secondaryColor: '#f7f5f0',
+      tertiaryColor: '#fdfaf3'
+    }
+  });
+</script>
+</body>
+</html>

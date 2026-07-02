@@ -72,6 +72,9 @@ public class RestoreExecutor {
     @Value("${UPLOAD_DIR:/opt/myblog/uploads}")
     private String uploadDir;
 
+    @Value("${blog.attachment.local.dir:${ATTACHMENT_DIR:/opt/myblog/attachments}}")
+    private String attachmentDir;
+
     /** 临时工作目录 root（每次执行下创建 {recordId} 子目录） */
     @Value("${blog.restore.stage.root:/tmp/blog-restore}")
     private String stageRoot;
@@ -119,6 +122,13 @@ public class RestoreExecutor {
                 if (!onlineBackup.smokeTest(Paths.get(sqlitePath))) {
                     throw new RestoreException("IMPORT", "RESTORE 后 smoke test SELECT 1 失败");
                 }
+                // 2026-07-02 改造（BUG-RESTORE-2026-07-02）: Online Backup 整库覆盖会把当前 RUNNING 那条
+                //   restore_record 也清掉（staged db 里没有这个 id，因为这是当前 JVM 自己刚建的）。
+                //   后续 runRestoreAsync 末尾 UPDATE WHERE id=? 会 0 rows → 前端永远卡 PENDING → 转 UNKNOWN。
+                //   这里 INSERT OR REPLACE 把当前 record 写回 db，幂等兜底：
+                //     - dump 正常 clear restore_record: 表是空,INSERT 成功
+                //     - dump 万一没 clear: 表有 dev 历史（可能含同 id）,INSERT OR REPLACE 覆盖,保证状态机推进
+                rewriteCurrentRestoreRecord(record);
                 // 恢复后确保 admin 用户存在（备份可能不含 admin user）
                 ensureAdminUser();
                 // 恢复后清空设备授权表，让下次登录触发 bootstrap 重新授权
@@ -150,6 +160,28 @@ public class RestoreExecutor {
                         "uploads 解密失败: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
                 }
                 step5UploadsAtomicSwap(tarGz);
+            }
+
+            // Step 5b: ATTACHMENTS (可选)
+            if ("DB_UPLOADS".equals(record.getScope())) {
+                String attEncName = manifest.path("attachments").path("encrypted_file").asText("");
+                if (!attEncName.isEmpty()) {
+                    Path attEncFile = stageDir.resolve(attEncName);
+                    if (Files.exists(attEncFile)) {
+                        Path attTarGz = stageDir.resolve("attachments.tar.gz");
+                        try {
+                            codec.decrypt(attEncFile, backupPassword, attTarGz);
+                        } catch (Exception e) {
+                            throw new RestoreException("ATTACHMENTS",
+                                "attachments 解密失败: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
+                        }
+                        step5bAttachmentsAtomicSwap(attTarGz);
+                    } else {
+                        log.warn("[Restore-ATTACHMENTS] manifest 声明了 attachments 但文件不存在: {}", attEncName);
+                    }
+                } else {
+                    log.info("[Restore-ATTACHMENTS] manifest 无 attachments，跳过");
+                }
             }
 
             // Step 6: POSTCHECK
@@ -390,6 +422,123 @@ public class RestoreExecutor {
         return n;
     }
 
+    /**
+     * attachments 目录原子切换（与 uploads 同构，复用相同模式）。
+     * 备份脚本: tar -C $INSTALL_DIR attachments/ → entry 形如 "attachments/2026/..."
+     */
+    private void step5bAttachmentsAtomicSwap(Path tarGz) throws RestoreException {
+        Path attDirPath = Paths.get(attachmentDir).toAbsolutePath().normalize();
+        long ts = System.currentTimeMillis();
+        Path stagingDir = attDirPath.resolve(".restore-staging." + ts);
+        Path oldHoldDir = attDirPath.resolve(".restore-old." + ts);
+
+        try {
+            if (!Files.exists(attDirPath)) {
+                Files.createDirectories(attDirPath);
+            }
+            Files.createDirectories(stagingDir);
+
+            long totalSize = 0;
+            int entryCount = 0;
+            try (FileInputStream fis = new FileInputStream(tarGz.toFile());
+                 BufferedInputStream bis = new BufferedInputStream(fis);
+                 GZIPInputStream gz = new GZIPInputStream(bis);
+                 TarArchiveInputStream tar = new TarArchiveInputStream(gz)) {
+                TarArchiveEntry entry;
+                while ((entry = tar.getNextTarEntry()) != null) {
+                    if (++entryCount > MAX_ENTRY_COUNT) {
+                        throw new RestoreException("ATTACHMENTS",
+                            "tar entry 数超过上限 " + MAX_ENTRY_COUNT);
+                    }
+                    if (entry.getSize() > MAX_ENTRY_SIZE) {
+                        throw new RestoreException("ATTACHMENTS",
+                            "tar entry " + entry.getName() + " 大小 " + entry.getSize()
+                            + " 超过上限 " + MAX_ENTRY_SIZE);
+                    }
+                    totalSize += Math.max(0, entry.getSize());
+                    if (totalSize > MAX_TOTAL_EXTRACTED) {
+                        throw new RestoreException("ATTACHMENTS",
+                            "解压总大小超过上限 " + MAX_TOTAL_EXTRACTED);
+                    }
+
+                    String rawName = entry.getName();
+                    String relPath = stripAttachmentsPrefix(rawName);
+                    if (relPath == null) continue;
+                    Path target = stagingDir.resolve(relPath).normalize();
+                    if (!target.startsWith(stagingDir)) {
+                        throw new RestoreException("ATTACHMENTS",
+                            "Zip Slip 攻击检测: " + rawName + " 解析后超出 staging");
+                    }
+
+                    if (entry.isDirectory()) {
+                        Files.createDirectories(target);
+                    } else {
+                        Files.createDirectories(target.getParent());
+                        try (FileOutputStream out = new FileOutputStream(target.toFile());
+                             BufferedOutputStream bout = new BufferedOutputStream(out)) {
+                            byte[] buf = new byte[8192];
+                            int n;
+                            while ((n = tar.read(buf)) > 0) {
+                                bout.write(buf, 0, n);
+                            }
+                        }
+                    }
+                }
+            }
+            log.info("[Restore-ATTACHMENTS] 解压完成 entries={} bytes={} → {}",
+                entryCount, totalSize, stagingDir);
+
+            Files.createDirectories(oldHoldDir);
+            int movedOut = 0;
+            try (java.util.stream.Stream<Path> entries = Files.list(attDirPath)) {
+                for (Path p : (Iterable<Path>) entries::iterator) {
+                    String name = p.getFileName().toString();
+                    if (name.startsWith(".restore-staging.") || name.startsWith(".restore-old.")) {
+                        continue;
+                    }
+                    Files.move(p, oldHoldDir.resolve(name));
+                    movedOut++;
+                }
+            }
+            log.info("[Restore-ATTACHMENTS] 旧 entry 已暂存 {} 项 → {}", movedOut, oldHoldDir);
+
+            int movedIn = 0;
+            try (java.util.stream.Stream<Path> entries = Files.list(stagingDir)) {
+                for (Path p : (Iterable<Path>) entries::iterator) {
+                    Files.move(p, attDirPath.resolve(p.getFileName()));
+                    movedIn++;
+                }
+            }
+            log.info("[Restore-ATTACHMENTS] 新 entry 已切换 {} 项 → {}", movedIn, attDirPath);
+
+            Files.deleteIfExists(stagingDir);
+
+            if (Files.exists(oldHoldDir)) {
+                deleteRecursivelyAsync(oldHoldDir);
+            }
+        } catch (RestoreException re) {
+            rollbackUploadsSwap(attDirPath, stagingDir, oldHoldDir);
+            throw re;
+        } catch (Exception e) {
+            rollbackUploadsSwap(attDirPath, stagingDir, oldHoldDir);
+            throw new RestoreException("ATTACHMENTS",
+                "tar 解压/切换失败: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
+        }
+    }
+
+    /** 提取 entry name 在 "attachments/" 后的相对路径；返回 null 表示该 entry 不该解 */
+    private static String stripAttachmentsPrefix(String entryName) {
+        if (entryName == null || entryName.isEmpty()) return null;
+        String n = entryName.replace('\\', '/');
+        while (n.startsWith("./")) n = n.substring(2);
+        if (n.equals(".") || n.isEmpty()) return null;
+        if (n.startsWith("attachments/")) {
+            return n.substring("attachments/".length());
+        }
+        if (n.equals("attachments") || n.equals("attachments/")) return null;
+        return n;
+    }
+
     private String step6Postcheck(JsonNode manifest) {
         JsonNode expectedNode = manifest.path("db").path("table_stats_exact");
         if (!expectedNode.isObject() || expectedNode.size() == 0) {
@@ -552,6 +701,56 @@ public class RestoreExecutor {
             log.info("[Restore-IMPORT] clearDevices: 已清空设备授权表 (rows={})", rows);
         } catch (Exception e) {
             log.warn("[Restore-IMPORT] clearDevices 失败(不阻断): {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 2026-07-02 改造（BUG-RESTORE-2026-07-02）: 把当前 restore_record 重新写回 db。
+     *
+     * 背景: Online Backup API 整库覆盖时, 当前 RUNNING 那条 record 也会被清掉 (staged db
+     *   里没有这个 id，因为这是当前 JVM 自己刚 trigger 建的)。后续 runRestoreAsync
+     *   末尾 UPDATE WHERE id=? 会 0 rows → 前端永远卡 PENDING → 转 UNKNOWN。
+     *
+     * 用 INSERT OR REPLACE 而不用 INSERT 的原因: dump 链路万一没 clear restore_record
+     *   时(staged db 有 dev 历史可能含同 id),INSERT 会 UNIQUE constraint failed。
+     *   INSERT OR REPLACE 覆盖,保证状态机推进,幂等兜底。
+     *
+     * 不用 mapper.insert(record) 的原因: MyBatis-Plus 默认 @TableId(type=IdType.AUTO)
+     *   会忽略 record.id 由数据库自增 → 新 id ≠ 原 id → UPDATE 仍然 0 rows。
+     *
+     * 不阻断主流程: SQL 失败仅记 WARN,前端可能看到 UNKNOWN,但 IMPORT 已完成(数据已替换)。
+     *
+     * @param record 当前 JVM 自己创建的 record (id 已由 trigger 时确定)
+     */
+    private void rewriteCurrentRestoreRecord(RestoreRecord record) {
+        if (record == null || record.getId() == null) {
+            log.warn("[Restore-IMPORT] rewriteCurrentRestoreRecord: record 或 id 为空, 跳过");
+            return;
+        }
+        try {
+            int rows = jdbcTemplate.update(
+                "INSERT OR REPLACE INTO restore_record "
+                + "(id, status, source_record_id, source_tag, scope, started_at, finished_at, "
+                + " error_stage, error_message, verify_diff, operator_id, operator_name) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                record.getId(),
+                record.getStatus(),
+                record.getSourceRecordId(),
+                record.getSourceTag(),
+                record.getScope(),
+                record.getStartedAt(),
+                record.getFinishedAt(),
+                record.getErrorStage(),
+                record.getErrorMessage(),
+                record.getVerifyDiff(),
+                record.getOperatorId(),
+                record.getOperatorName()
+            );
+            log.info("[Restore-IMPORT] rewriteCurrentRestoreRecord: id={} status={} rows={}",
+                record.getId(), record.getStatus(), rows);
+        } catch (Exception e) {
+            // 不阻断恢复主流程,但要 WARN — 状态机推进会失败,前端可能看到 UNKNOWN
+            log.warn("[Restore-IMPORT] rewriteCurrentRestoreRecord 失败(不阻断): {}", e.getMessage(), e);
         }
     }
 

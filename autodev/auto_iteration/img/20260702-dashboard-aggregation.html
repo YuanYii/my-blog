@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>博客 Dashboard 数据聚合业务逻辑图 · 2026-07-02</title>
+<link href="https://fonts.googleapis.com/css2?family=DM=Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains=Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root { --bg: #f7f5f0; --bg-card: #ffffff; --line: #e9e3d6; --line-soft: #f0eadc; --text: #14171e; --text-2: #3a4256; --muted: #7c7a72; --primary: #2f6f5e; --primary-soft: rgba(47, 111, 94, 0.08); --accent: #c97b3f; --accent-soft: rgba(201, 123, 63, 0.08); --danger: #b06367; --danger-soft: rgba(176, 99, 103, 0.08); --info: #4a6a8a; --info-soft: rgba(74, 106, 138, 0.08); --warn: #c97b3f; --warn-soft: rgba(201, 123, 63, 0.08); }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { background: var(--bg); }
+  body { font-family: 'Outfit', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; font-size: 16px; min-height: 100dvh; position: relative; }
+  body::before { content: ""; position: fixed; top: -200px; left: -200px; width: 500px; height: 500px; background: radial-gradient(circle, var(--primary-soft) 0%, transparent 70%); z-index: 0; pointer-events: none; }
+  body::after { content: ""; position: fixed; bottom: -200px; right: -200px; width: 500px; height: 500px; background: radial-gradient(circle, var(--accent-soft) 0%, transparent 70%); z-index: 0; pointer-events: none; }
+  .container { max-width: 1280px; margin: 0 auto; padding: 56px 32px 80px; position: relative; z-index: 1; }
+  .hero { margin-bottom: 48px; padding-bottom: 32px; border-bottom: 1px solid var(--line); }
+  .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: 0.18em; color: var(--primary); text-transform: uppercase; margin-bottom: 16px; }
+  h1 { font-family: 'DM Serif Display', serif; font-size: 40px; font-weight: 400; letter-spacing: -0.01em; color: var(--text); margin-bottom: 12px; }
+  .hero p { color: var(--text-2); font-size: 16px; max-width: 880px; }
+  .section { margin-bottom: 56px; }
+  h2 { font-family: 'DM Serif Display', serif; font-size: 28px; font-weight: 400; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h2 .badge { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.12em; padding: 3px 10px; border-radius: 4px; text-transform: uppercase; vertical-align: middle; }
+  h2 .badge.flow { background: var(--primary-soft); color: var(--primary); }
+  h2 .badge.decision { background: var(--accent-soft); color: var(--accent); }
+  h2 .badge.boundary { background: var(--warn-soft); color: var(--warn); }
+  h2 .badge.files { background: var(--info-soft); color: var(--info); }
+  .section-meta { font-size: 15px; color: var(--muted); margin-bottom: 20px; padding-left: 12px; border-left: 2px solid var(--line); }
+  .mermaid-wrap { background: var(--bg-card); border: 1px solid var(--line); border-radius: 12px; padding: 28px 20px; overflow-x: auto; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03); }
+  .mermaid { text-align: center; font-family: 'Outfit', sans-serif !important; }
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; padding: 16px 20px; background: var(--bg-card); border: 1px dashed var(--line); border-radius: 10px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--text-2); }
+  .legend-dot { width: 14px; height: 14px; border-radius: 4px; flex-shrink: 0; }
+  .decision-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .decision-card { padding: 18px; background: var(--bg-card); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; }
+  .decision-card.warn { border-left-color: var(--warn); }
+  .decision-card.info { border-left-color: var(--info); }
+  .decision-card.danger { border-left-color: var(--danger); }
+  .decision-stage { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+  .decision-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .decision-rule { font-size: 16px; color: var(--text-2); line-height: 1.5; margin-bottom: 6px; }
+  .decision-code { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--primary); background: var(--primary-soft); padding: 2px 6px; border-radius: 3px; }
+  .boundary-table { width: 100%; border-collapse: collapse; background: var(--bg-card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 16px; }
+  .boundary-table th { text-align: left; padding: 12px 16px; background: var(--line-soft); color: var(--text-2); font-weight: 600; font-size: 15px; letter-spacing: 0.02em; border-bottom: 1px solid var(--line); }
+  .boundary-table td { padding: 12px 16px; border-bottom: 1px solid var(--line-soft); color: var(--text-2); vertical-align: top; }
+  .boundary-table tr:last-child td { border-bottom: none; }
+  .boundary-table .scenario { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--primary); font-weight: 500; }
+  .boundary-table .response { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 500; }
+  .boundary-table .ok { color: var(--primary); }
+  .boundary-table .warn { color: var(--warn); }
+  .file-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+  .file-card { padding: 14px 18px; background: var(--bg-card); border: 1px solid var(--line); border-radius: 8px; transition: all 0.2s; }
+  .file-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06); border-color: var(--primary); }
+  .file-name { font-family: 'JetBrains Mono', monospace; font-size: 15px; color: var(--primary); margin-bottom: 4px; word-break: break-all; }
+  .file-desc { font-size: 15px; color: var(--muted); line-height: 1.5; }
+  .footer { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 15px; color: var(--muted); text-align: center; }
+  .footer code { font-family: 'JetBrains Mono', monospace; background: var(--line-soft); padding: 1px 6px; border-radius: 3px; color: var(--text-2); }
+  .mermaid .nodeLabel { font-size: 18px !important; font-family: 'Outfit', sans-serif !important; }
+  .mermaid .edgeLabel { font-size: 15px !important; font-family: 'JetBrains Mono', monospace !important; background: var(--bg-card) !important; }
+  @media (max-width: 768px) { .container { padding: 32px 16px 60px; } h1 { font-size: 32px; } h2 { font-size: 22px; } .mermaid-wrap { padding: 16px 8px; } .boundary-table { font-size: 15px; } .boundary-table th, .boundary-table td { padding: 8px 10px; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header class="hero">
+    <div class="eyebrow">My-Blog · Dashboard · 12-Source Aggregation</div>
+    <h1>博客 Dashboard 数据聚合业务逻辑图</h1>
+    <p>梳理 admin 打开仪表盘 → DashboardController.dashboard() 一次调用聚合 12 个数据源（KPI / 分布 / 趋势 / Top / 待办 / 备份状态）→ 拼装单一 json 响应给前端图表渲染的端到端链路。适用版本：v5.0.0+。</p>
+  </header>
+
+  <!-- Section 1: 主流程图 -->
+  <section class="section">
+    <h2>
+      <span>主流程 · 仪表盘 12 字段聚合</span>
+      <span class="badge flow">FLOW</span>
+    </h2>
+    <p class="section-meta">5 类查询：KPI（8 个 COUNT）+ 内容计算（总字数 strip 后累加）+ 分布（分类/标签 JOIN GROUP BY）+ 趋势（近 30/7 天发布 + PV/UV）+ Top（热门文章 + 流量来源）→ 单次响应给前端 render 图表</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    Start(["📊 admin 打开仪表盘<br/>GET /api/v1/admin/dashboard"])
+    E["<b>DashboardController.dashboard()</b><br/>单端点一次性聚合 12 字段<br/>6 段并行（try/catch 兜底）"]
+    K["<b>6 段聚合</b><br/>① KPI 8 COUNT（articles/comments/categories/tags + today PV/UV）<br/>② 总字数（SELECT content_md + stripMarkdown 8 步 + countChars）<br/>③ 内容分布（category LEFT JOIN + tag LIMIT 20）<br/>④ 趋势（publishTrend + visitTrend 30d/7d）<br/>⑤ Top N（topArticles(10) + topReferrers(30,5)）<br/>⑥ 待办 + 备份（pendingComments + lastBackup SUCCESS?）"]
+    R["<b>组装响应</b><br/>Result.success(data) Map 12 字段"]
+    End(["✅ 200 json 给前端<br/>render KPI / 分布 / 趋势 / Top / 待办 / 备份时间"])
+
+    Start --> E --> K --> R --> End
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef stage fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+    classDef success fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#2f6f5e
+
+    class Start,End success
+    class E,K,R stage
+      </pre>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#e8f1ed;border:2px solid #2f6f5e;"></div>起点/终点</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fdfaf3;border:1px solid #c97b3f;"></div>执行阶段</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#eef2f7;border:1px solid #4a6a8a;"></div>SQL 聚合</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fef7e6;border:1px solid #c97b3f;"></div>try/catch 兜底</div>
+    </div>
+  </section>
+
+  <!-- Section 1.5: 6 段 SQL 详情（左半 3 段） -->
+  <section class="section">
+    <h2>
+      <span>6 段 SQL 详情 · 数据聚合层（KPI/总字数/分布）</span>
+      <span class="badge flow">DETAIL</span>
+    </h2>
+    <p class="section-meta">主图 6 段并行的字段级展开。3 段 1 子图，避免 6 段 parallel 让 dagre 画成 6 列宽画布。</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    Start(["📊 DashboardController.dashboard()"])
+    R["<b>组装响应</b><br/>Result.success(data) Map 12 字段"]
+
+    Start --> K["<b>KPI · 8 COUNT</b><br/>totalArticles / published/draft/archived<br/>totalComments/pendingComments<br/>totalCategories/totalTags<br/>todayPV/UV + totalViewCount"]
+    Start --> W["<b>总字数 · computeTotalWordCount</b><br/>SELECT content_md WHERE status=1 AND deleted=0<br/>+ stripMarkdown 8 步（代码块/行内代码/图片 alt/链接 text/标题/引用/列表/粗斜删）<br/>+ countChars codePoint 遍历（CJK 1字/ASCII 1字/空白不计）"]
+    Start --> D["<b>内容分布 · 2 SQL</b><br/>category LEFT JOIN COUNT + visible=1 ORDER cnt DESC<br/>tag LEFT JOIN article_tag LIMIT 20"]
+
+    K --> R
+    W --> R
+    D --> R
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef stage fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+
+    class Start,R stage
+    class K,W,D stage
+      </pre>
+    </div>
+  </section>
+
+  <!-- Section 1.6: 6 段 SQL 详情（右半 3 段） -->
+  <section class="section">
+    <h2>
+      <span>6 段 SQL 详情 · 分析层 + 周边层（趋势/Top/待办备份）</span>
+      <span class="badge flow">DETAIL</span>
+    </h2>
+    <p class="section-meta">后 3 段：趋势（4 子段 try/catch 兜底）+ Top N（2 子段）+ 待办/备份（lastBackup SUCCESS? 三态）。</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    Start(["📊 DashboardController.dashboard()"])
+    R["<b>组装响应</b><br/>Result.success(data) Map 12 字段"]
+
+    Start --> T["<b>趋势 · 4 子段</b><br/>publishTrend (Java 端 fromTime 替代 DATE_SUB)<br/>visitTrend 30d + visitTrend7<br/>每段 try/catch 兜底空数组"]
+    Start --> O["<b>Top N · 2 子段</b><br/>topArticles(10) JOIN article GROUP BY LIMIT 10<br/>topReferrers(30,5) Java 端聚合<br/>extractDomain + domainLabel (google→Google)"]
+    Start --> B["<b>待办 + 备份</b><br/>todos = pendingComments + draftArticles（透传 KPI）<br/>lastBackup = backupRecordMapper.selectLatestSuccess()<br/>SUCCESS? → 回填 lastBackupAt + lastBackupTag<br/>未备份过 → lastBackupAt = null / tag = null"]
+
+    T --> R
+    O --> R
+    B --> R
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef stage fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+
+    class Start,R stage
+    class T,O,B stage
+      </pre>
+    </div>
+  </section>
+
+  <!-- Section 2: 关键决策点 -->
+  <section class="section">
+    <h2>
+      <span>6 个关键决策点</span>
+      <span class="badge decision">DECISION</span>
+    </h2>
+    <p class="section-meta">v2.5.0 真实数据化 + v2.6.0 跨方言改造 + v4.x polish 性能边界声明</p>
+
+    <div class="decision-grid">
+
+      <div class="decision-card info">
+        <div class="decision-stage">架构</div>
+        <div class="decision-title">D-1 · 单端点聚合 12 字段（一次调用一次响应）</div>
+        <div class="decision-rule">
+          <code>GET /admin/dashboard</code> 单次调用串/并行查 12 个数据源 → 拼装 <code>Map { kpi, categoryDistribution, tagDistribution, publishTrend, visitTrend, visitTrend7, topArticles, trafficSources, todos, lastBackup }</code>。前端只发一次请求。<strong>代价</strong>：每次调用都有 ~12 个 SQL，dashboard 不能高频轮询；<strong>收益</strong>：前端瀑布流简单，render 一次到位。
+        </div>
+        <span class="decision-code">v2.5.0 起</span>
+      </div>
+
+      <div class="decision-card danger">
+        <div class="decision-stage">性能 · 敏感点</div>
+        <div class="decision-title">D-2 · 总字数：一次性 SELECT content_md → Java strip + 累加</div>
+        <div class="decision-rule">
+          <strong>当前 MVP 决定</strong>：一次性 query 所有已发布文章正文到 Java 堆，strip markdown 标记后按 codePoint 累加字符数（不做词分词，CJK=1字/ASCII=1字符）。<strong>显式迁移触发条件</strong>（任一即重构）：文章数 &gt;200 / 平均 content_md &gt;50KB / dashboard P99 &gt;3s。迁移路径：<code>article.word_count</code> 字段 + write-time 算并写库。
+        </div>
+        <span class="decision-code">2026-06-22 v4.x polish</span>
+      </div>
+
+      <div class="decision-card warn">
+        <div class="decision-stage">跨方言</div>
+        <div class="decision-title">D-3 · MySQL DATE_SUB(NOW(), INTERVAL 30 DAY) → Java 传 LocalDateTime</div>
+        <div class="decision-rule">
+          原 SQL 写 MySQL 特有 <code>DATE_SUB(NOW(), INTERVAL 30 DAY)</code> 不可移植。修：<code>java.time.LocalDateTime.now().minusDays(30)</code> 算 fromTime，用占位符 <code>?</code> 参数化绑定传 SQL。SQLite/MySQL 都支持，<strong>零字符串拼接</strong>。
+        </div>
+        <span class="decision-code">2026-06-17 v2.6.0</span>
+      </div>
+
+      <div class="decision-card">
+        <div class="decision-stage">故障兜底</div>
+        <div class="decision-title">D-4 · 各非 KPI 段独立 try/catch 不阻断整体</div>
+        <div class="decision-rule">
+          <code>publishTrend</code> / <code>trafficSources</code> / <code>lastBackup</code> 三段用独立 <code>try { ... } catch (Exception e) {}</code> 兜底——任一段异常降级为空数组/空 map，<strong>不影响 KPI / 分类分布等核心字段返回</strong>。例：<code>backup_record</code> 表还没初始化（如首次部署未跑备份）时，前端待办仍能正常显示。
+        </div>
+        <span class="decision-code">2026-06-21 / 06-22</span>
+      </div>
+
+      <div class="decision-card info">
+        <div class="decision-stage">兼容</div>
+        <div class="decision-title">D-5 · 旧字段 totalViewCount 保留（不删 deleted 文章的 view_count）</div>
+        <div class="decision-rule">
+          KPI <code>totalViewCount</code> 走 <code>SUM(article.view_count) WHERE deleted=0</code>——保留兼容旧版逻辑。"不改过滤条件避免 KPI 大波动"是用户决策：用户已经习惯看见这个数字，删文章时阅读数突然下降会引起困惑。<strong>稳妥兼容</strong>胜过<strong>数学正确</strong>。
+        </div>
+        <span class="decision-code">v2.5.0 兼容策略</span>
+      </div>
+
+      <div class="decision-card warn">
+        <div class="decision-stage">数据结构</div>
+        <div class="decision-title">D-6 · 趋势缺日期由前端补 0（VIEW 层兜底）</div>
+        <div class="decision-rule">
+          <code>visitTrend</code> / <code>publishTrend</code> 只返回有数据的日期，<strong>缺失日期省略</strong>。前端 chart 渲染时按完整日期轴补 0（如 06-15 没访问 → (06-15, pv:0)）。后端聚合简单（一条 GROUP BY），前端负责补全。<strong>前后端职责分明</strong>。
+        </div>
+        <span class="decision-code">v2.5.0 数据契约</span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Section 3: 边界场景 -->
+  <section class="section">
+    <h2>
+      <span>8 种边界场景</span>
+      <span class="badge boundary">BOUNDARY</span>
+    </h2>
+    <p class="section-meta">覆盖空数据 / 异常兜底 / 性能边界 / 首次部署</p>
+
+    <table class="boundary-table">
+      <thead>
+        <tr>
+          <th style="width:24%;">场景</th>
+          <th style="width:24%;">触发条件</th>
+          <th style="width:26%;">后端处理</th>
+          <th style="width:14%;">HTTP / 行为</th>
+          <th style="width:12%;">决策来源</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="scenario">空博客（无文章）</span></td>
+          <td>首次部署，article 表为 0</td>
+          <td>KPI 全 0；列表空数组；总字数 0；趋势空数组</td>
+          <td><span class="response ok">200 全 0 / 空</span></td>
+          <td>主路径</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">publishTrend 异常</span></td>
+          <td>SQL 语法错 / 表缺失</td>
+          <td>try/catch 兜底 → 空数组；KPI 字段照常返回</td>
+          <td><span class="response warn">publishTrend=[]，其他 OK</span></td>
+          <td>D-4</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">trafficSources 异常</span></td>
+          <td>page_view 引用列异常</td>
+          <td>try/catch 兜底 → 空数组</td>
+          <td><span class="response warn">trafficSources=[]</span></td>
+          <td>D-4</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">未跑过备份</span></td>
+          <td>backup_record 表为空</td>
+          <td><code>selectLatestSuccess</code> 返 null → lastBackupAt=null</td>
+          <td><span class="response ok">显示「未备份过」</span></td>
+          <td>前端 dashboard 待办</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">无分类 / 无标签</span></td>
+          <td>category / tag 表为空</td>
+          <td>LEFT JOIN 兜底，COUNT=0；前端展示「暂无分布」</td>
+          <td><span class="response ok">200 空数组</span></td>
+          <td>主路径</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">无 PV 统计</span></td>
+          <td>page_view 表全空（如未发布访问）</td>
+          <td>todayPV=0 / todayUV=0；趋势空数组；Top 空</td>
+          <td><span class="response ok">200 全 0</span></td>
+          <td>主路径</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">文章量 &gt;200（性能边界）</span></td>
+          <td>个人博客量级突破</td>
+          <td>computeTotalWordCount 卡 1-2s（仍可接受）；触发迁移条件 → 加 article.word_count 字段</td>
+          <td><span class="response warn">P99 升到 1-2s</span></td>
+          <td>D-2 性能边界</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">格式异常的 content_md</span></td>
+          <td>老文章无 front matter / 乱码</td>
+          <td>stripMarkdown 8 步正则 strip（不抛异常）；codePoint 累加兜底</td>
+          <td><span class="response ok">数字仍合理</span></td>
+          <td>stripMarkdown L188</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Section 4: 关键文件 -->
+  <section class="section">
+    <h2>
+      <span>关键文件清单</span>
+      <span class="badge files">FILES</span>
+    </h2>
+    <p class="section-meta">按链路参与顺序：Controller → Service 协作 → Mapper → 前端图表渲染</p>
+
+    <div class="file-grid">
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-app/.../controller/DashboardController.java</div>
+        <div class="file-desc">233 行。单端点 <code>GET /admin/dashboard</code> 聚合 12 字段（KPI + 内容计算 + 分布 + 趋势 + Top + 待办 + 备份状态）；KPI 8 个 COUNT 走 JdbcTemplate 直查（绕 MP 实体）</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-article/.../service/PageViewService.java</div>
+        <div class="file-desc">5 个聚合方法：countTodayPv / countTodayUv / dailyStats(N) / topArticles(N) / topReferrers(days, N)。Java 端聚合避免 SQL 方言差异（详见 PV 统计图）</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-settings/.../mapper/BackupRecordMapper.java</div>
+        <div class="file-desc"><code>selectLatestSuccess()</code>：查 backup_record 表 status='SUCCESS' ORDER BY started_at DESC LIMIT 1。给 dashboard 待办显示距上次备份用</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/.../controller/DashboardController.java (computeTotalWordCount)</div>
+        <div class="file-desc">总字数计算核心：一次 SELECT content_md → stripMarkdown 8 步正则（代码块 / 行内代码 / 图片 alt / 链接 text / 标题前缀 / 引用 / 列表 / 粗斜体删除线）→ countChars codePoint 遍历</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">frontend/pages/admin/dashboard.vue</div>
+        <div class="file-desc">Vue 仪表盘页面：调 <code>useAdminApi().get('/dashboard')</code>；分模块 render KPI 卡片 / 分类分布 / 标签分布 / 发布趋势 / 访问趋势 / 热门文章 / 流量来源 / 待办 / 上次备份。趋势缺日期由 chart 库补 0</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">前端图表库 + 缺日期补 0</div>
+        <div class="file-desc">chart.js / echarts / 类似库：<code>publishTrend</code> / <code>visitTrend</code> 数据 + 完整日期轴 → 缺数据日期 fill(0)。后端只返有数据日期，节省 SQL；前端负责补全。这是前后端职责分明的典型设计</div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p>分析时间：<code>2026-07-02 10:00</code> · 北京时区 (UTC+8) · 适用版本：<code>v5.0.0+</code> · 任务来源：用户主动扩展流程图覆盖</p>
+  </footer>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'neutral',
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'linear',
+      padding: 8,
+      nodeSpacing: 30,
+      rankSpacing: 25
+    },
+    themeVariables: {
+      fontFamily: "'Outfit', system-ui, sans-serif",
+      fontSize: '15px',
+      primaryColor: '#fdfaf3',
+      primaryTextColor: '#14171e',
+      primaryBorderColor: '#c97b3f',
+      lineColor: '#7c7a72',
+      secondaryColor: '#f7f5f0',
+      tertiaryColor: '#fdfaf3'
+    }
+  });
+</script>
+</body>
+</html>

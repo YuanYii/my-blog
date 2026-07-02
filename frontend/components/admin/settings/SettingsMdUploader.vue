@@ -201,22 +201,24 @@ const formatSize = (bytes: number) => {
             {{ sqlExecuting ? '执行中…' : '执行' }}
           </button>
         </div>
-        <div v-if="sqlResult" style="margin-top: 16px; padding: 12px; border: 1px solid var(--color-line); border-radius: 8px; font-size: 12px; font-family: 'JetBrains Mono', monospace; max-height: 300px; overflow-y: auto; background: var(--bg-soft);">
-          <div v-if="sqlResult.error" style="color: var(--danger);">{{ sqlResult.error }}</div>
+        <div v-if="sqlResult" style="margin-top: 16px; border: 1px solid var(--color-line); border-radius: 8px; font-size: 12px; font-family: 'JetBrains Mono', monospace; background: var(--bg-soft);">
+          <div v-if="sqlResult.error" style="padding: 12px; color: var(--danger);">{{ sqlResult.error }}</div>
           <div v-else-if="sqlResult.rows">
-            <div style="margin-bottom: 8px; color: var(--muted);">返回 {{ sqlResult.count }} 行</div>
-            <table style="width: 100%; border-collapse: collapse;">
-              <thead>
-                <tr>
-                  <th v-for="(_, key) in sqlResult.rows[0] || {}" :key="key" style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-line);">{{ key }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(row, i) in sqlResult.rows" :key="i">
-                  <td v-for="(val, key) in row" :key="key" style="padding: 4px 8px; border-bottom: 1px solid var(--color-line);">{{ val }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <div style="padding: 12px 12px 8px; color: var(--muted);">返回 {{ sqlResult.count }} 行</div>
+            <div style="max-height: 300px; overflow-y: auto;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <thead style="position: sticky; top: 0; z-index: 1;">
+                  <tr style="background: var(--bg-soft);">
+                    <th v-for="(_, key) in sqlResult.rows[0] || {}" :key="key" style="text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--color-line); font-weight: 600; white-space: nowrap;">{{ key }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, i) in sqlResult.rows" :key="i">
+                    <td v-for="(val, key) in row" :key="key" style="padding: 6px 8px; border-bottom: 1px solid var(--color-line); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ val }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
           <div v-else-if="sqlResult.affected != null" style="color: var(--success);">
             影响 {{ sqlResult.affected }} 行

@@ -78,7 +78,11 @@ public class SqliteOnlineBackup {
 
     /**
      * 按分号分割 SQL 语句，感知单引号上下文（字符串字面量内的分号不分割）。
-     * 同时跳过 SQL 注释行（-- 开头）和空行。
+     * 跳过纯注释/空行段；对于"注释+SQL"混合段，剥离前导注释行后保留实际 SQL。
+     *
+     * BUG-RESTORE-2026-07-02 修复：原逻辑用 startsWith("--") 判断整段，
+     * 当 "-- === data: table ===\\nINSERT INTO ..." 在同一个分号段内时，
+     * 整段（含 INSERT）被跳过，导致每张表的第一条数据丢失。
      */
     private static java.util.List<String> splitSqlStatements(String content) {
         java.util.List<String> result = new java.util.ArrayList<>();
@@ -99,20 +103,47 @@ public class SqliteOnlineBackup {
                 inSingleQuote = true;
                 buf.append(c);
             } else if (c == ';') {
-                String sql = buf.toString().trim();
+                String raw = buf.toString();
                 buf.setLength(0);
-                if (!sql.isEmpty() && !sql.startsWith("--")) {
+                String sql = stripLeadingCommentLines(raw);
+                if (!sql.isEmpty()) {
                     result.add(sql);
                 }
             } else {
                 buf.append(c);
             }
         }
-        String tail = buf.toString().trim();
-        if (!tail.isEmpty() && !tail.startsWith("--")) {
+        String tail = stripLeadingCommentLines(buf.toString());
+        if (!tail.isEmpty()) {
             result.add(tail);
         }
         return result;
+    }
+
+    /**
+     * 剥离前导注释行（-- ...）和空行，返回剩余的 SQL 文本。
+     * 纯注释/空行段返回空字符串；混合段只保留实际 SQL 部分。
+     */
+    private static String stripLeadingCommentLines(String text) {
+        String trimmed = text.trim();
+        if (trimmed.isEmpty()) return "";
+        String[] lines = trimmed.split("\\r?\\n", -1);
+        int start = 0;
+        while (start < lines.length) {
+            String line = lines[start].trim();
+            if (line.isEmpty() || line.startsWith("--")) {
+                start++;
+            } else {
+                break;
+            }
+        }
+        if (start >= lines.length) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = start; i < lines.length; i++) {
+            if (sb.length() > 0) sb.append('\n');
+            sb.append(lines[i]);
+        }
+        return sb.toString().trim();
     }
 
     /**

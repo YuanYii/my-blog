@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>博客搜索功能业务逻辑图 · 2026-07-01</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --bg-card: #ffffff;
+    --line: #e9e3d6;
+    --line-soft: #f0eadc;
+    --text: #14171e;
+    --text-2: #3a4256;
+    --muted: #7c7a72;
+    --primary: #2f6f5e;
+    --primary-soft: rgba(47, 111, 94, 0.08);
+    --accent: #c97b3f;
+    --accent-soft: rgba(201, 123, 63, 0.08);
+    --danger: #b06367;
+    --danger-soft: rgba(176, 99, 103, 0.08);
+    --info: #4a6a8a;
+    --info-soft: rgba(74, 106, 138, 0.08);
+    --warn: #c97b3f;
+    --warn-soft: rgba(201, 123, 63, 0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 16px;
+    min-height: 100dvh;
+    position: relative;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    top: -200px; left: -200px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, var(--primary-soft) 0%, transparent 70%);
+    z-index: 0; pointer-events: none;
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    bottom: -200px; right: -200px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, var(--accent-soft) 0%, transparent 70%);
+    z-index: 0; pointer-events: none;
+  }
+
+  .container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 56px 32px 80px;
+    position: relative; z-index: 1;
+  }
+
+  .hero {
+    margin-bottom: 48px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--line);
+  }
+  .eyebrow {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    color: var(--primary);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 40px;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  .hero p {
+    color: var(--text-2);
+    font-size: 16px;
+    max-width: 880px;
+  }
+
+  .section {
+    margin-bottom: 56px;
+  }
+  h2 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    font-weight: 400;
+    color: var(--text);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  h2 .badge {
+    font-family: 'Outfit', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    padding: 3px 10px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    vertical-align: middle;
+  }
+  h2 .badge.flow { background: var(--primary-soft); color: var(--primary); }
+  h2 .badge.decision { background: var(--accent-soft); color: var(--accent); }
+  h2 .badge.boundary { background: var(--warn-soft); color: var(--warn); }
+  h2 .badge.files { background: var(--info-soft); color: var(--info); }
+
+  .section-meta {
+    font-size: 15px;
+    color: var(--muted);
+    margin-bottom: 20px;
+    padding-left: 12px;
+    border-left: 2px solid var(--line);
+  }
+
+  .mermaid-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 28px 20px;
+    overflow-x: auto;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  }
+  .mermaid { text-align: center; font-family: 'Outfit', sans-serif !important; }
+
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+    padding: 16px 20px;
+    background: var(--bg-card);
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; color: var(--text-2);
+  }
+  .legend-dot {
+    width: 14px; height: 14px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  /* Decision grid */
+  .decision-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+  }
+  .decision-card {
+    padding: 18px;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+  }
+  .decision-card.warn { border-left-color: var(--warn); }
+  .decision-card.info { border-left-color: var(--info); }
+  .decision-card.danger { border-left-color: var(--danger); }
+  .decision-stage {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .decision-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .decision-rule {
+    font-size: 16px;
+    color: var(--text-2);
+    line-height: 1.5;
+    margin-bottom: 6px;
+  }
+  .decision-code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--primary);
+    background: var(--primary-soft);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  /* Boundary table */
+  .boundary-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 16px;
+  }
+  .boundary-table th {
+    text-align: left;
+    padding: 12px 16px;
+    background: var(--line-soft);
+    color: var(--text-2);
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    border-bottom: 1px solid var(--line);
+  }
+  .boundary-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--text-2);
+    vertical-align: top;
+  }
+  .boundary-table tr:last-child td { border-bottom: none; }
+  .boundary-table .scenario {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--primary);
+    font-weight: 500;
+  }
+  .boundary-table .response {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .boundary-table .ok { color: var(--primary); }
+  .boundary-table .block { color: var(--danger); }
+  .boundary-table .empty { color: var(--muted); }
+
+  /* File list */
+  .file-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 12px;
+  }
+  .file-card {
+    padding: 14px 18px;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+  .file-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+    border-color: var(--primary);
+  }
+  .file-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    color: var(--primary);
+    margin-bottom: 4px;
+    word-break: break-all;
+  }
+  .file-desc {
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .footer {
+    margin-top: 56px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .footer code {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--line-soft);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: var(--text-2);
+  }
+
+  .mermaid .nodeLabel { font-size: 18px !important; font-family: 'Outfit', sans-serif !important; }
+  .mermaid .edgeLabel { font-size: 15px !important; font-family: 'JetBrains Mono', monospace !important; background: var(--bg-card) !important; }
+
+  @media (max-width: 768px) {
+    .container { padding: 32px 16px 60px; }
+    h1 { font-size: 40px; }
+    h2 { font-size: 28px; }
+    .mermaid-wrap { padding: 16px 8px; }
+    .boundary-table { font-size: 14px; }
+    .boundary-table th, .boundary-table td { padding: 8px 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Hero -->
+  <header class="hero">
+    <div class="eyebrow">My-Blog · Search · Business Logic</div>
+    <h1>博客搜索功能业务逻辑图</h1>
+    <p>梳理从用户在 NavBar 输入关键词 → router.push /search → search.vue 拉取 → 后端 ArticleController.list + ArticleService.list → 渲染结果列表的端到端链路，含 4 层决策点 + 8 种边界场景。适用版本：v5.0.0+。</p>
+  </header>
+
+  <!-- ============================================
+       主流程图
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>主流程 · 端到端搜索链路</span>
+      <span class="badge flow">FLOW</span>
+    </h2>
+    <p class="section-meta">4 层决策：入口可见性 → 路由 query → 后端校验 → SQL 查询；任意一层失败立即终止并降级到空结果 UI</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    Start(["👤 用户点 NavBar 搜索图标<br/>或移动端菜单「搜索」"])
+
+    L1A["<b>Layer 1 · 入口可见性</b><br/>app.vue → useSiteFlags()<br/>GET /api/v1/public/site-flags"]
+    L1B{"siteFlags<br/>.enableSearch<br/>= true?"}
+    L1C["<b>❌ 入口整个隐藏</b><br/>NavBar icon + mobile<br/>menu 项都不渲染"]
+    L1D["<b>渲染入口</b><br/>搜索图标按钮 + 弹层 input<br/>移动端菜单项 /search"]
+
+    L2A["<b>用户输入关键词</b><br/>searchKeyword ref<br/>trim 后 q"]
+    L2B{"q 非空?"}
+    L2C["<b>⚠️ 输入框空</b><br/>onSearchSubmit 早 return<br/>不跳转、不报错"]
+
+    L3["<b>Layer 2 · 路由</b><br/>router.push('/search', { q })<br/>search.vue watch route.query"]
+    L4A["<b>Layer 3 · API</b><br/>GET /api/v1/articles<br/>?keyword=...&page=...&size=20"]
+    L4B{"keyword<br/>非空?"}
+
+    L5A["<b>Layer 4 · 后端</b><br/>ArticleController.list"]
+    L5B{"keyword 非空<br/>AND searchEnabled<br/>= false?"}
+    L5C["<b>403 站点搜索已禁用</b><br/>前端 catch 静默清空"]
+    L5D{"page >= 1<br/>AND 1 <= size <= 100?"}
+    L5E["<b>400 参数错</b><br/>前端 catch 静默清空"]
+
+    L6A["<b>Layer 5 · 关键词校验</b><br/>ArticleService.list<br/>trim 后长度"]
+    L6B{"长度<br/>>= 2?"}
+    L6C["<b>400 关键词至少 2 个字符</b><br/>前端 catch 静默清空"]
+
+    L7["<b>SQL 构建</b><br/>SELECT id, title, slug, summary, ...<br/>FROM article<br/>WHERE status=1 AND deleted=0<br/>  AND (title LIKE ? OR summary LIKE ?)<br/>  AND [category_id = ?]<br/>  AND EXISTS (article_tag WHERE tag_id=?)<br/>ORDER BY published_at DESC<br/>LIMIT 20 OFFSET n"]
+
+    L8["<b>结果返回</b><br/>PageResult{records, total, current, size}"]
+    L9["<b>渲染</b><br/>search.vue<br/>① isResultTooMany (>100) → warning<br/>② 卡片: 标题 / 摘要 / 日期 / 分类 / 阅读数<br/>③ useHead 跟 keyword 联动 SEO title"]
+    End(["📄 用户看到结果列表"])
+
+    Start --> L1A --> L1B
+    L1B -- "否" --> L1C --> End
+    L1B -- "是" --> L1D --> L2A --> L2B
+    L2B -- "否" --> L2C --> End
+    L2B -- "是" --> L3 --> L4A --> L4B
+    L4B -- "否 (空 keyword)" --> L6A
+    L4B -- "是" --> L5A --> L5B
+    L5B -- "是" --> L5C --> End
+    L5B -- "否" --> L5D
+    L5D -- "否" --> L5E --> End
+    L5D -- "是" --> L6A
+    L6A --> L6B
+    L6B -- "否" --> L6C --> End
+    L6B -- "是" --> L7 --> L8 --> L9 --> End
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef layer fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+    classDef sql fill:#eef2f7,stroke:#4a6a8a,stroke-width:1px,color:#14171e
+    classDef success fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#2f6f5e
+    classDef fail fill:#fce8ea,stroke:#b06367,stroke-width:2px,color:#b06367
+    classDef decision fill:#fff5eb,stroke:#c97b3f,stroke-width:2px,color:#14171e
+
+    class Start,End success
+    class L1A,L1D,L2A,L3,L4A,L5A,L6A,L8,L9 layer
+    class L7 sql
+    class L1C,L2C,L5C,L5E,L6C fail
+    class L1B,L2B,L4B,L5B,L5D,L6B decision
+      </pre>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#e8f1ed;border:2px solid #2f6f5e;"></div>起点/终点</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fdfaf3;border:1px solid #c97b3f;"></div>逻辑层</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fff5eb;border:2px solid #c97b3f;"></div>决策点</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#eef2f7;border:1px solid #4a6a8a;"></div>SQL 查询</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fce8ea;border:2px solid #b06367;"></div>失败/终止</div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       关键决策点
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>5 个关键决策点</span>
+      <span class="badge decision">DECISION</span>
+    </h2>
+    <p class="section-meta">每个决策点都源自一个具体历史 BUG / OPT —— 决策体现了"为什么这样写"的工程取舍</p>
+
+    <div class="decision-grid">
+
+      <div class="decision-card danger">
+        <div class="decision-stage">Layer 1 · 入口可见性</div>
+        <div class="decision-title">D-1 · advanced.enableSearch 双层防护</div>
+        <div class="decision-rule">
+          admin 在「高级」tab 关闭 enableSearch → 前端 <code>siteFlags.enableSearch=false</code> 让 NavBar 搜索图标整个不渲染；后端 <code>ArticleController.list</code> 仍会 403 兜底——防止直接拼 URL <code>?keyword=xxx</code> 绕过。
+        </div>
+        <span class="decision-code">2026-06-27 DEV-003</span>
+      </div>
+
+      <div class="decision-card warn">
+        <div class="decision-stage">Layer 3 · 关键词下限</div>
+        <div class="decision-title">D-2 · keyword 长度 ≥ 2 字符</div>
+        <div class="decision-rule">
+          <strong>关键决策</strong>：单字符 / 通用词（"的"、"用"、"？"）会命中几乎所有文章 title → 触发 400。比放过去体验差（用户感知"按钮坏了"）更友好——显式拒绝并告诉用户规则。
+        </div>
+        <span class="decision-code">2026-06-30 BUG-001</span>
+      </div>
+
+      <div class="decision-card warn">
+        <div class="decision-stage">Layer 4 · 查询范围</div>
+        <div class="decision-title">D-3 · 只搜 title + summary，不搜 content_md</div>
+        <div class="decision-rule">
+          所有文章正文都讨论"AI/Redis/博客"等通用词，content_md 全表 LIKE 命中率 100% → 用户感知"搜索 = 没用"。限定 title + summary 后"Zip Slip"等只在 summary 命中的也能找到；正文搜索留给将来 ES/FTS 索引（OPT-003）。
+        </div>
+        <span class="decision-code">2026-06-30 BUG-001</span>
+      </div>
+
+      <div class="decision-card info">
+        <div class="decision-stage">Layer 4 · 标签过滤</div>
+        <div class="decision-title">D-4 · tagId 用 EXISTS 子查询而非 JOIN</div>
+        <div class="decision-rule">
+          <code>qw.exists(true, "SELECT 1 FROM article_tag at WHERE at.article_id = article.id AND at.tag_id = {0}", tagId)</code> — 单 tagId 场景 EXISTS 比 JOIN+GROUP BY 更便宜，且不破坏主表的 SELECT 列表。结果一次性返回，文章对象本身不含 tagIds 重复。
+        </div>
+        <span class="decision-code">2026-06-22 v4.x</span>
+      </div>
+
+      <div class="decision-card">
+        <div class="decision-stage">渲染 · UX 闭环</div>
+        <div class="decision-title">D-5 · 结果过多提示（>100 条）</div>
+        <div class="decision-rule">
+          size=20，超过 5 页 ≈ 100 条时显示 "建议缩小关键词范围" warning。UX 闭环 —— 让用户知道"搜索生效了，只是关键词太泛"，避免"我搜了为什么没结果"的困惑。
+        </div>
+        <span class="decision-code">2026-06-30 BUG-001</span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============================================
+       边界场景
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>8 种边界场景</span>
+      <span class="badge boundary">BOUNDARY</span>
+    </h2>
+    <p class="section-meta">覆盖前端 + 后端的全部 4xx/200/空结果组合；前端 catch 统一静默降级到空列表 UI</p>
+
+    <table class="boundary-table">
+      <thead>
+        <tr>
+          <th style="width:22%;">场景</th>
+          <th style="width:22%;">触发条件</th>
+          <th style="width:25%;">前端表现</th>
+          <th style="width:16%;">HTTP / code</th>
+          <th style="width:15%;">决策来源</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="scenario">enableSearch = false</span></td>
+          <td>admin 关闭开关</td>
+          <td>NavBar 隐藏搜索 icon + 移动端菜单项；强行拼 URL → 拿 403 → catch 静默清空</td>
+          <td><span class="response block">GET /articles → 403</span></td>
+          <td>D-1 双层防护</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">q 为空（输入框空）</span></td>
+          <td>用户点搜索按钮但没输入</td>
+          <td>onSearchSubmit 早 return — 不跳转、不报错</td>
+          <td><span class="response empty">前端短路</span></td>
+          <td>NavBar.vue L168</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">keyword 为空（/search 不带 q）</span></td>
+          <td>用户直接访问 /search</td>
+          <td>"请输入要搜索的关键词"空态</td>
+          <td><span class="response empty">前端短路</span></td>
+          <td>search.vue L21-25</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">keyword 长度 &lt; 2</span></td>
+          <td>用户输入"AI"等单字符</td>
+          <td>catch 静默清空（与"无结果"同 UI）</td>
+          <td><span class="response block">GET /articles → 400</span></td>
+          <td>D-2 后端兜底</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">page &lt; 1 或 size &gt; 100</span></td>
+          <td>恶意 URL ?page=0&size=999</td>
+          <td>catch 静默清空</td>
+          <td><span class="response block">GET /articles → 400</span></td>
+          <td>ArticleService L66-67</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">keyword 有结果但 ≤ 20</span></td>
+          <td>正常情况</td>
+          <td>渲染文章卡片（标题 / 摘要 / 日期 / 分类 / 阅读数）</td>
+          <td><span class="response ok">GET /articles → 200 + records</span></td>
+          <td>主路径</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">无匹配结果</span></td>
+          <td>关键词无任何 title/summary 命中</td>
+          <td>"没有找到与「xxx」相关的文章"空态</td>
+          <td><span class="response ok">200 + records=[]</span></td>
+          <td>search.vue L71-73</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">结果过多（&gt; 100 条）</span></td>
+          <td>搜通用词如"AI" → 命中大量</td>
+          <td>列表顶部 warning "建议缩小关键词范围"</td>
+          <td><span class="response ok">200 + total &gt; 100</span></td>
+          <td>D-5 UX 闭环</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============================================
+       关键文件
+       ============================================ -->
+  <section class="section">
+    <h2>
+      <span>关键文件清单</span>
+      <span class="badge files">FILES</span>
+    </h2>
+    <p class="section-meta">按链路参与顺序：前端入口 → 状态 → 结果页 → 后端 controller → service → 配置</p>
+
+    <div class="file-grid">
+      <div class="file-card">
+        <div class="file-name">frontend/components/NavBar.vue</div>
+        <div class="file-desc">搜索入口 UI；L34-65 <code>v-if="siteFlags.enableSearch"</code> 包裹整个 icon + 弹层 + mobile menu 项；input + 提交跳 /search?q=xxx</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">frontend/composables/useSiteFlags.ts</div>
+        <div class="file-desc">useAsyncData('site-flags') + useState 共享；<code>enableSearch !== false</code> 显式 false 才关闭，缺字段保留默认 true</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">frontend/pages/search.vue</div>
+        <div class="file-desc">搜索结果页；watch route.query 变化自动 fetchResults；isResultTooMany > 100 触发 warning；useHead 跟 keyword 联动 SEO</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">frontend/composables/usePublicApi.ts</div>
+        <div class="file-desc">搜索用 <code>get&lt;any&gt;('/articles', { keyword, page, size: 20 })</code>；不带 token（公开端点）</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">backend/.../controller/ArticleController.java</div>
+        <div class="file-desc">L40-52 <code>@GetMapping public list</code>；enableSearch=false 时 403；page/size 校验；委托给 service</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">backend/.../service/ArticleService.java</div>
+        <div class="file-desc">L64-97 list 方法：keyword 长度 ≥ 2 校验 + status=1/deleted=0 过滤 + title OR summary LIKE + categoryId + tagId exists 子查询 + published_at desc</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">backend/.../service/AdvancedSettingsAccessor.java</div>
+        <div class="file-desc">searchEnabled() 30s 内存缓存 + 优先级语义读取 enableSearch；ArticleController.list 注入使用</div>
+      </div>
+      <div class="file-card">
+        <div class="file-name">backend/.../controller/PublicSettingsController.java</div>
+        <div class="file-desc">GET /api/v1/public/site-flags 端点；flags.put("enableSearch", advancedSettings.searchEnabled())；不暴露 enableCache 等敏感开关</div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p>分析时间：<code>2026-07-01 22:18</code> · 北京时区 (UTC+8) · 适用版本：<code>v5.0.0+</code> · 任务来源：用户手动需求分析</p>
+  </footer>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'neutral',
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'linear',
+      padding: 8,
+      nodeSpacing: 30,
+      rankSpacing: 25
+    },
+    themeVariables: {
+      fontFamily: "'Outfit', system-ui, sans-serif",
+      fontSize: '15px',
+      primaryColor: '#fdfaf3',
+      primaryTextColor: '#14171e',
+      primaryBorderColor: '#c97b3f',
+      lineColor: '#7c7a72',
+      secondaryColor: '#f7f5f0',
+      tertiaryColor: '#fdfaf3'
+    }
+  });
+</script>
+</body>
+</html>

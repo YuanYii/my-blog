@@ -248,6 +248,17 @@ if [[ "${SKIP_DB:-0}" != "1" ]]; then
     if [[ -n "${DB_EXCLUDE_TABLES:-}" ]]; then
         EXTRA_ARGS+=(--exclude "$DB_EXCLUDE_TABLES")
     fi
+    # 2026-07-02 改造（BUG-RESTORE-2026-07-02）: dump 时清空运行时状态表（保留 schema,只跳过 INSERT 数据）
+    # 理由: 这些表的状态机跨环境无意义,不应出现在业务快照里
+    #   - backup_record: 当前任务状态机 RUNNING 卡死会跨环境传染,阻塞新备份触发
+    #                      (uk_backup_record_running partial unique index 兜底)
+    #   - restore_record: Online Backup 整库覆盖会把当前 RUNNING 那条 id 也清掉,
+    #                       状态机断裂,前端变 UNKNOWN。prod 端 RestoreExecutor.rewriteCurrentRestoreRecord
+    #                       会 INSERT OR REPLACE 重新写回当前 record(幂等兜底)
+    #   - admin_device: dev 上的设备指纹/IP 不应跨环境带;prod 端 RestoreExecutor.clearDevices()
+    #                     已经二次清空,此处为冗余兜底,保留无害
+    # audit_log / ip_ban 不在清单:跨环境带过去有意义(审计/封禁历史)
+    EXTRA_ARGS+=(--clear-tables="backup_record,restore_record,admin_device")
     if ! FORCE_EXPORT=1 \
          BACKUP_ENCRYPTION_PASSWORD="$BACKUP_ENCRYPTION_PASSWORD" \
          bash "$SQLITE_EXPORT_SH" "$SQLITE_PATH" -o "$DB_ENC_FILE" "${EXTRA_ARGS[@]}" \

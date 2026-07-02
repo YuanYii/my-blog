@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>博客页面浏览量统计业务逻辑图 · 2026-07-02</title>
+<link href="https://fonts.googleapis.com/css2?family=DM=Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains=Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM=Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root { --bg: #f7f5f0; --bg-card: #ffffff; --line: #e9e3d6; --line-soft: #f0eadc; --text: #14171e; --text-2: #3a4256; --muted: #7c7a72; --primary: #2f6f5e; --primary-soft: rgba(47, 111, 94, 0.08); --accent: #c97b3f; --accent-soft: rgba(201, 123, 63, 0.08); --danger: #b06367; --danger-soft: rgba(176, 99, 103, 0.08); --info: #4a6a8a; --info-soft: rgba(74, 106, 138, 0.08); --warn: #c97b3f; --warn-soft: rgba(201, 123, 63, 0.08); }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { background: var(--bg); }
+  body { font-family: 'Outfit', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; font-size: 16px; min-height: 100dvh; position: relative; }
+  body::before { content: ""; position: fixed; top: -200px; left: -200px; width: 500px; height: 500px; background: radial-gradient(circle, var(--primary-soft) 0%, transparent 70%); z-index: 0; pointer-events: none; }
+  body::after { content: ""; position: fixed; bottom: -200px; right: -200px; width: 500px; height: 500px; background: radial-gradient(circle, var(--accent-soft) 0%, transparent 70%); z-index: 0; pointer-events: none; }
+  .container { max-width: 1280px; margin: 0 auto; padding: 56px 32px 80px; position: relative; z-index: 1; }
+  .hero { margin-bottom: 48px; padding-bottom: 32px; border-bottom: 1px solid var(--line); }
+  .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: 0.18em; color: var(--primary); text-transform: uppercase; margin-bottom: 16px; }
+  h1 { font-family: 'DM Serif Display', serif; font-size: 40px; font-weight: 400; letter-spacing: -0.01em; color: var(--text); margin-bottom: 12px; }
+  .hero p { color: var(--text-2); font-size: 16px; max-width: 880px; }
+  .section { margin-bottom: 56px; }
+  h2 { font-family: 'DM Serif Display', serif; font-size: 28px; font-weight: 400; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h2 .badge { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.12em; padding: 3px 10px; border-radius: 4px; text-transform: uppercase; vertical-align: middle; }
+  h2 .badge.flow { background: var(--primary-soft); color: var(--primary); }
+  h2 .badge.decision { background: var(--accent-soft); color: var(--accent); }
+  h2 .badge.boundary { background: var(--warn-soft); color: var(--warn); }
+  h2 .badge.files { background: var(--info-soft); color: var(--info); }
+  .section-meta { font-size: 15px; color: var(--muted); margin-bottom: 20px; padding-left: 12px; border-left: 2px solid var(--line); }
+  .mermaid-wrap { background: var(--bg-card); border: 1px solid var(--line); border-radius: 12px; padding: 28px 20px; overflow-x: auto; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03); }
+  .mermaid { text-align: center; font-family: 'Outfit', sans-serif !important; }
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; padding: 16px 20px; background: var(--bg-card); border: 1px dashed var(--line); border-radius: 10px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--text-2); }
+  .legend-dot { width: 14px; height: 14px; border-radius: 4px; flex-shrink: 0; }
+  .decision-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .decision-card { padding: 18px; background: var(--bg-card); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; }
+  .decision-card.warn { border-left-color: var(--warn); }
+  .decision-card.info { border-left-color: var(--info); }
+  .decision-card.danger { border-left-color: var(--danger); }
+  .decision-stage { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+  .decision-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .decision-rule { font-size: 16px; color: var(--text-2); line-height: 1.5; margin-bottom: 6px; }
+  .decision-code { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--primary); background: var(--primary-soft); padding: 2px 6px; border-radius: 3px; }
+  .boundary-table { width: 100%; border-collapse: collapse; background: var(--bg-card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 16px; }
+  .boundary-table th { text-align: left; padding: 12px 16px; background: var(--line-soft); color: var(--text-2); font-weight: 600; font-size: 15px; letter-spacing: 0.02em; border-bottom: 1px solid var(--line); }
+  .boundary-table td { padding: 12px 16px; border-bottom: 1px solid var(--line-soft); color: var(--text-2); vertical-align: top; }
+  .boundary-table tr:last-child td { border-bottom: none; }
+  .boundary-table .scenario { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--primary); font-weight: 500; }
+  .boundary-table .response { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 500; }
+  .boundary-table .ok { color: var(--primary); }
+  .boundary-table .block { color: var(--danger); }
+  .boundary-table .warn { color: var(--warn); }
+  .boundary-table .empty { color: var(--muted); }
+  .file-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+  .file-card { padding: 14px 18px; background: var(--bg-card); border: 1px solid var(--line); border-radius: 8px; transition: all 0.2s; }
+  .file-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06); border-color: var(--primary); }
+  .file-name { font-family: 'JetBrains Mono', monospace; font-size: 15px; color: var(--primary); margin-bottom: 4px; word-break: break-all; }
+  .file-desc { font-size: 15px; color: var(--muted); line-height: 1.5; }
+  .footer { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 15px; color: var(--muted); text-align: center; }
+  .footer code { font-family: 'JetBrains Mono', monospace; background: var(--line-soft); padding: 1px 6px; border-radius: 3px; color: var(--text-2); }
+  .mermaid .nodeLabel { font-size: 18px !important; font-family: 'Outfit', sans-serif !important; }
+  .mermaid .edgeLabel { font-size: 15px !important; font-family: 'JetBrains Mono', monospace !important; background: var(--bg-card) !important; }
+  @media (max-width: 768px) { .container { padding: 32px 16px 60px; } h1 { font-size: 32px; } h2 { font-size: 22px; } .mermaid-wrap { padding: 16px 8px; } .boundary-table { font-size: 15px; } .boundary-table th, .boundary-table td { padding: 8px 10px; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header class="hero">
+    <div class="eyebrow">My-Blog · Page View · Async Stats + Visitor Idempotency</div>
+    <h1>博客页面浏览量统计业务逻辑图</h1>
+    <p>梳理公开 GET → PageViewFilter 拦截 → 提 visitor/IP/UA/referer → @Async pageViewExecutor 异步落 page_view 表 + UK 唯一约束幂等去重 + 域名提取 → DashboardController 聚合（今日 PV/UV + 近 N 天趋势 + 热门 Top + 来源 Top）的端到端链路。适用版本：v5.0.0+。</p>
+  </header>
+
+  <!-- Section 1: 主流程图 -->
+  <section class="section">
+    <h2>
+      <span>主流程 · PV 统计端到端链路</span>
+      <span class="badge flow">FLOW</span>
+    </h2>
+    <p class="section-meta">3 大段：写入段（Filter 拦截 + 异步落库）→ 读出段（DashboardController 调 PageViewService 统计方法）→ 域名归一化段（Java 端聚合避免方言差异）</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    Start(["🌐 用户浏览器访问公开页<br/>GET /articles 或 /articles/{slug}"])
+    F["<b>PageViewFilter</b> @Order(10)<br/>拦截公开 GET + 跳过登录用户<br/>解析路径 → articleId (SLUG_CACHE 5min 正/1min 负)"]
+    F2["<b>chain.doFilter</b><br/>业务响应立即发出去"]
+    R["<b>recordVisitAsync</b><br/>提交到 pageViewExecutor 线程池<br/>(core=2/max=4/queue=500/DiscardPolicy)"]
+    A["<b>SqlClient INSERT page_view</b><br/>visitor + path + visit_date UNIQUE<br/>catch 3 层兜底：DIV 翻译 / isUniqueConstraintDup / SQLiteException"]
+    E1(["✅ 200 业务响应给用户<br/>PV 异步落库，不阻塞"])
+
+    Start --> F --> F2 --> E1
+    F -.提交异步.-> R --> A
+
+    E1 -.并发读.-> D["<b>PageViewService 聚合</b><br/>countTodayPv/UV + dailyStats(30/7)<br/>topArticles(10) + topReferrers(30,5)"]
+    D --> E2(["✅ Dashboard 渲染图表"])
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef stage fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+    classDef success fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#2f6f5e
+
+    class Start,E1,E2 success
+    class F,F2,R,A,D stage
+      </pre>
+    </div>
+      </pre>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#e8f1ed;border:2px solid #2f6f5e;"></div>起点/终点</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fdfaf3;border:1px solid #c97b3f;"></div>执行阶段</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fff5eb;border:2px solid #c97b3f;"></div>决策点</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#eef2f7;border:1px solid #4a6a8a;"></div>SQL 聚合</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fef7e6;border:1px solid #c97b3f;"></div>WARN/丢弃</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fce8ea;border:2px solid #b06367;"></div>约束冲突</div>
+    </div>
+  </section>
+
+  <!-- Section 1.5: 异步落库详情 -->
+  <section class="section">
+    <h2>
+      <span>异步落库详情 · 跨方言 3 层 catch 兜底</span>
+      <span class="badge flow">DETAIL</span>
+    </h2>
+    <p class="section-meta">主图"异步提交 INSERT"的细节展开。PageViewService.recordVisitAsync 走 pageViewExecutor 线程池 (core=2/max=4/queue=500/DiscardPolicy)，UNIQUE 约束冲突 3 层 catch：DIV 翻译 / isUniqueConstraintDup / SQLiteException message 兜底。</p>
+
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+flowchart TD
+    Start(["📨 recordVisitAsync<br/>(请求线程立即返回)"])
+    A1{"<b>pageViewExecutor 队列</b><br/>(core=2/max=4/queue=500)<br/>队列满 (超 500)?"}
+    A2["<b>丢弃</b> DiscardPolicy<br/>(PV 是 best-effort)"]
+    A3["<b>SqlClient INSERT</b><br/>INSERT INTO page_view<br/>(path, article_id, visitor, ip,<br/>user_agent, referer, created_at, visit_date)<br/>UNIQUE 约束 (visitor+path+visit_date)"]
+    A4{"INSERT 成功?"}
+    A5["<b>✅ 落库完成</b><br/>(同 visitor+path+day 仅 1 行)"]
+    A6["<b>❌ UNIQUE 约束冲突</b><br/>同 visitor+path+visit_date 已记录"]
+    A7{"DIV<br/>翻译过?"}
+    A8["<b>✅ 幂等吞掉</b><br/>(MySQL Duplicate entry)"]
+    A9["<b>❌ catch RuntimeException</b><br/>SQLite 原生 SQLiteException<br/>(无 DIV 翻译)"]
+    A10["<b>isUniqueConstraintDup<br/>(message 关键字兜底)</b><br/>含 SQLITE_CONSTRAINT / Duplicate entry / SQLSTATE 23xxx"]
+    A11{"是 dup?"}
+    A12["<b>✅ 幂等返回</b>"]
+    A13["<b>❌ 真正异常</b><br/>WARN log (低频路径)"]
+    End(["✅ 异步落库完成 / 幂等吞掉"])
+
+    Start --> A1
+    A1 -- "是" --> A2 --> End
+    A1 -- "否" --> A3 --> A4
+    A4 -- "是" --> A5 --> End
+    A4 -- "否" --> A6 --> A7
+    A7 -- "是" --> A8 --> End
+    A7 -- "否" --> A9 --> A10 --> A11
+    A11 -- "是" --> A12 --> End
+    A11 -- "否" --> A13
+
+    classDef entry fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#14171e
+    classDef stage fill:#fdfaf3,stroke:#c97b3f,stroke-width:1px,color:#14171e
+    classDef decision fill:#fff5eb,stroke:#c97b3f,stroke-width:2px,color:#14171e
+    classDef success fill:#e8f1ed,stroke:#2f6f5e,stroke-width:2px,color:#2f6f5e
+    classDef fail fill:#fce8ea,stroke:#b06367,stroke-width:2px,color:#b06367
+    classDef warn fill:#fef7e6,stroke:#c97b3f,stroke-width:1px,color:#14171e
+
+    class Start,End,A5,A8,A12 success
+    class A2,A3,A10 stage
+    class A1,A4,A7,A11 decision
+    class A6 fail
+    class A13 warn
+      </pre>
+    </div>
+  </section>
+
+  <!-- Section 2: 关键决策点 -->
+  <section class="section">
+    <h2>
+      <span>7 个关键决策点</span>
+      <span class="badge decision">DECISION</span>
+    </h2>
+    <p class="section-meta">v2.5.0 引入 PV 体系 → v2.6.0 跨方言改造 → 2026-06-18 异步化 + 多 BUG 修复</p>
+
+    <div class="decision-grid">
+
+      <div class="decision-card warn">
+        <div class="decision-stage">性能 · 写入路径</div>
+        <div class="decision-title">D-1 · 同步 SELECT+INSERT → 异步 INSERT + UK 约束去重</div>
+        <div class="decision-rule">
+          原"先 COUNT 再 INSERT"两步 TOCTOU 模式：两请求并发都过 COUNT=0，第二个 INSERT 撞 UK 抛异常未 catch。改异步后 INSERT + catch UK 冲突（少 1 次 round-trip，并发幂等）。业务响应不阻塞——SQLite 单连接池下首页不再等每个公开 GET 的 SELECT+INSERT。
+        </div>
+        <span class="decision-code">2026-06-22 v4.x polish</span>
+      </div>
+
+      <div class="decision-card danger">
+        <div class="decision-stage">跨方言</div>
+        <div class="decision-title">D-2 · UK 冲突三层 catch（Spring DIV / SQLite 原生 / SQLSTATE）</div>
+        <div class="decision-rule">
+          MySQL driver → Spring 翻成 <code>DataIntegrityViolationException</code> → catch 1 收。SQLite driver → 抛原生 SQLiteException（error code 19）→ Spring 因 SQLite 错误码不在内置 mapping 里包成 <code>UncategorizedSQLException</code> → catch 1 漏接，日志刷屏。BIG 修：三层 catch。<code>isUniqueConstraintDup()</code> 检查 message 含 <code>SQLITE_CONSTRAINT</code> / <code>Duplicate entry</code> / <code>SQLSTATE 23xxx</code>，再递归查 cause 链。
+        </div>
+        <span class="decision-code">2026-06-22 v4.x BUG fix</span>
+      </div>
+
+      <div class="decision-card info">
+        <div class="decision-stage">语义</div>
+        <div class="decision-title">D-3 · 登录用户不算访客（带 Authorization 即跳过）</div>
+        <div class="decision-rule">
+          admin 改完文章后预览、admin 调试公开 API、admin 自己的"阅读"行为都不应污染 PV/UV。当前项目只有 admin 一种登录用户 → 有 token = admin。未来若有"普通登录用户"功能也合理（<strong>访客 = 匿名访问</strong>）。用户感知：PV 是真实"路人访问量"。
+        </div>
+        <span class="decision-code">2026-06-16 调整</span>
+      </div>
+
+      <div class="decision-card warn">
+        <div class="decision-stage">性能 · 缓存</div>
+        <div class="decision-title">D-4 · SLUG_CACHE 正/负双 TTL + -1L 哨兵值</div>
+        <div class="decision-rule">
+          文章详情每次都要 <code>slug → articleId</code>。原本对不存在的 slug（findArticleIdBySlug 返回 null）执行 <code>ConcurrentHashMap.put(k, null)</code> → <strong>NPE</strong>，被外层 try/catch 吞。改：<code>-1L</code> 哨兵值标识"slug 不存在"，正缓存 TTL=5min，负缓存 TTL=1min。防爬虫狂打随机 slug 导致 map 无界增长 + DB 反复查。
+        </div>
+        <span class="decision-code">2026-06-18 修复</span>
+      </div>
+
+      <div class="decision-card danger">
+        <div class="decision-stage">性能 · 内存</div>
+        <div class="decision-title">D-5 · SLUG_CACHE @Scheduled 周期清理防内存泄漏</div>
+        <div class="decision-rule">
+          缓存"逻辑过期"——过期 entry 仍在 map 里占位。一个爬虫遍历几万随机 slug，map 外层 key 永久积累，每条 ~200B 也能吃几百 MB。修法：<code>@Scheduled 5min</code> 扫一遍，删掉内层 bucket 已过期的外层 slug。低开销——SLUG_CACHE 是 CHM 静态，进程生命周期内只一份。
+        </div>
+        <span class="decision-code">2026-06-22 v4.x polish</span>
+      </div>
+
+      <div class="decision-card">
+        <div class="decision-stage">跨方言</div>
+        <div class="decision-title">D-6 · referer 域名提取走 Java 端聚合</div>
+        <div class="decision-rule">
+          <code>topReferrers()</code> 不写 SQL <code>substr()</code> 函数（SQLite vs MySQL 字符串函数差异）——拉所有 referer 到 Java 聚合。page_view 表数量级几千行可控。<code>extractDomain</code>：无协议/空/<code>-</code>/相对路径 → <code>direct</code>；去 www. 前缀；截到第一个 <code>/?</code>#` <code>；端口丢弃。
+        </div>
+        <span class="decision-code">2026-06-24 DEV-001</span>
+      </div>
+
+      <div class="decision-card info">
+        <div class="decision-stage">建表</div>
+        <div class="decision-title">D-7 · visit_date DATE 字段 + Java 端截断 created_at</div>
+        <div class="decision-rule">
+          UK <code>(visitor, path, visit_date, created_at)</code> 用于按天去重（每秒一次刷新不算多次 PV）。<strong>Java 端把 created_at 设为 visit_date 00:00:00</strong> 让 UK 真正按天命中。原 UK <code>(visitor, path, created_at)</code> 只能精确到秒——一秒内多次刷新会全部成功。visit_date 同时用于统计 <code>WHERE visit_date = today</code> 走 DATE 类型 index 快。
+        </div>
+        <span class="decision-code">2026-06-16 v2.5.0-fix</span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Section 3: 边界场景 -->
+  <section class="section">
+    <h2>
+      <span>9 种边界场景</span>
+      <span class="badge boundary">BOUNDARY</span>
+    </h2>
+    <p class="section-meta">覆盖 Filter 拦截规则 + 异步写库 + UK 冲突去重 + Dashboard 聚合的全部分支</p>
+
+    <table class="boundary-table">
+      <thead>
+        <tr>
+          <th style="width:24%;">场景</th>
+          <th style="width:24%;">触发条件</th>
+          <th style="width:26%;">后端处理</th>
+          <th style="width:14%;">HTTP / 行为</th>
+          <th style="width:12%;">决策来源</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="scenario">非公开路径（admin / API）</span></td>
+          <td>admin 写操作 / 公开白名单外</td>
+          <td><code>shouldNotFilter</code> → true → 不进 PV filter</td>
+          <td><span class="response ok">不写 page_view</span></td>
+          <td>Filter L95</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">写方法 POST/PUT/DELETE</span></td>
+          <td>用户提交评论 / admin 创建文章</td>
+          <td><code>shouldNotFilter</code> → true</td>
+          <td><span class="response ok">不写 page_view</span></td>
+          <td>Filter L97</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">登录用户</span></td>
+          <td>admin 带 Bearer token 访问公开页</td>
+          <td>filter 直接 chain.doFilter，不算访客</td>
+          <td><span class="response ok">不污染 PV</span></td>
+          <td>D-3</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">Visitor 缺失</span></td>
+          <td>前端没生成 / 清缓存</td>
+          <td><code>recordVisitAsync</code> 早 return debug</td>
+          <td><span class="response warn">不写 page_view</span></td>
+          <td>Service L52</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">同 visitor+path+day 重复</span></td>
+          <td>同用户一秒内刷多次详情页</td>
+          <td>INSERT 撞 UK → 三层 catch 幂等吞掉</td>
+          <td><span class="response ok">仅 1 行（不重复）</span></td>
+          <td>D-2 UK 去重</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">队列满（超 500）</span></td>
+          <td>突发流量 / 异步写库阻塞</td>
+          <td>DiscardPolicy 直接丢弃这次 PV</td>
+          <td><span class="response warn">丢 PV 也不反压业务</span></td>
+          <td>AsyncConfig L35</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">referer 为空/直接访问</span></td>
+          <td>用户输 URL / 书签</td>
+          <td><code>extractDomain</code> → "direct"</td>
+          <td><span class="response ok">归类「直接访问」</span></td>
+          <td>D-6</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">referer 含未知域名</span></td>
+          <td>v2ex.com → V2EX<br/>example.com → 原样</td>
+          <td><code>domainLabel</code> switch 找不到 → 域名本身</td>
+          <td><span class="response ok">显示域名</span></td>
+          <td>D-6</td>
+        </tr>
+        <tr>
+          <td><span class="scenario">爬虫狂打随机 slug</span></td>
+          <td>遍历 /articles/randomXYZ</td>
+          <td>SLUG_CACHE 负缓存 1min（抑制 DB 反复查）+ @Scheduled 5min 清理过 entry</td>
+          <td><span class="response ok">防内存泄漏</span></td>
+          <td>D-4 + D-5</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Section 4: 关键文件 -->
+  <section class="section">
+    <h2>
+      <span>关键文件清单</span>
+      <span class="badge files">FILES</span>
+    </h2>
+    <p class="section-meta">按链路参与顺序：Filter 拦截 → Service 异步写 → entity &amp; 线程池 → Dashboard 聚合</p>
+
+    <div class="file-grid">
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-article/.../security/PageViewFilter.java</div>
+        <div class="file-desc">196 行。<code>@Order(10)</code> 拦截顺序在 AdminAuthFilter 后；shouldNotFilter 仅 GET + 7 个公开白名单；doFilterInternal 登录用户跳过 + SLUG_CACHE 解析 articleId + @Async 调 recordVisitAsync；@Scheduled 5min 清理 SLUG_CACHE</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-article/.../service/PageViewService.java</div>
+        <div class="file-desc">335 行。<code>@Async("pageViewExecutor")</code> 异步落库；<code>isUniqueConstraintDup</code> 三层 DIV 翻译兜底；countTodayPv / countTodayUv / dailyStats / topArticles / topReferrers 5 个聚合方法；extractDomain + domainLabel 14 个搜索引擎/社交平台域名映射</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-article/.../entity/PageView.java</div>
+        <div class="file-desc">字段：id / path / articleId / visitor / ip / userAgent / referer / createdAt / visitDate。UK <code>(visitor, path, visit_date, created_at)</code>：visit_date DATE 做按天去重维度，created_at 截到当日 00:00:00 让 UK 真正按天命中</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-article/.../config/AsyncConfig.java (pageViewExecutor)</div>
+        <div class="file-desc">PV 专用线程池：core=2 / max=4 / queue=500 / <code>DiscardPolicy</code>。统计是 best-effort，队列满直接丢这次 PV 绝不能反压业务</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">backend/blog-app/.../controller/DashboardController.java</div>
+        <div class="file-desc">Dashboard 入口（待画图）：调 PageViewService 5 个聚合方法 + ArticleService / CommentService / CategoryService / AttachmentService 系列 KPI 聚合；dashboard vue 拿数据 render 图表</div>
+      </div>
+
+      <div class="file-card">
+        <div class="file-name">docs/sql/migrations/20260616_page_view_stats.sql</div>
+        <div class="file-desc">建表 SQL：page_view 主键 (id, created_at)，分区表强制要求主键含分区列；UK <code>uk_page_view_visitor_path_date</code>；按月 RANGE 分区——老数据 <code>DROP PARTITION</code> 秒级清理</div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p>分析时间：<code>2026-07-02 09:30</code> · 北京时区 (UTC+8) · 适用版本：<code>v5.0.0+</code> · 任务来源：用户主动扩展流程图覆盖</p>
+  </footer>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'neutral',
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'linear',
+      padding: 8,
+      nodeSpacing: 30,
+      rankSpacing: 25
+    },
+    themeVariables: {
+      fontFamily: "'Outfit', system-ui, sans-serif",
+      fontSize: '15px',
+      primaryColor: '#fdfaf3',
+      primaryTextColor: '#14171e',
+      primaryBorderColor: '#c97b3f',
+      lineColor: '#7c7a72',
+      secondaryColor: '#f7f5f0',
+      tertiaryColor: '#fdfaf3'
+    }
+  });
+</script>
+</body>
+</html>
