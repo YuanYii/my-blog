@@ -12,6 +12,10 @@
 # 注意：profile-specific 文件（application-prod.yml）里不能再写 spring.profiles.active，
 # 否则 Spring Boot 抛 InvalidConfigDataPropertyException。active profile 由启动命令传入。
 
+# 应用版本号（Maven resource filtering 自动替换 ${revision}）
+app:
+  version: @revision@
+
 spring:
   # ---------- SQLite（生产默认，无 docker） ----------
   datasource:
@@ -89,11 +93,11 @@ blog:
   # 2026-07-01 DEV-001：文章附件本地存储（区别于图片上传——不走 /uploads/ 静态服务）
   attachment:
     local:
-      dir: ${ATTACHMENT_DIR:/data/attachments}
+      dir: ${ATTACHMENT_DIR:/opt/myblog/attachments}
 
   # CORS（**生产环境收紧**，只允许你自己的域名）
   cors:
-    allowed-origins: ${CORS_ORIGINS:https://blog.croeyai.cn}
+    allowed-origins: ${CORS_ORIGINS:https://blog.coreyai.cn}
 
   # Swagger（**生产关闭**）
   swagger:

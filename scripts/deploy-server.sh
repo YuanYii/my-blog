@@ -21,6 +21,10 @@
 #   DB_FILE=/opt/myblog/db/blog.db  SQLite 文件位置
 #   SKIP_DEPS=0                  设为 1 跳过依赖安装(已装过的话)
 #   OPEN_FIREWALL=1              设为 1 自动 firewalld/ufw 放行 PUBLIC_PORT(默认 1)
+#   ENABLE_HTTPS=0               设为 1 启用 Let's Encrypt HTTPS 证书 + 80→443 跳转(默认 0)
+#                                 开启需同时设 HTTPS_DOMAIN 和 HTTPS_EMAIL
+#   HTTPS_DOMAIN=blog.croeyai.cn 域名(不带协议,单域场景,多域暂不支持)
+#   HTTPS_EMAIL=your@email.com   Let's Encrypt 通知邮箱(过期/吊销提醒)
 #   DEPLOY_MODE=full             部署模式(默认 full)
 #                                 init = 首次初始化(schema 建库 + 种子数据,不导入业务数据)
 #                                 full = 全量代码升级(保留 DB + 增量 SQL migration)
@@ -46,6 +50,24 @@ if [ -z "${LOCAL_SIM:-}" ] && [ -f /.dockerenv ]; then
 fi
 
 # ============= 0. 参数解析 =============
+# 加载 deploy.env（可选，命令行 export 优先）
+SCRIPT_DIR_DEPLOY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR_DEPLOY/deploy.env" ]; then
+    _CL_EXPORT_DB="${EXPORT_DB:-}"; _CL_IMPORT_DB="${IMPORT_DB:-}"
+    _CL_DEPLOY_MODE="${DEPLOY_MODE:-}"; _CL_ENABLE_HTTPS="${ENABLE_HTTPS:-}"
+    _CL_HTTPS_DOMAIN="${HTTPS_DOMAIN:-}"; _CL_HTTPS_EMAIL="${HTTPS_EMAIL:-}"
+    _CL_CDN_SSL="${CDN_SSL:-}"
+    set -a; source "$SCRIPT_DIR_DEPLOY/deploy.env"; set +a
+    [ -n "$_CL_EXPORT_DB" ] && EXPORT_DB="$_CL_EXPORT_DB"
+    [ -n "$_CL_IMPORT_DB" ] && IMPORT_DB="$_CL_IMPORT_DB"
+    [ -n "$_CL_DEPLOY_MODE" ] && DEPLOY_MODE="$_CL_DEPLOY_MODE"
+    [ -n "$_CL_ENABLE_HTTPS" ] && ENABLE_HTTPS="$_CL_ENABLE_HTTPS"
+    [ -n "$_CL_HTTPS_DOMAIN" ] && HTTPS_DOMAIN="$_CL_HTTPS_DOMAIN"
+    [ -n "$_CL_HTTPS_EMAIL" ] && HTTPS_EMAIL="$_CL_HTTPS_EMAIL"
+    [ -n "$_CL_CDN_SSL" ] && CDN_SSL="$_CL_CDN_SSL"
+    unset _CL_EXPORT_DB _CL_IMPORT_DB _CL_DEPLOY_MODE _CL_ENABLE_HTTPS _CL_HTTPS_DOMAIN _CL_HTTPS_EMAIL _CL_CDN_SSL
+fi
+
 TAG="${1:-${RELEASE_TAG:-}}"
 GITHUB_REPO="${GITHUB_REPO:-}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/myblog}"
@@ -57,6 +79,10 @@ OPEN_FIREWALL="${OPEN_FIREWALL:-1}"
 DEPLOY_MODE="${DEPLOY_MODE:-full}"      # init | full | docker-create | docker-init
 IMPORT_DB="${IMPORT_DB:-0}"             # 0/1
 LOCAL_SIM="${LOCAL_SIM:-0}"             # 0=生产模式  1=本地模拟容器模式
+ENABLE_HTTPS="${ENABLE_HTTPS:-0}"       # 0/1
+HTTPS_DOMAIN="${HTTPS_DOMAIN:-}"
+HTTPS_EMAIL="${HTTPS_EMAIL:-}"
+CDN_SSL="${CDN_SSL:-0}"                 # 0/1
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
@@ -88,6 +114,24 @@ case "$DEPLOY_MODE" in
 esac
 
 # (v4.4.0: 'data' 模式已删除,矛盾检测块随之移除——'full + IMPORT_DB=1' 是合法组合,不构成矛盾)
+
+# ENABLE_HTTPS=1 时必填 HTTPS_DOMAIN + HTTPS_EMAIL
+if [ "$ENABLE_HTTPS" = "1" ]; then
+    if [ -z "$HTTPS_DOMAIN" ] || [ -z "$HTTPS_EMAIL" ]; then
+        err "ENABLE_HTTPS=1 requires HTTPS_DOMAIN and HTTPS_EMAIL"
+        err "  HTTPS_DOMAIN=blog.croeyai.cn  (no protocol)"
+        err "  HTTPS_EMAIL=your@email.com"
+        exit 1
+    fi
+    if echo "$HTTPS_DOMAIN" | grep -qE '^https?://'; then
+        err "HTTPS_DOMAIN must NOT contain protocol, got: $HTTPS_DOMAIN"
+        exit 1
+    fi
+    if echo "$HTTPS_DOMAIN" | grep -q '/'; then
+        err "HTTPS_DOMAIN must NOT contain path, got: $HTTPS_DOMAIN"
+        exit 1
+    fi
+fi
 
 # init 模式:DB 已存在时警告(可能误操作)
 if [ "$DEPLOY_MODE" = "init" ] && [ -f "$DB_FILE" ]; then
@@ -291,6 +335,16 @@ if [ -f "$TMP_DIR/sqlite-export.sh" ]; then
     info "[OK] sqlite-export.sh installed to $INSTALL_DIR/scripts/"
 else
     warn "sqlite-export.sh not in release (v4.3.0+ admin data export feature will not work)"
+fi
+
+# 历史日志迁移脚本：部署到 $INSTALL_DIR/logs/migrate-logs.sh
+# 用于将根目录下旧日志归档到 archive/YYYY-MM/ 子目录
+if [ -f "$TMP_DIR/migrate-logs.sh" ]; then
+    cp "$TMP_DIR/migrate-logs.sh" "$INSTALL_DIR/logs/migrate-logs.sh"
+    chmod +x "$INSTALL_DIR/logs/migrate-logs.sh"
+    info "[OK] migrate-logs.sh installed to $INSTALL_DIR/logs/"
+else
+    warn "migrate-logs.sh not in release (legacy log migration feature will not work)"
 fi
 
 # ============= 4.5 启动 Redis（提前：让 §5 stop_app / flush_redis 有 redis 可用）=============
@@ -983,6 +1037,114 @@ else
 fi
 info "[OK] nginx configured and started"
 
+# ============= 9.5 HTTPS 配置(可选,ENABLE_HTTPS=1 触发) =============
+if [ "$ENABLE_HTTPS" != "1" ]; then
+    info "=== 9.5 HTTPS config ==="
+    info "    ENABLE_HTTPS=0, skipping HTTPS (HTTP-only deploy)"
+else
+    info "=== 9.5 HTTPS config (ENABLE_HTTPS=1) ==="
+
+    # 9.5.1 certbot webroot 目录
+    mkdir -p /var/www/certbot
+    chown -R www-data:www-data /var/www/certbot 2>/dev/null || \
+        chown -R nginx:nginx /var/www/certbot 2>/dev/null || true
+
+    # 9.5.2 安装 certbot（已装跳过）
+    if ! command -v certbot >/dev/null 2>&1; then
+        info "Installing certbot..."
+        if command -v apt-get >/dev/null 2>&1; then
+            DEBIAN_FRONTEND=noninteractive apt-get update -qq && \
+                DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot
+        elif command -v yum >/dev/null 2>&1; then
+            yum install -y -q certbot
+        else
+            err "Neither apt-get nor yum found, please install certbot manually"
+            exit 1
+        fi
+    else
+        info "certbot already installed: $(certbot --version 2>&1 | head -1)"
+    fi
+
+    # 9.5.3 写 HTTP-only 配置（覆盖 step 9 的 myblog.conf）
+    #      HTTPS 模式下 80 端口不能反代，必须留给 certbot 校验 + 301 跳转
+    HTTP_CONF="/etc/nginx/conf.d/myblog-http.conf"
+    rm -f /etc/nginx/conf.d/myblog.conf
+    info "Writing HTTP-only nginx config to $HTTP_CONF ..."
+    sed -e "s|\${NGINX_DOMAIN}|$HTTPS_DOMAIN|g" \
+        -e "s|\${PUBLIC_PORT}|$PUBLIC_PORT|g" \
+        "$TMP_DIR/nginx-http.conf" > "$HTTP_CONF"
+
+    # 9.5.4 reload nginx 让 certbot 校验路径生效
+    if [ "$LOCAL_SIM" = "1" ]; then
+        nginx -t && supervisorctl restart nginx
+    else
+        nginx -t && systemctl reload nginx
+    fi
+
+    # 9.5.5 申请证书（webroot 模式，80 端口已跑不影响用户）
+    info "Requesting Let's Encrypt certificate for: $HTTPS_DOMAIN"
+    if certbot certonly --webroot -w /var/www/certbot \
+        -d "$HTTPS_DOMAIN" \
+        --email "$HTTPS_EMAIL" \
+        --agree-tos --no-eff-email --non-interactive 2>&1 | tee /tmp/certbot.log; then
+        CERT_PATH="/etc/letsencrypt/live/$HTTPS_DOMAIN"
+        if [ ! -f "$CERT_PATH/fullchain.pem" ]; then
+            err "certbot reported success but cert not found at $CERT_PATH"
+            err "  check /tmp/certbot.log"
+            exit 1
+        fi
+        info "  Certificate issued: $CERT_PATH"
+    else
+        err "certbot failed, see /tmp/certbot.log"
+        err "  Common causes:"
+        err "  1. DNS A record not resolved to this server's public IP"
+        err "  2. Port 80 blocked by firewall/security group"
+        err "  3. Let's Encrypt rate limit (50 certs/week per domain)"
+        exit 1
+    fi
+
+    # 9.5.6 写 HTTPS 配置
+    HTTPS_CONF="/etc/nginx/conf.d/myblog-https.conf"
+    info "Writing HTTPS nginx config to $HTTPS_CONF ..."
+    sed -e "s|\${NGINX_DOMAIN}|$HTTPS_DOMAIN|g" \
+        -e "s|\${SERVER_PORT}|$SERVER_PORT|g" \
+        -e "s|\${INSTALL_DIR}|$INSTALL_DIR|g" \
+        "$TMP_DIR/nginx-https.conf" > "$HTTPS_CONF"
+
+    # 9.5.7 校验 + reload
+    if [ "$LOCAL_SIM" = "1" ]; then
+        nginx -t && supervisorctl restart nginx
+    else
+        nginx -t && systemctl reload nginx
+    fi
+    info "[OK] HTTPS enabled, HTTP auto-redirects to HTTPS"
+
+    # 9.5.8 更新 CORS_ORIGINS（加 https 域名）
+    if [ -f "$ENV_FILE" ]; then
+        HTTPS_ORIGIN="https://$HTTPS_DOMAIN"
+        if ! grep -qF "$HTTPS_ORIGIN" "$ENV_FILE"; then
+            sed -i.bak "s|^CORS_ORIGINS=.*|CORS_ORIGINS=$HTTPS_ORIGIN|" "$ENV_FILE"
+            if [ "$LOCAL_SIM" = "1" ]; then
+                supervisorctl restart myblog
+            else
+                systemctl restart myblog
+            fi
+            info "[OK] CORS_ORIGINS updated: $HTTPS_ORIGIN (service restarted)"
+        else
+            info "CORS_ORIGINS already contains $HTTPS_ORIGIN, skipping"
+        fi
+    fi
+
+    # 9.5.9 证书自动续期 cron（错开 rebuild-static.sh 的 0 3 * * *）
+    if ! crontab -l 2>/dev/null | grep -q "certbot renew"; then
+        info "Adding certbot auto-renewal cron (daily 03:30)..."
+        ( crontab -l 2>/dev/null; echo "30 3 * * * certbot renew --quiet --post-hook 'systemctl reload nginx'" ) | crontab -
+        info "  cron installed"
+    else
+        info "certbot renew cron already exists, skipping"
+    fi
+fi  # ENABLE_HTTPS block
+
 # ============= 10. Redis 健康检查（启动已在 §4.5 完成）=============
 # 2026-06-22 改动:redis 启动逻辑提前到 §4.5,确保 §5 stop_app / flush_redis 可用.
 #   本步骤改为"验证 redis 在线"兜底,失败给 warn (不致命,运行时也会暴露).
@@ -1057,6 +1219,10 @@ info "=========================================="
 info " [OK] Deployment complete"
 info "=========================================="
 info "  Access:        http://<server-ip>:$PUBLIC_PORT"
+if [ "$ENABLE_HTTPS" = "1" ]; then
+    info "  HTTPS:         https://$HTTPS_DOMAIN (HTTP→HTTPS 301 forced)"
+    info "  Cert renew:    certbot renew (auto cron, daily 03:30)"
+fi
 info "  Admin:        http://<server-ip>:$PUBLIC_PORT/admin/login"
 info "  Default account:    admin / 123456  (change password in production)"
 if [ "$LOCAL_SIM" = "1" ]; then

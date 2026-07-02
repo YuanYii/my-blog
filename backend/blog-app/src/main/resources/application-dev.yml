@@ -1,5 +1,10 @@
 # 2026-06-17 v2.6.0：dev 默认改用 SQLite（之前是 MySQL）
 # 切回 MySQL：spring.profiles.active=dev,mysql
+
+# 应用版本号（Maven resource filtering 自动替换 ${revision}）
+app:
+  version: @revision@
+
 spring:
   datasource:
     # SQLite（dev 默认）

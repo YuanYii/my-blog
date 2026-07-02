@@ -20,6 +20,7 @@
 #   - sqlite-import.sh             (服务器端解密脚本,IMPORT_DB=1 时 deploy-server 调用)
 #   - sqlite-export.sh             (服务器端加密导出脚本,admin 后台数据备份功能需要)
 #   - blog-backup.sh               (服务器端数据备份脚本,v4.2.0+ admin 后台「数据备份」菜单触发)
+#   - migrate-logs.sh              (历史日志迁移脚本,v4.0.0~v4.3.0 旧日志归档到 archive/YYYY-MM/)
 #   - dev-blog-dump.sql.gz.enc     (加密 db 导出,EXPORT_DB=1 时才有)
 #   - deploy-bundle-vX.Y.Z.zip     (上面几件套的合包，给一次性冷部署)
 #   - SHA256SUMS                   (校验文件)
@@ -265,6 +266,27 @@ chmod +x "$STAGE_DIR/assets/blog-backup.sh"
 
 # v5.0 数据恢复改为同 JVM 进程内执行 (RestoreExecutor),不再打包 blog-restore.sh
 
+# migrate-logs.sh 历史日志迁移脚本（v4.3.0+ 部署后可执行，将根目录旧日志归档到 archive/YYYY-MM/）
+if [ ! -f "$ROOT_DIR/scripts/migrate-logs.sh" ]; then
+    err "$ROOT_DIR/scripts/migrate-logs.sh 不存在，无法发布"
+    exit 1
+fi
+cp "$ROOT_DIR/scripts/migrate-logs.sh"    "$STAGE_DIR/assets/migrate-logs.sh"
+chmod +x "$STAGE_DIR/assets/migrate-logs.sh"
+
+# ============= 4.7 打包 nginx 配置模板 =============
+# HTTPS 流程(deploy-server.sh step 9.5)需要这两个模板
+# 配置文件来源: docs/nginx/ 是设计文档, 这里是部署物料
+info "=== 4.7 Packing nginx templates ==="
+if [ ! -f "$ROOT_DIR/docs/nginx/nginx-http.conf" ] || [ ! -f "$ROOT_DIR/docs/nginx/nginx-https.conf" ]; then
+    err "docs/nginx/nginx-http.conf or nginx-https.conf not found"
+    err "  (HTTPS flow requires these templates)"
+    exit 1
+fi
+cp "$ROOT_DIR/docs/nginx/nginx-http.conf"   "$STAGE_DIR/assets/nginx-http.conf"
+cp "$ROOT_DIR/docs/nginx/nginx-https.conf"  "$STAGE_DIR/assets/nginx-https.conf"
+info "  nginx-http.conf + nginx-https.conf added"
+
 # ============= 4.6 数据导出(可选,EXPORT_DB=1 触发)=============
 # 把 dev blog.db 加密导出到 staging(随 release 发布)
 # 默认关闭,避免每次发版都要敲密码
@@ -299,7 +321,7 @@ fi
 # 计算每个 asset 的 sha256(包含可选的 .enc)
 info "生成 SHA256SUMS..."
 cd "$STAGE_DIR/assets"
-SUM_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh"
+SUM_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh nginx-http.conf nginx-https.conf"
 [ -f dev-blog-dump.sql.gz.enc ] && SUM_FILES="$SUM_FILES dev-blog-dump.sql.gz.enc"
 shasum -a 256 $SUM_FILES > SHA256SUMS 2>/dev/null || \
     sha256sum $SUM_FILES > SHA256SUMS
@@ -308,7 +330,7 @@ cd "$ROOT_DIR"
 # 打 zip 冷部署包
 BUNDLE="deploy-bundle-${TAG}.zip"
 cd "$STAGE_DIR/assets"
-ZIP_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh SHA256SUMS"
+ZIP_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh nginx-http.conf nginx-https.conf SHA256SUMS"
 [ -f dev-blog-dump.sql.gz.enc ] && ZIP_FILES="$ZIP_FILES dev-blog-dump.sql.gz.enc"
 zip -q "$BUNDLE" $ZIP_FILES
 cd "$ROOT_DIR"
@@ -407,6 +429,9 @@ upload_one "$STAGE_DIR/assets/deploy-server.sh"        "deploy-server.sh"
 upload_one "$STAGE_DIR/assets/sqlite-import.sh"        "sqlite-import.sh"
 upload_one "$STAGE_DIR/assets/sqlite-export.sh"        "sqlite-export.sh"
 upload_one "$STAGE_DIR/assets/blog-backup.sh"          "blog-backup.sh"
+upload_one "$STAGE_DIR/assets/migrate-logs.sh"         "migrate-logs.sh"
+upload_one "$STAGE_DIR/assets/nginx-http.conf"         "nginx-http.conf"
+upload_one "$STAGE_DIR/assets/nginx-https.conf"        "nginx-https.conf"
 # 可选:加密的 db dump(EXPORT_DB=1 时存在)
 [ -f "$STAGE_DIR/assets/dev-blog-dump.sql.gz.enc" ] && \
     upload_one "$STAGE_DIR/assets/dev-blog-dump.sql.gz.enc" "dev-blog-dump.sql.gz.enc"

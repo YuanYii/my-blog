@@ -67,6 +67,9 @@ public class HealthController {
     @Value("${SSL_CERT_PATH:}")
     private String sslCertPath;
 
+    @Value("${app.version:unknown}")
+    private String appVersion;
+
     private Instant startedAt;
 
     @PostConstruct
@@ -78,7 +81,8 @@ public class HealthController {
     public Result<Map<String, Object>> health() {
         Map<String, Object> data = new LinkedHashMap<>();
 
-        // 1. Uptime
+        // 0. Version + Uptime
+        data.put("version", appVersion);
         if (startedAt != null) {
             long sec = ChronoUnit.SECONDS.between(startedAt, Instant.now());
             data.put("uptimeSec", sec);
@@ -197,6 +201,15 @@ public class HealthController {
     private Map<String, Object> probeSsl() {
         Map<String, Object> info = new LinkedHashMap<>();
         try {
+            // CDN 场景：SSL 由 CDN 终结，源站无证书文件
+            String cdnDomain = System.getenv("CDN_DOMAIN");
+            if (cdnDomain != null && !cdnDomain.trim().isEmpty()) {
+                info.put("configured", true);
+                info.put("provider", "CDN");
+                info.put("domain", cdnDomain.trim());
+                info.put("note", "SSL 由 CDN 终结（Flexible 模式），源站无需本地证书");
+                return info;
+            }
             Path certPath = resolveCertPath();
             if (certPath == null || !Files.exists(certPath)) {
                 info.put("configured", false);

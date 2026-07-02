@@ -9,7 +9,7 @@
 
 ## 1. 背景与目标
 
-my-blog 当前（v4.0.0）部署在 1C2G ECS 上，使用 SQLite + Redis + Spring Boot + Nuxt 全静态（nginx:alpine serve `.output/public/`）。当前 `docs/scripts/deploy-server.sh` 只配了 HTTP（80），**完全没有 HTTPS**，存在两个问题：
+my-blog 当前（v4.0.0）部署在 1C2G ECS 上，使用 SQLite + Redis + Spring Boot + Nuxt 全静态（nginx:alpine serve `.output/public/`）。当前 `scripts/deploy-server.sh` 只配了 HTTP（80），**完全没有 HTTPS**，存在两个问题：
 
 - **数据明文传输**：管理员登录 token、所有 API 请求全走 HTTP，任意中间人都能抓
 - **浏览器安全策略收紧**：现代浏览器对 HTTP 网站持续降级（地址栏"Not Secure"、PWA/Service Worker 等功能受限），CORS 也更严格
@@ -43,8 +43,8 @@ my-blog 当前（v4.0.0）部署在 1C2G ECS 上，使用 SQLite + Redis + Sprin
 |---|---|---|
 | `docs/nginx/nginx-http.conf` | **新增** | 80 端口配置模板：certbot 校验路径 + 301 跳转 |
 | `docs/nginx/nginx-https.conf` | **新增** | 443 端口配置模板：证书 + HSTS + 安全头 + 反代 + 静态文件 |
-| `docs/scripts/publish-release.sh` | 修改 | step 4.7 打包 nginx 模板；step 6 上传；zip 包含；SHA256SUMS 包含 |
-| `docs/scripts/deploy-server.sh` | 修改 | step 0 加 3 个变量；step 9.5 新增 HTTPS 流程；header 注释更新；收尾日志更新 |
+| `scripts/publish-release.sh` | 修改 | step 4.7 打包 nginx 模板；step 6 上传；zip 包含；SHA256SUMS 包含 |
+| `scripts/deploy-server.sh` | 修改 | step 0 加 3 个变量；step 9.5 新增 HTTPS 流程；header 注释更新；收尾日志更新 |
 | `scripts/deploy.env.example` | 修改 | 加 HTTPS 配置说明 |
 
 ---
@@ -126,7 +126,7 @@ server {
 
     # ---------- 限流（防刷） ----------
     limit_req_zone $binary_remote_addr zone=api_limit:10m  rate=20r/s;
-    limit_req_zone $binary_remote_addr zone=login_limit:10m rate=5r/m;
+    limit_req_zone $binary_remote_addr zone=login_limit:10m rate=10r/m;
 
     # ---------- 前端静态文件（v2.7.0 全静态） ----------
     root         ${INSTALL_DIR}/frontend;
@@ -140,6 +140,14 @@ server {
     location ~* \.(js|css|woff2?|ttf|svg|png|jpg|jpeg|gif|ico|webp)$ {
         expires 7d;
         add_header Cache-Control "public, immutable";
+    }
+
+    # ---------- 上传文件直接访问（不走 Spring Boot） ----------
+    location ^~ /uploads/ {
+        alias ${INSTALL_DIR}/uploads/;
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
     }
 
     # ---------- API 反代（限流 + 反代到 Spring Boot） ----------
@@ -553,16 +561,16 @@ echo | openssl s_client -connect blog.coreyai.cn:443 -servername blog.coreyai.cn
 ## 12. 实施步骤（待开工）
 
 1. 在 `docs/nginx/` 下新建 `nginx-http.conf` + `nginx-https.conf`
-2. 修改 `docs/scripts/publish-release.sh`：
+2. 修改 `scripts/publish-release.sh`：
    - 加 step 4.7 打包
    - 更新 SUM_FILES / ZIP_FILES / upload_one
-3. 修改 `docs/scripts/deploy-server.sh`：
+3. 修改 `scripts/deploy-server.sh`：
    - header 注释
    - step 0 参数 + 校验
    - 新增 step 9.5 HTTPS 全流程
    - step 13 收尾日志
 4. 修改 `scripts/deploy.env.example`：追加 HTTPS 配置说明
 5. 测试：
-   - `bash docs/scripts/verify-sqlite.sh` 仍然通过（HTTP 模式无回归）
+   - `bash scripts/verify-sqlite.sh` 仍然通过（HTTP 模式无回归）
    - 本地 dry-run：手动把 step 9.5 的 sed/certbot 命令在容器里跑一遍（无证书签发，只看 nginx -t 通过）
 6. 写 changelog：`docs/changelogs/YYYY-MM-DD-vX.Y.Z-https-optional.md`
