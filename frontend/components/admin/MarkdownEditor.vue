@@ -89,8 +89,8 @@ const insertImagePrompt = async () => {
 }
 
 const safeMarkdown = (md: string) => DOMPurify.sanitize(renderMarkdown(md), {
-  ALLOWED_TAGS: ['p', 'h1', 'h2', 'h3', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'br', 'hr', 'img'],
-  ALLOWED_ATTR: ['href', 'target', 'class', 'src', 'alt', 'loading']
+  ALLOWED_TAGS: ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'br', 'hr', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'del', 'mark', 'input'],
+  ALLOWED_ATTR: ['href', 'target', 'class', 'src', 'alt', 'loading', 'id', 'checked', 'disabled', 'type']
 })
 </script>
 
@@ -104,6 +104,7 @@ const safeMarkdown = (md: string) => DOMPurify.sanitize(renderMarkdown(md), {
       <button class="editor-tool" type="button" title="粗体" @click="insertMarkdown('**', '**', '粗体文本')"><strong>B</strong></button>
       <button class="editor-tool" type="button" title="斜体" @click="insertMarkdown('*', '*', '斜体文本')"><em>I</em></button>
       <button class="editor-tool" type="button" title="删除线" @click="insertMarkdown('~~', '~~', '删除文本')"><s>S</s></button>
+      <button class="editor-tool" type="button" title="高亮" @click="insertMarkdown('==', '==', '高亮文本')" style="background: #fef08a; color: #854d0e; border-radius: 4px;"><strong>H</strong></button>
       <span class="editor-tool divider"></span>
       <button class="editor-tool" type="button" title="链接" @click="insertMarkdown('[', '](https://)', '链接文字')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>

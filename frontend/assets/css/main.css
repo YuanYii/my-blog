@@ -873,6 +873,10 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
   background: var(--card); border-left: 3px solid var(--accent);
   color: var(--text-2);
 }
+.editor-pane.preview table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+.editor-pane.preview th, .editor-pane.preview td { padding: 8px 12px; border: 1px solid var(--line); text-align: left; }
+.editor-pane.preview th { background: var(--bg-soft); font-weight: 600; }
+.editor-pane.preview mark { background: #fef08a; color: inherit; padding: 1px 4px; border-radius: 3px; }
 
 .editor-sidebar { display: flex; flex-direction: column; gap: 16px; }
 .sidebar-card {

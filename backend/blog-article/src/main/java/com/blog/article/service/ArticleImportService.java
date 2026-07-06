@@ -41,6 +41,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -205,6 +206,12 @@ public class ArticleImportService {
                     throw new BusinessException(400, "ZIP 包路径不合法（含 .. 或绝对路径）: " + rawName);
                 }
                 if (entry.isDirectory()) continue;
+
+                // 跳过以 . 开头的隐藏文件（如 .DS_Store、.gitignore 等）
+                String entryName = rawName;
+                int lastSlash = rawName.lastIndexOf('/');
+                if (lastSlash >= 0) entryName = rawName.substring(lastSlash + 1);
+                if (entryName.startsWith(".")) continue;
 
                 String lower = rawName.toLowerCase(Locale.ROOT);
                 if (!lower.endsWith(".md") && !lower.endsWith(".png")) {
@@ -402,17 +409,32 @@ public class ArticleImportService {
         return s.isEmpty() ? "tag-" + System.currentTimeMillis() : s;
     }
 
+    private static final Random SLUG_RANDOM = new Random();
+    private static final String SLUG_PREFIX_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    /** 生成 3 位随机大写字母前缀（如 ABC、XYZ） */
+    private static String randomSlugPrefix() {
+        StringBuilder sb = new StringBuilder(3);
+        for (int i = 0; i < 3; i++) {
+            sb.append(SLUG_PREFIX_CHARS.charAt(SLUG_RANDOM.nextInt(SLUG_PREFIX_CHARS.length())));
+        }
+        return sb.toString();
+    }
+
     /**
      * 保证 article.slug 唯一（同名加 -{n} 后缀）
+     * 注意：必须用 JdbcTemplate 绕过 MyBatis-Plus @TableLogic 自动过滤 deleted=1，
+     *       否则软删记录的 slug 不会被检测到，但 UNIQUE 约束仍会冲突。
      */
     private String ensureUniqueSlug(String base) {
-        String slug = base;
+        String slug = randomSlugPrefix() + "-" + base;
         int n = 2;
-        while (articleMapper.selectOne(new QueryWrapper<Article>().eq("slug", slug)) != null) {
-            slug = base + "-" + n;
+        while (jdbc.queryForObject("SELECT COUNT(*) FROM article WHERE slug = ?", Integer.class, slug) != null
+                && jdbc.queryForObject("SELECT COUNT(*) FROM article WHERE slug = ?", Integer.class, slug) > 0) {
+            slug = randomSlugPrefix() + "-" + base + "-" + n;
             n++;
             if (n > 100) {
-                slug = base + "-" + System.currentTimeMillis();
+                slug = randomSlugPrefix() + "-" + base + "-" + System.currentTimeMillis();
                 break;
             }
         }
