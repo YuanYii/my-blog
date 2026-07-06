@@ -2,6 +2,8 @@
 import DOMPurify from 'dompurify'
 import { formatDate as formatDateShared, formatDateTime as formatDateTimeShared, renderMarkdown, extractHeadings } from '~/composables/useMarkdownUtils'
 
+definePageMeta({ layout: 'post' })
+
 const route = useRoute()
 const { get, post, downloadAttachment } = usePublicApi()
 const $toast = useToast()
@@ -284,7 +286,7 @@ onBeforeUnmount(() => {
 .post-layout {
   display: flex;
   gap: 32px;
-  max-width: 1024px;
+  max-width: 1400px;
   margin: 0 auto;
 }
 .post-main {
@@ -298,10 +300,16 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 .post-toc-inner {
-  position: sticky;
+  position: fixed;
   top: 80px;
+  right: calc(50vw - 700px);
+  width: 220px;
   max-height: calc(100dvh - 100px);
   overflow-y: auto;
+}
+
+@media (max-width: 1440px) {
+  .post-toc-inner { right: 16px; }
 }
 .post-toc-title {
   font-size: 12px;
@@ -342,7 +350,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1100px) {
-  .post-toc { display: none; }
+  .post-toc, .post-toc-inner { display: none; }
   .post-layout { max-width: 100%; }
 }
 
