@@ -1,0 +1,133 @@
+# 任务跟踪文档 · 20260707
+
+> 最后更新：2026-07-07 13:20:00 · 项目：my-blog
+
+---
+
+## BUG项
+
+### 20260707-BUG-001 | 高 | ✅ 已完成
+
+- **描述**：用户登录接口返回 500 错误
+- **修复建议**：检查 AuthController 中的空指针异常
+- **涉及文件列表**：`src/main/java/com/example/controller/AuthController.java:45`
+- **解决方案**：添加 null 检查，修复 token 解析逻辑
+- **完成时间**：2026-07-07 10:00:00
+- **人工验证结果**：
+
+### 20260707-BUG-002 | 高 | ✅ 已完成
+
+- **描述**：文章列表分页参数失效，始终返回第一页
+- **修复建议**：检查 MyBatis-Plus 分页插件配置
+- **涉及文件列表**：`src/main/java/com/example/config/MybatisPlusConfig.java:12`
+- **解决方案**：分页插件未注册，添加 @Bean 配置
+- **完成时间**：2026-07-07 10:30:00
+- **人工验证结果**：
+
+### 20260707-BUG-003 | 中 | 🔴 未完成
+
+- **描述**：图片上传超过 5MB 时无错误提示
+- **修复建议**：在文件上传接口添加大小校验
+- **涉及文件列表**：`src/main/java/com/example/controller/FileController.java`
+- **解决方案**：单任务 >15 分钟，已回滚
+- **完成时间**：2026-07-07 11:45:00
+- **人工验证结果**：
+
+---
+
+## 优化项
+
+### 20260707-OPT-001 | 中 | ✅ 已完成
+
+- **优化描述**：文章列表接口响应慢，超过 2 秒
+- **涉及文件列表**：`src/main/java/com/example/mapper/ArticleMapper.java:28`
+- **完成时间**：2026-07-07 10:45:00
+- **人工验证结果**：
+
+### 20260707-OPT-002 | 低 | 🟡 待处理
+
+- **优化描述**：后台管理页面加载白屏时间过长
+- **涉及文件列表**：`frontend/nuxt.config.ts`, `frontend/pages/admin/index.vue`
+- **完成时间**：
+- **人工验证结果**：
+
+---
+
+## 开发项
+
+### 20260707-DEV-001 | 高 | ✅ 已完成
+
+- **开发内容**：新增文章收藏功能 API（增删查）
+- **涉及文件列表**：`src/main/java/com/example/controller/FavoriteController.java`, `src/main/java/com/example/service/FavoriteService.java`
+- **完成时间**：2026-07-07 11:00:00
+- **人工验证结果**：
+
+### 20260707-DEV-002 | 高 | ✅ 已完成
+
+- **开发内容**：新增文章收藏前端页面（列表 + 取消收藏）
+- **涉及文件列表**：`frontend/pages/favorites/index.vue`, `frontend/components/FavoriteButton.vue`
+- **完成时间**：2026-07-07 11:30:00
+- **人工验证结果**：
+
+### 20260707-DEV-003 | 中 | 🔴 未完成
+
+- **开发内容**：新增文章评论功能（发表 + 回复 + 删除）
+- **涉及文件列表**：`src/main/java/com/example/controller/CommentController.java`
+- **解决方案**：需修改 >10 个文件，已暂停
+- **完成时间**：2026-07-07 11:45:00
+- **人工验证结果**：
+
+### 20260707-DEV-004 | 中 | 🟡 待处理
+
+- **开发内容**：新增文章标签分类功能
+- **涉及文件列表**：待定（以项目经理最终提取为准）
+- **完成时间**：
+- **人工验证结果**：
+
+### 20260707-DEV-005 | 低 | 🟡 待处理
+
+- **开发内容**：新增文章阅读量统计
+- **涉及文件列表**：待定（以项目经理最终提取为准）
+- **完成时间**：
+- **人工验证结果**：
+
+---
+
+## 处理报告｜2026-07-07 11:45:00
+
+- 处理任务：20260707-BUG-001, 20260707-BUG-002, 20260707-OPT-001, 20260707-DEV-001, 20260707-DEV-002, 20260707-BUG-003, 20260707-DEV-003
+- 修改文件：AuthController.java, MybatisPlusConfig.java, ArticleMapper.java, FavoriteController.java, FavoriteService.java, FavoriteButton.vue, CommentController.java
+- 验证结果：5 个通过，2 个失败（超时/文件过多）
+- 未完成任务：20260707-BUG-003（单任务 >15 分钟），20260707-DEV-003（需修改 >10 个文件）
+
+### autopush-20260707-BUG-004 | 中 | 🟡 待处理
+
+- **原任务编号**：20260707-BUG-003
+- **描述**：图片上传大小校验缺失（来自 Stage 4 审计偏差）
+- **修复建议**：在 FileController 中添加 MultipartFile.getSize() 校验
+- **涉及文件列表**：`src/main/java/com/example/controller/FileController.java:32`
+- **人工验证结果**：
+
+### autopush-20260707-DEV-006 | 低 | 🟡 待处理
+
+- **原任务编号**：20260707-DEV-003
+- **描述**：评论功能拆分为子任务（来自 Stage 4 审计偏差）
+- **修复建议**：先实现基础评论，再实现回复和删除
+- **涉及文件列表**：`src/main/java/com/example/controller/CommentController.java:15`
+- **人工验证结果**：
+
+---
+
+## 工作流状态｜20260707
+
+> 最后更新：2026-07-07 13:20:00 · 来源：autodev/status.json
+
+| Stage | 状态 | 结论摘要 |
+|-------|------|---------|
+| 1 需求拟定 | ✅ success | 已完成需求拟定，生成 8 个任务（BUG:2 OPT:2 DEV:4） |
+| 2 代码实现 | ✅ success | 已完成 6 个任务，2 个未完成（超时） |
+| 3 代码审查 | ✅ success | 已完成审查，发现 1 个严重、2 个警告、1 个建议 |
+| 4 静态审计 | ✅ success | 已完成审计 6 个任务，4 个通过，2 个有偏差 |
+| 5 集成测试 | ⏭️ skipped | 无 🔍 项，无需集成测试 |
+| 6 门控 | ✅ success | 已完成复核，生成 2 个修复卡片（BUG:1 DEV:1） |
+| 7 文档同步 | ⏸️ pending | - |

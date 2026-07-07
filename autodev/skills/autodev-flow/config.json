@@ -1,0 +1,60 @@
+{
+  "_comment": "autodev-flow 项目配置文件（通用模板）",
+
+  "project": {
+    "_comment": "项目基本信息",
+    "name": "{{PROJECT_NAME}}",
+    "nameEn": "{{PROJECT_NAME_EN}}",
+    "workspace": "项目根目录"
+  },
+
+  "modules": {
+    "_comment": "项目模块结构（用于编译检查、文件定位）",
+    "backend": "{{BACKEND}}",
+    "frontend": "{{FRONTEND}}",
+    "app": "{{MODULE_APP}}"
+  },
+
+  "database": {
+    "_comment": "数据库配置",
+    "type": "{{DB_TYPE}}",
+    "devFile": "{{DB_DEV_FILE}}",
+    "schemaSqlite": "{{SCHEMA_SQLITE}}",
+    "schemaMysql": "{{SCHEMA_MYSQL}}"
+  },
+
+  "techStack": {
+    "_comment": "技术栈（用于代码审查规则、编译命令）",
+    "backend": "{{TECH_BACKEND}}",
+    "orm": "{{TECH_ORM}}",
+    "frontend": "{{TECH_FRONTEND}}",
+    "language": ["{{LANGUAGE_1}}", "{{LANGUAGE_2}}"],
+    "cache": "{{TECH_CACHE}}"
+  },
+
+  "ports": {
+    "_comment": "服务端口（用于启动检查、API 调用）",
+    "backend": 8080,
+    "frontend": 3000,
+    "redis": 6379
+  },
+
+  "api": {
+    "_comment": "API 配置（用于健康检查、接口调用）",
+    "prefix": "/api/v1",
+    "healthCheck": "/health"
+  },
+
+  "docs": {
+    "_comment": "文档路径（用于文档同步）",
+    "design": "docs/design/设计文档.md",
+    "readme": "README.md",
+    "agents": "AGENTS.md"
+  },
+
+  "docker": {
+    "_comment": "Docker 配置（用于集成测试启动服务）",
+    "redisImage": "redis:7-alpine",
+    "containerName": "{{PROJECT_NAME}}-redis"
+  }
+}
