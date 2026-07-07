@@ -976,6 +976,37 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
+    # SEO 文章页：转后端返回含内容的 HTML（渐进增强方案）
+    # 后端 context-path /api/v1 → /api/v1/seo/post/{slug}
+    # 搜索引擎爬虫拿到有内容的 HTML，用户浏览器加载 Vue SPA 后增强交互
+    location /post/ {
+        proxy_pass         http://127.0.0.1:NGINX_APP_PORT/api/v1/seo/post/;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+        # 缓存 10 分钟（文章内容不常变）
+        proxy_cache_valid 200 10m;
+    }
+
+    # 动态 Sitemap：转后端生成包含所有文章的 sitemap.xml
+    location = /sitemap.xml {
+        proxy_pass         http://127.0.0.1:NGINX_APP_PORT/api/v1/sitemap.xml;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_cache_valid 200 1h;
+    }
+
+    # robots.txt：确保应用的 robots.txt 不被 Cloudflare 劫持
+    location = /robots.txt {
+        alias /opt/myblog/frontend/robots.txt;
+        add_header Content-Type text/plain;
+        add_header Cache-Control "public, max-age=3600";
+    }
+
     # 后端 API 反代
     location /api/ {
         proxy_pass         http://127.0.0.1:NGINX_APP_PORT;

@@ -139,6 +139,12 @@ const proseHtml = computed(() => {
 })
 
 onMounted(async () => {
+  // 渐进增强：隐藏 SEO 静态内容（后端返回的 HTML 中的 #seo-content）
+  const seoContent = document.getElementById('seo-content')
+  if (seoContent) {
+    seoContent.style.display = 'none'
+  }
+
   if (article.value) {
     await Promise.all([loadComments(), loadRelated()])
   }

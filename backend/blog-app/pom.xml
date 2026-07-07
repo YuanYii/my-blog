@@ -78,6 +78,13 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Markdown 渲染（SEO 页面用，0.42.14 支持 Java 8） -->
+        <dependency>
+            <groupId>com.vladsch.flexmark</groupId>
+            <artifactId>flexmark-all</artifactId>
+            <version>0.42.14</version>
+        </dependency>
+
         <!-- API 文档 -->
         <dependency>
             <groupId>org.springdoc</groupId>
