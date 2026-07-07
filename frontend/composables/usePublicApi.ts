@@ -12,7 +12,9 @@
  * 解决：用 module 级 lazy promise，第一次访问时初始化一次，后续复用。
  */
 const VISITOR_KEY = 'blog_visitor_id'
+const ENTRY_SOURCE_KEY = 'blog_entry_source'
 let visitorIdPromise: Promise<string> | null = null
+let entrySourcePromise: Promise<string> | null = null
 
 function ensureVisitorId(): Promise<string> {
   if (!import.meta.client) return Promise.resolve('')
@@ -37,6 +39,31 @@ function ensureVisitorId(): Promise<string> {
   return visitorIdPromise
 }
 
+/**
+ * 获取入口来源（首次访问时捕获 document.referrer，存入 localStorage）
+ * 用于解决 SPA 架构下 API 调用 Referer 是当前页面 URL 的问题
+ */
+function ensureEntrySource(): Promise<string> {
+  if (!import.meta.client) return Promise.resolve('')
+  if (entrySourcePromise) return entrySourcePromise
+  entrySourcePromise = new Promise<string>((resolve) => {
+    try {
+      const existing = localStorage.getItem(ENTRY_SOURCE_KEY)
+      if (existing) {
+        resolve(existing)
+        return
+      }
+      // 首次访问：捕获 document.referrer（原始来源）
+      const referrer = document.referrer || ''
+      localStorage.setItem(ENTRY_SOURCE_KEY, referrer)
+      resolve(referrer)
+    } catch {
+      resolve('')
+    }
+  })
+  return entrySourcePromise
+}
+
 export const usePublicApi = () => {
   const config = useRuntimeConfig()
   const base = config.public.apiBase
@@ -48,10 +75,13 @@ export const usePublicApi = () => {
     }
     // 公开 API：故意不带 Authorization / X-Device-Id
     // 自动带 X-Visitor-Id（公开页访客标识，用于按天去重 page_view）。
+    // 自动带 X-Entry-Source（入口来源，用于流量来源分析）。
     // module 级 promise 缓存 — 并发 6-7 个 useAsyncData 也只生成一次。
     const vidPromise = ensureVisitorId()
-    return vidPromise.then((vid) => {
+    const entryPromise = ensureEntrySource()
+    return Promise.all([vidPromise, entryPromise]).then(([vid, entrySource]) => {
       if (vid) headers['X-Visitor-Id'] = vid
+      if (entrySource) headers['X-Entry-Source'] = entrySource
       return $fetch<T>(`${base}${path}`, {
         ...options,
         headers,

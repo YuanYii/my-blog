@@ -145,7 +145,11 @@ public class PageViewFilter extends OncePerRequestFilter {
             // ip/ua/referer 必须在请求线程内同步取出——异步执行时 request 可能已被容器回收。
             String ip = TrustedProxyUtil.resolveClientIp(request);
             String userAgent = request.getHeader("User-Agent");
-            String referer = request.getHeader("Referer");
+            // 优先使用 X-Entry-Source（前端捕获的原始来源），fallback 到 Referer
+            String referer = request.getHeader("X-Entry-Source");
+            if (referer == null || referer.isEmpty()) {
+                referer = request.getHeader("Referer");
+            }
             pageViewService.recordVisitAsync(sub, articleId, visitor, ip, userAgent, referer);
         } catch (Exception e) {
             // 统计失败绝不能影响业务响应

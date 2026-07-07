@@ -263,6 +263,8 @@ public class PageViewService {
     /**
      * 从 referer URL 提取域名（去掉 www. 前缀）
      * referer 为 NULL/空/`-`/相对路径/不含 `://` → "direct"（直接访问）
+     * referer 为 IP 地址 → "direct"（通过 IP 直接访问，非正常来源）
+     * referer 为同域名 → "direct"（SPA 内部跳转，无法追踪原始来源）
      */
     static String extractDomain(String referer) {
         if (referer == null) return "direct";
@@ -284,7 +286,38 @@ public class PageViewService {
         // 去 www.
         if (host.startsWith("www.")) host = host.substring(4);
         if (host.isEmpty()) return "direct";
+        // IP 地址归类为直接访问（通过 IP 访问非正常来源）
+        if (isIpAddress(host)) return "direct";
+        // 同域名跳转归类为直接访问（SPA 内部跳转，无法追踪原始来源）
+        if (isInternalReferrer(host)) return "direct";
         return host;
+    }
+
+    /**
+     * 判断字符串是否为 IP 地址（IPv4 或 IPv6）
+     */
+    static boolean isIpAddress(String host) {
+        if (host == null || host.isEmpty()) return false;
+        // IPv4: x.x.x.x（每段 0-255）
+        if (host.matches("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$")) {
+            return true;
+        }
+        // IPv6: 包含冒号的十六进制地址
+        if (host.contains(":") && host.matches("^[0-9a-f:]+$")) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 判断是否为内部来源（同域名跳转）
+     * SPA 内部跳转无法追踪原始来源，归类为直接访问
+     */
+    static boolean isInternalReferrer(String host) {
+        if (host == null) return false;
+        // 博客域名（去掉 www.）
+        String blogDomain = "blog.coreyai.cn";
+        return host.equals(blogDomain) || host.equals("localhost") || host.equals("127.0.0.1");
     }
 
     /**
@@ -323,6 +356,10 @@ public class PageViewService {
                 return "知乎";
             case "v2ex.com":
                 return "V2EX";
+            case "blog.coreyai.cn":
+            case "localhost":
+            case "127.0.0.1":
+                return "直接访问";
             default:
                 return domain;
         }
