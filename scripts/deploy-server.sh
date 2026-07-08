@@ -978,15 +978,15 @@ server {
 
     # SEO 文章页：转后端返回含内容的 HTML（渐进增强方案）
     # 后端 context-path /api/v1 → /api/v1/seo/post/{slug}
-    # 搜索引擎爬虫拿到有内容的 HTML，用户浏览器加载 Vue SPA 后增强交互
+    # 2026-07-07 修复：SeoController 动态注入 Nuxt CSS/JS，浏览器+爬虫统一走此端点
     location /post/ {
-        proxy_pass         http://127.0.0.1:NGINX_APP_PORT/api/v1/seo/post/;
+        rewrite ^/post/(.*)$ /api/v1/seo/post/$1 break;
+        proxy_pass         http://127.0.0.1:NGINX_APP_PORT;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto $scheme;
         proxy_read_timeout 60s;
-        # 缓存 10 分钟（文章内容不常变）
         proxy_cache_valid 200 10m;
     }
 

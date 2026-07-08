@@ -57,7 +57,8 @@ export default defineNuxtConfig({
       title: 'Loading...',
       meta: [
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { name: 'description', content: '' }
+        { name: 'description', content: '' },
+        { name: 'baidu-site-verification', content: 'codeva-KgyIsCHGkU' }
       ],
       // 2026-06-18：去掉 Google Fonts 外网依赖（dev 国内访问慢/挂掉导致首屏空白）
       // 字体走 main.css 的 system-ui / Noto Sans SC 等本地/系统字体栈

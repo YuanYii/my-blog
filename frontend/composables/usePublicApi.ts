@@ -40,23 +40,32 @@ function ensureVisitorId(): Promise<string> {
 }
 
 /**
- * 获取入口来源（首次访问时捕获 document.referrer，存入 localStorage）
+ * 获取入口来源（每次页面加载时捕获 document.referrer，存入 localStorage）
  * 用于解决 SPA 架构下 API 调用 Referer 是当前页面 URL 的问题
+ *
+ * 2026-07-08 修复：之前只在首次访问时捕获，后续访问复用旧值。
+ * 问题：用户从 GitHub 回访博客时，localStorage 已有旧值（空），不会更新为 GitHub referrer。
+ * 修复：每次页面加载时检查 document.referrer，跨域时更新 localStorage。
  */
 function ensureEntrySource(): Promise<string> {
   if (!import.meta.client) return Promise.resolve('')
   if (entrySourcePromise) return entrySourcePromise
   entrySourcePromise = new Promise<string>((resolve) => {
     try {
+      const current = document.referrer || ''
       const existing = localStorage.getItem(ENTRY_SOURCE_KEY)
-      if (existing) {
+
+      // 跨域 referrer 时更新（外部来源 → 博客）
+      // 同域或空 referrer 时保留旧值（SPA 内导航 / 刷新）
+      if (current && !current.startsWith(window.location.origin)) {
+        localStorage.setItem(ENTRY_SOURCE_KEY, current)
+        resolve(current)
+      } else if (existing) {
         resolve(existing)
-        return
+      } else {
+        localStorage.setItem(ENTRY_SOURCE_KEY, current)
+        resolve(current)
       }
-      // 首次访问：捕获 document.referrer（原始来源）
-      const referrer = document.referrer || ''
-      localStorage.setItem(ENTRY_SOURCE_KEY, referrer)
-      resolve(referrer)
     } catch {
       resolve('')
     }
