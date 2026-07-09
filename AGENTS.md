@@ -276,6 +276,11 @@ DEPLOY_MODE=full sudo ./scripts/deploy-server.sh v3.x.x              # 全量代
 | `docs/design/博客数据恢复方案设计.md` | 恢复功能设计稿（v5 设计稿，5 轮迭代） | 🟠 重要 |
 | `scripts/publish-release.sh` | 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子） | 🟠 重要 |
 | `scripts/deploy-server.sh` | 服务器端一键部署（v4.4.0：4 种 DEPLOY_MODE = `init` / `full` / `docker-create` / `docker-init`，外置开关 `IMPORT_DB=1` 灌数据） | 🟠 重要 |
+| `scripts/upgrade-agent.py` | Python 升级代理（v5.3.0，监听 127.0.0.1:28081，SSE 流式日志） | 🟠 重要 |
+| `scripts/upgrade-agent.service` | upgrade-agent systemd 服务文件 | 🟡 可选 |
+| `backend/blog-app/.../upgrade/UpgradeController.java` | 升级控制器（5 端点：升级/状态/版本/历史/回滚） | 🟠 重要 |
+| `docs/design/系统升级方案设计.md` | 系统升级方案设计文档 | 🟠 重要 |
+| `docs/生产升级问题记录.md` | 生产环境升级问题记录（9 个问题及解决方案） | 🟠 重要 |
 | `docs/changelogs/` | 版本变更记录（v2.0.0 → v2.7.0） | 🟠 重要 |
 | `docs/接口契约审计报告.md` | API 100% 一致 | 🟠 重要 |
 | `AGENTS.md` | **本文件** | 🔴 必读 |

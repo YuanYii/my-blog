@@ -376,6 +376,28 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_operation ON audit_log(operation);
 CREATE INDEX IF NOT EXISTS idx_audit_log_operator ON audit_log(operator);
 
 -- ----------------------------------------------------
+-- 15. upgrade_record 升级记录（2026-07-08）
+-- ----------------------------------------------------
+-- 状态机：PENDING → RUNNING → SUCCESS / FAILED
+-- 配套：UpgradeRecord / UpgradeRecordMapper / UpgradeRecordService / UpgradeController
+CREATE TABLE IF NOT EXISTS upgrade_record (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_version  VARCHAR(32)  NOT NULL,                     -- 目标版本号，如 v5.3.0
+  mode            VARCHAR(16)  NOT NULL,                     -- full（全量代码升级）/ init（初始化）
+  import_db       TINYINT      NOT NULL DEFAULT 0,           -- 是否导入数据
+  status          VARCHAR(16)  NOT NULL,                     -- PENDING / RUNNING / SUCCESS / FAILED
+  started_at      DATETIME     NOT NULL,                     -- 由 Java 显式填
+  finished_at     DATETIME,
+  from_version    VARCHAR(32),                               -- 升级前版本号
+  error_message   TEXT,                                      -- 失败信息
+  operator_id     BIGINT,                                    -- 触发人 uid
+  operator_name   VARCHAR(64),                               -- 触发人 username
+  ip              VARCHAR(45)                                -- 操作 IP
+);
+CREATE INDEX IF NOT EXISTS idx_upgrade_record_started_at ON upgrade_record(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_upgrade_record_status ON upgrade_record(status);
+
+-- ----------------------------------------------------
 -- 15. _migration_history 增量 SQL 迁移追踪
 -- ----------------------------------------------------
 CREATE TABLE IF NOT EXISTS _migration_history (

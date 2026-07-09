@@ -379,6 +379,29 @@ CREATE TABLE IF NOT EXISTS `audit_log` (
   INDEX `idx_audit_log_operator` (`operator`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ============================================================
+-- upgrade_record（2026-07-08，升级记录）
+-- ============================================================
+-- 状态机：PENDING → RUNNING → SUCCESS / FAILED
+-- 配套：UpgradeRecord / UpgradeRecordMapper / UpgradeRecordService / UpgradeController
+CREATE TABLE IF NOT EXISTS `upgrade_record` (
+  `id`              BIGINT        NOT NULL AUTO_INCREMENT,
+  `target_version`  VARCHAR(32)   NOT NULL                COMMENT '目标版本号，如 v5.3.0',
+  `mode`            VARCHAR(16)   NOT NULL                COMMENT 'full（全量代码升级）/ init（初始化）',
+  `import_db`       TINYINT       NOT NULL DEFAULT 0      COMMENT '是否导入数据',
+  `status`          VARCHAR(16)   NOT NULL                COMMENT 'PENDING/RUNNING/SUCCESS/FAILED',
+  `started_at`      DATETIME      NOT NULL                COMMENT '由 Java 显式填',
+  `finished_at`     DATETIME      DEFAULT NULL,
+  `from_version`    VARCHAR(32)   DEFAULT NULL            COMMENT '升级前版本号',
+  `error_message`   TEXT          DEFAULT NULL            COMMENT '失败信息',
+  `operator_id`     BIGINT        DEFAULT NULL            COMMENT '触发人 uid',
+  `operator_name`   VARCHAR(64)   DEFAULT NULL            COMMENT '触发人 username',
+  `ip`              VARCHAR(45)   DEFAULT NULL            COMMENT '操作 IP',
+  PRIMARY KEY (`id`),
+  INDEX `idx_upgrade_record_started_at` (`started_at` DESC),
+  INDEX `idx_upgrade_record_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- type=public → 放行（GET 任意，写方法按 isPublicWriteAllowed 显式允许）
 -- type=admin  → 必须鉴权
 INSERT IGNORE INTO `api_whitelist` (`path_prefix`, `type`, `enabled`, `description`) VALUES
