@@ -141,3 +141,7 @@ scripts/deploy-server.env.example
 frontend/tests/debug-*
 frontend/test-results/
 /autodev/share/
+
+# Local staging
+.release-staging/
+.mimocode/
