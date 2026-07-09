@@ -21,6 +21,7 @@ import java.util.Map;
  *  - record() 走 @Async + JdbcTemplate 直插：避免污染业务事务；Aspect 拦截的是业务线程，异步落库不影响主路径
  *  - list() / count() 走 PageResult 分页查询，支持 target + operation 筛选
  *  - 写入失败不影响主业务（仅打 WARN）
+ *  - 时间使用 JVM 默认时区（Asia/Shanghai）
  */
 @Slf4j
 @Service
@@ -116,10 +117,10 @@ public class AuditLogService {
             "个人资料", "密码修改", "站点信息", "技术栈", "个人经历",
             "主题设置", "社交链接", "偏好设置", "高级设置",
             "设备授权", "数据备份", "数据恢复", "API 白名单", "IP 封禁",
-            "文件上传", "文件下载"
+            "文件上传", "文件下载", "系统升级", "系统回滚"
     );
 
     public static final List<String> OPERATION_OPTIONS = java.util.Arrays.asList(
-            "CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "DOWNLOAD"
+            "CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "DOWNLOAD", "UPGRADE", "ROLLBACK"
     );
 }

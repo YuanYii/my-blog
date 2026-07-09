@@ -244,6 +244,7 @@ public class AuditLogAspect {
             {"/admin/api-whitelist",        "API 白名单"},
             {"/admin/ip-bans",              "IP 封禁"},
             {"/admin/uploads",              "文件上传"},
+            {"/admin/upgrade",              "系统升级"},
             // 父兜底（理论上不会被命中——子项已全覆盖；留作未来新增子项时的兜底）
             {"/admin/settings",             "高级设置"},
             {"/admin",                      "高级设置"},
