@@ -198,11 +198,41 @@ export const useAdminApi = () => {
   const uploadSettingsMd = <T = any>(file: File): Promise<T> =>
     upload<T>('/admin/settings/upload-md', file)
 
+  // ============ 2026-07-08 DEV-002：系统升级 ============
+
+  /** 查询升级状态 GET /admin/upgrade/status */
+  const getUpgradeStatus = <T = any>() => get<T>('/admin/upgrade/status')
+
+  /** 查询 GitHub Release 列表 GET /admin/upgrade/versions */
+  const getUpgradeVersions = <T = any>() => get<T>('/admin/upgrade/versions')
+
+  /** 查询升级历史 GET /admin/upgrade/records?page=N&size=N */
+  const getUpgradeRecords = <T = any>(page: number = 1, size: number = 20) =>
+    get<T>('/admin/upgrade/records', { page, size })
+
+  /** 触发升级 POST /admin/upgrade（返回 fetch Response，SSE 流） */
+  const triggerUpgrade = (body: {
+    version: string
+    mode: string
+    importDb?: boolean
+    confirm?: string
+  }) => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (token.value) headers['Authorization'] = `Bearer ${token.value}`
+    if (deviceId.value) headers['X-Device-Id'] = deviceId.value
+    return fetch(`${base}/admin/upgrade`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+  }
+
   return {
     request, get, post, put, del, upload,
     uploadAttachment, softDeleteAttachment, listAttachments, restoreAttachment, hardDeleteAttachment,
     hardDeleteArticle, restoreArticle,
     listAuditLogs, listAuditLogTargets, listAuditLogOperations,
-    uploadSettingsMd
+    uploadSettingsMd,
+    getUpgradeStatus, getUpgradeVersions, getUpgradeRecords, triggerUpgrade
   }
 }

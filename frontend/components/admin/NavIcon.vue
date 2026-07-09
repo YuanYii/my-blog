@@ -30,5 +30,7 @@ defineProps<{ name: string; size?: number }>()
     <template v-else-if="name === 'paperclip'"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></template>
     <!-- 2026-07-01 DEV-004：审计日志图标（clipboard-list） -->
     <template v-else-if="name === 'clipboard-list'"><path d="M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M8 10h8"/><path d="M8 14h8"/><path d="M8 18h5"/></template>
+    <!-- 2026-07-08 DEV-003：系统升级图标（upload-cloud） -->
+    <template v-else-if="name === 'upgrade'"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/></template>
   </svg>
 </template>
