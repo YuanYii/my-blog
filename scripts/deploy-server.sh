@@ -280,6 +280,11 @@ BUNDLE="deploy-bundle-${TAG}.zip"
 if curl -fsSL -o "$TMP_DIR/$BUNDLE" "$BASE_URL/$BUNDLE" 2>/dev/null; then
     info "Got cold-deployment package $BUNDLE, extracting first..."
     (cd "$TMP_DIR" && unzip -qo "$BUNDLE")
+    # v5.3.0+ 确保 upgrade-agent 文件存在（旧版 bundle 可能不包含）
+    if [ ! -f "$TMP_DIR/upgrade-agent.py" ]; then
+        download "upgrade-agent.py" || warn "upgrade-agent.py download failed"
+        download "upgrade-agent.service" || warn "upgrade-agent.service download failed"
+    fi
     curl -fsSL -o "$TMP_DIR/SHA256SUMS" "$BASE_URL/SHA256SUMS" 2>/dev/null || warn "No SHA256SUMS, skipping verification"
     if [ -f "$TMP_DIR/SHA256SUMS" ]; then
         if command -v sha256sum >/dev/null; then
@@ -297,6 +302,9 @@ else
     # v4.2.0 数据备份脚本：admin 后台「数据备份」菜单由后端 ProcessBuilder 调它
     download "blog-backup.sh" || warn "blog-backup.sh download failed (v4.2.0+ data backup feature will not work)"
     download "sqlite-export.sh" || warn "sqlite-export.sh download failed (v4.3.0+ admin data export feature will not work)"
+    # v5.3.0 系统升级代理
+    download "upgrade-agent.py" || warn "upgrade-agent.py download failed (v5.3.0+ upgrade feature will not work)"
+    download "upgrade-agent.service" || warn "upgrade-agent.service download failed (v5.3.0+ upgrade feature will not work)"
     # v5.0: blog-restore.sh 已废弃,RestoreExecutor 在同 JVM 内执行恢复,不再需要此脚本
     # IMPORT_DB=1 才尝试下 .enc(可选,不存在说明纯代码发版)
     if [ "$IMPORT_DB" = "1" ]; then
@@ -345,6 +353,15 @@ if [ -f "$TMP_DIR/migrate-logs.sh" ]; then
     info "[OK] migrate-logs.sh installed to $INSTALL_DIR/logs/"
 else
     warn "migrate-logs.sh not in release (legacy log migration feature will not work)"
+fi
+
+# v5.3.0 系统升级代理：部署到 $INSTALL_DIR/scripts/upgrade-agent.py
+if [ -f "$TMP_DIR/upgrade-agent.py" ]; then
+    cp "$TMP_DIR/upgrade-agent.py" "$INSTALL_DIR/scripts/upgrade-agent.py"
+    chmod +x "$INSTALL_DIR/scripts/upgrade-agent.py"
+    info "[OK] upgrade-agent.py installed to $INSTALL_DIR/scripts/"
+else
+    warn "upgrade-agent.py not in release (v5.3.0+ upgrade feature will not work)"
 fi
 
 # ============= 4.5 启动 Redis（提前：让 §5 stop_app / flush_redis 有 redis 可用）=============
@@ -525,6 +542,27 @@ if [ -f "$DB_FILE" ]; then
             || err "failed to ALTER TABLE backup_record ADD COLUMN trace_id"
         # ALTER ADD COLUMN 不会自动建 NOT NULL 默认值的索引(本列允许 NULL,免建)
         info "[OK] backup_record.trace_id column added"
+    fi
+    # upgrade_record 表增量兜底（v5.3.0+）
+    if ! sqlite3 "$DB_FILE" "SELECT name FROM sqlite_master WHERE type='table' AND name='upgrade_record';" | grep -q upgrade_record; then
+        info "Patching: creating upgrade_record table (v5.3.0+)"
+        sqlite3 "$DB_FILE" "CREATE TABLE IF NOT EXISTS upgrade_record (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_version VARCHAR(32) NOT NULL,
+            mode VARCHAR(16) NOT NULL,
+            import_db TINYINT NOT NULL DEFAULT 0,
+            status VARCHAR(16) NOT NULL,
+            started_at DATETIME NOT NULL,
+            finished_at DATETIME,
+            from_version VARCHAR(32),
+            error_message TEXT,
+            operator_id BIGINT,
+            operator_name VARCHAR(64),
+            ip VARCHAR(45)
+        );" || err "failed to create upgrade_record table"
+        sqlite3 "$DB_FILE" "CREATE INDEX IF NOT EXISTS idx_upgrade_record_started_at ON upgrade_record(started_at DESC);"
+        sqlite3 "$DB_FILE" "CREATE INDEX IF NOT EXISTS idx_upgrade_record_status ON upgrade_record(status);"
+        info "[OK] upgrade_record table created"
     fi
 fi
 
@@ -806,6 +844,32 @@ EOF
     supervisorctl update myblog
     supervisorctl restart myblog
     info "[OK] supervisord program configured and started (LOCAL_SIM)"
+
+    # 4) 配置 upgrade-agent supervisord（v5.3.0+）
+    if [ -f "$TMP_DIR/upgrade-agent.py" ]; then
+        UPGRADE_SUPERVISOR_CONF="/etc/supervisor/conf.d/upgrade-agent.conf"
+        cat > "$UPGRADE_SUPERVISOR_CONF" <<UPGRADE_EOF
+[program:upgrade-agent]
+command=python3 $INSTALL_DIR/scripts/upgrade-agent.py
+directory=$INSTALL_DIR
+autostart=true
+autorestart=true
+startsecs=3
+startretries=3
+environment=AGENT_HOST="127.0.0.1",AGENT_PORT="28081",DEPLOY_SCRIPT="$INSTALL_DIR/scripts/deploy-server.sh",GITHUB_REPO="$GITHUB_REPO"
+stdout_logfile=$INSTALL_DIR/logs/upgrade-agent.log
+stderr_logfile=$INSTALL_DIR/logs/upgrade-agent-error.log
+stdout_logfile_maxbytes=10MB
+stderr_logfile_maxbytes=10MB
+UPGRADE_EOF
+        info "  generated: $UPGRADE_SUPERVISOR_CONF"
+        supervisorctl reread
+        supervisorctl update upgrade-agent
+        supervisorctl start upgrade-agent
+        info "[OK] upgrade-agent supervisord configured and started (LOCAL_SIM)"
+    else
+        warn "upgrade-agent.py not in release, skipping upgrade-agent setup"
+    fi
 else
     # ---------- 生产：systemd unit（原样保留）----------
     info "=== 8. Writing systemd service ==="
@@ -841,6 +905,21 @@ EOF
     flush_redis
     systemctl restart myblog
     info "[OK] systemd service configured and started"
+
+    # ---------- upgrade-agent systemd unit（v5.3.0+）----------
+    UPGRADE_AGENT_SERVICE="/etc/systemd/system/upgrade-agent.service"
+    if [ -f "$TMP_DIR/upgrade-agent.py" ]; then
+        info "=== 8.1 Writing upgrade-agent systemd service ==="
+        cp "$TMP_DIR/upgrade-agent.py" "$INSTALL_DIR/scripts/upgrade-agent.py"
+        chmod +x "$INSTALL_DIR/scripts/upgrade-agent.py"
+        cp "$TMP_DIR/upgrade-agent.service" "$UPGRADE_AGENT_SERVICE"
+        systemctl daemon-reload
+        systemctl enable upgrade-agent
+        systemctl restart upgrade-agent
+        info "[OK] upgrade-agent systemd service configured and started"
+    else
+        warn "upgrade-agent.py not found in release, skipping upgrade-agent setup"
+    fi
 fi
 
 # ============= 8.6 logrotate 配置(REQ-LOG-2026-06-18)=============

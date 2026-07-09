@@ -274,6 +274,21 @@ fi
 cp "$ROOT_DIR/scripts/migrate-logs.sh"    "$STAGE_DIR/assets/migrate-logs.sh"
 chmod +x "$STAGE_DIR/assets/migrate-logs.sh"
 
+# upgrade-agent v5.3.0 系统升级代理（Python + systemd 服务）
+if [ ! -f "$ROOT_DIR/scripts/upgrade-agent.py" ]; then
+    err "$ROOT_DIR/scripts/upgrade-agent.py 不存在，无法发布"
+    exit 1
+fi
+cp "$ROOT_DIR/scripts/upgrade-agent.py"     "$STAGE_DIR/assets/upgrade-agent.py"
+chmod +x "$STAGE_DIR/assets/upgrade-agent.py"
+
+if [ ! -f "$ROOT_DIR/scripts/upgrade-agent.service" ]; then
+    err "$ROOT_DIR/scripts/upgrade-agent.service 不存在，无法发布"
+    exit 1
+fi
+cp "$ROOT_DIR/scripts/upgrade-agent.service" "$STAGE_DIR/assets/upgrade-agent.service"
+info "  upgrade-agent.py + upgrade-agent.service added"
+
 # ============= 4.7 打包 nginx 配置模板 =============
 # HTTPS 流程(deploy-server.sh step 9.5)需要这两个模板
 # 配置文件来源: docs/nginx/ 是设计文档, 这里是部署物料
@@ -321,7 +336,7 @@ fi
 # 计算每个 asset 的 sha256(包含可选的 .enc)
 info "生成 SHA256SUMS..."
 cd "$STAGE_DIR/assets"
-SUM_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh nginx-http.conf nginx-https.conf"
+SUM_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service"
 [ -f dev-blog-dump.sql.gz.enc ] && SUM_FILES="$SUM_FILES dev-blog-dump.sql.gz.enc"
 shasum -a 256 $SUM_FILES > SHA256SUMS 2>/dev/null || \
     sha256sum $SUM_FILES > SHA256SUMS
@@ -330,7 +345,7 @@ cd "$ROOT_DIR"
 # 打 zip 冷部署包
 BUNDLE="deploy-bundle-${TAG}.zip"
 cd "$STAGE_DIR/assets"
-ZIP_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh nginx-http.conf nginx-https.conf SHA256SUMS"
+ZIP_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service SHA256SUMS"
 [ -f dev-blog-dump.sql.gz.enc ] && ZIP_FILES="$ZIP_FILES dev-blog-dump.sql.gz.enc"
 zip -q "$BUNDLE" $ZIP_FILES
 cd "$ROOT_DIR"
@@ -430,6 +445,8 @@ upload_one "$STAGE_DIR/assets/sqlite-import.sh"        "sqlite-import.sh"
 upload_one "$STAGE_DIR/assets/sqlite-export.sh"        "sqlite-export.sh"
 upload_one "$STAGE_DIR/assets/blog-backup.sh"          "blog-backup.sh"
 upload_one "$STAGE_DIR/assets/migrate-logs.sh"         "migrate-logs.sh"
+upload_one "$STAGE_DIR/assets/upgrade-agent.py"        "upgrade-agent.py"
+upload_one "$STAGE_DIR/assets/upgrade-agent.service"   "upgrade-agent.service"
 upload_one "$STAGE_DIR/assets/nginx-http.conf"         "nginx-http.conf"
 upload_one "$STAGE_DIR/assets/nginx-https.conf"        "nginx-https.conf"
 # 可选:加密的 db dump(EXPORT_DB=1 时存在)
