@@ -1,6 +1,7 @@
 package com.blog.controller;
 
 import com.blog.common.Result;
+import com.blog.upgrade.UpgradeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -54,6 +55,7 @@ public class HealthController {
 
     private final JdbcTemplate jdbc;
     private final StringRedisTemplate redis;
+    private final UpgradeService upgradeService;
 
     @Value("${spring.datasource.url:}")
     private String datasourceUrl;
@@ -82,7 +84,7 @@ public class HealthController {
         Map<String, Object> data = new LinkedHashMap<>();
 
         // 0. Version + Uptime
-        data.put("version", appVersion);
+        data.put("version", upgradeService.getCurrentVersion());
         if (startedAt != null) {
             long sec = ChronoUnit.SECONDS.between(startedAt, Instant.now());
             data.put("uptimeSec", sec);
