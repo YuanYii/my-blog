@@ -119,10 +119,7 @@ const scrollToBottom = () => {
 
 const handleUpgrade = async () => {
   const version = effectiveVersion.value
-  if (!version) {
-    $toast.warning('请选择或输入目标版本')
-    return
-  }
+  // 统一方案：version 可为空，后端自动获取最新版本
 
   const needConfirm = importDb.value
   if (needConfirm && confirmText.value !== '确认') {
@@ -130,9 +127,10 @@ const handleUpgrade = async () => {
     return
   }
 
+  const versionText = version || '最新版本'
   const { confirmed } = await confirm({
     title: '确认升级',
-    message: `确定要升级到 ${version} 吗？模式: ${upgradeMode.value === 'full' ? '全量代码升级' : '初始化'}`,
+    message: `确定要升级到 ${versionText} 吗？模式: ${upgradeMode.value === 'full' ? '全量代码升级' : '初始化'}`,
     confirmText: '开始升级',
     danger: true,
   })
@@ -144,7 +142,7 @@ const handleUpgrade = async () => {
 
   try {
     const body: any = {
-      version,
+      version: version || '',  // 空字符串时后端自动获取最新版本
       mode: upgradeMode.value,
       importDb: importDb.value,
       confirm: confirmText.value,
@@ -244,7 +242,7 @@ onMounted(() => {
         </button>
         <button
           @click="handleUpgrade"
-          :disabled="upgrading || !effectiveVersion"
+          :disabled="upgrading"
           class="btn-new"
           style="background: var(--primary); color: white;"
         >
@@ -260,7 +258,7 @@ onMounted(() => {
       <div style="display: flex; gap: 10px; align-items: flex-start;">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         <div style="font-size: 13px; line-height: 1.6; color: var(--text-soft);">
-          <strong style="color: var(--text);">系统升级</strong>: 从下拉框选择目标版本，或切换到手动输入模式输入版本号 → 点「开始升级」→ upgrade-agent 代理执行 deploy-server.sh，SSE 流式返回日志。
+          <strong style="color: var(--text);">系统升级</strong>: 从下拉框选择目标版本，或切换到手动输入模式输入版本号，也可不选版本直接升级（自动获取最新版本）→ 点「开始升级」→ upgrade-agent 代理执行 deploy-server.sh，SSE 流式返回日志。
           <br/>升级期间服务会短暂中断（预计 1-3 分钟），升级完成后自动恢复。
         </div>
       </div>

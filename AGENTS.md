@@ -27,7 +27,7 @@
   - `composables/` — `useApi` / `useAuth` / `useAdminApi` / `usePublicApi` / `useDialog` / `useToast` / `useDevice` / `useAdminMeta`
   - `components/` / `plugins/` / `nuxt.config.ts` / `scripts/fetch-routes.js`（build 前拉公开页路由）
 - `scripts/` — 部署/验证/迁移/rebuild（2026-06-22 由 `scripts/` 迁移至根目录）
-  - `deploy-server.sh` — 服务器端一键部署（**v4.4.0：4 种 DEPLOY_MODE** = `init` / `full` / `docker-create` / `docker-init`，外置开关 `IMPORT_DB=1` 灌数据）
+  - `deploy-server.sh` — 服务器端一键部署（**v4.4.0：4 种 DEPLOY_MODE** = `init` / `full` / `docker-create` / `docker-init`，外置开关 `IMPORT_DB=1` 灌数据；**v5.3.1：下载脚本用 `releases/latest/download/`，执行时传版本号**）
   - `publish-release.sh` — 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子）
   - `sqlite-export.sh` — **加密导出** dev db（`AES-256-CBC + PBKDF2 100k`，交互式密码两次输入；产出 `.sql.gz.enc`）
   - `sqlite-import.sh` — **解密导入** 到目标 db（密码一次输入；支持本地 + `--remote user@host` 远端模式；错密码不碰目标 db）
@@ -55,23 +55,16 @@
 ### 4.1 环境降级链（**不要升级**）
 开发机只有 JDK 1.8。**不要试图升级** Java / Spring Boot / MyBatis-Plus / 包管理工具到"原始目标"版本——会破坏所有依赖。
 
-### 4.2 字符编码：双重 UTF-8（MySQL profile 仍需注意）
-**症状**：`GET /api/v1/articles/categories` 返回 `"name":"æŠ€æœ¯"`（API 端乱码）。
-**根因**：`docker exec mysql ... < blog.sql` 默认走 latin1，中文被双重编码写入 utf8mb4。
-**修复 SQL** 见 `docs/sql/migrations/20260608_fix_double_utf8.sql`（不删表，可逆，**v2.6.0 已整合到 schema-mysql.sql**）。
-**后续导入必须**：
-```bash
-docker exec -i blog-mysql mysql -uroot -proot --default-character-set=utf8mb4 blog < docs/sql/schema-mysql.sql
-```
-**SQLite profile 无此问题**（v2.6.0 起默认）。
+### 4.2 字符编码（MySQL profile 仍需注意）
+MySQL 导入必须加 `--default-character-set=utf8mb4`，否则中文双重编码。**SQLite 无此问题**（v2.6.0 起默认）。
 
 ### 4.3 admin-auth SSR 修复（BUG-001，**不要回退**）
 **症状**：直接访问 `/admin/*`，已登录用户被踢回 `/admin/login`。
-**根因**：`admin-auth.ts` 在 SSR 阶段（`import.meta.server`）调 `localStorage.getItem('token')`——服务端无 localStorage。
+**根因**：`admin-auth.ts` 在 SSR 阶段调 `localStorage.getItem('token')`——服务端无 localStorage。
 **修复**（v2.0.0）：
 1. `admin-auth.ts` 头部加 `if (import.meta.server) return`
-2. `layouts/admin.vue` 加 `onMounted` 兜底，client `initAuth()` 后未登录再 `router.replace('/admin/login')`
-**v2.7.0 后续清理**：全静态化后 `import.meta.server` 恒为 `false`，第 1 条的 SSR 判断已删；layouts/admin.vue 兜底保留。
+2. `layouts/admin.vue` 加 `onMounted` 兜底
+**v2.7.0 后续清理**：全静态化后 `import.meta.server` 恒为 `false`，第 1 条已删；兜底保留。
 
 ### 4.4 简化项（首版 MVP 决策）
 - Controller 直调 Mapper（无 Service 层）——**部分回退**：v2.0+ 已下沉 `DeviceService` / `ApiWhitelistService` / `SiteSettingsService` / `PageViewService`
@@ -85,7 +78,6 @@ dev/prod 默认 **SQLite**（一文件 0 内存占用）；MySQL 8.0 降级为�
 - 切回 MySQL：`spring.profiles.active=dev,mysql` 或 `prod,mysql`
 - **SQLite 写并发（2026-06-18 起开 WAL）**：prod 用 `journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL`，Hikari `maximum-pool-size` 已由 1 放开到 **8**（WAL 下「多读+单写」可并发，`busy_timeout` 让偶发写竞争等待而非立刻 `SQLITE_BUSY`）。**未开 WAL 时不要把 pool-size 设 >1**
 - 业务 SQL 跨方言已统一（38 处）——`PageViewService` / `ArticleController` / `DashboardController` 用 `LocalDate` / `LocalDateTime` 传参替代 MySQL 特有函数（`CURDATE()` / `DATE_SUB` / `NOW()` / `INSERT IGNORE` → 业务层去重）
-- 旧 8 个散 SQL 文件（`blog.sql` + 5 migrations + 2 migration-*.sql）已整合删除；v2.6.0 时代用 `scripts/migrate-mysql-to-sqlite-direct.py` 做 MySQL → SQLite 数据迁移（pymysql 直连版，123/123 行导入）。**2026-06-18 v4.0.0 起该脚本已被 `sqlite-export.sh` / `sqlite-import.sh` 加密链路取代；原 `migrate-mysql-to-sqlite-direct.py` 文件已删除**（如需 MySQL → SQLite 一次性迁移，重新生成脚本或改用 `mysqldump` → `sqlite3` 手工链路）
 - MyBatis-Plus 3.4.3.4 `IdType.AUTO` 自动适配 MySQL / SQLite，9 个 `@TableName` 实体各有 1 处 `@TableId(type = IdType.AUTO)`，合计 **9 处注解**（不要把 Service 类注释里出现的 `IdType.AUTO` 字符串误算成第 10 处注解）**不动**
 
 ### 4.6 前端全静态化（v2.7.0，**不要回退**）
@@ -127,61 +119,22 @@ dev/prod 默认 **SQLite**（一文件 0 内存占用）；MySQL 8.0 降级为�
 
 ```bash
 # ============ Dev 默认（v2.6.0 起：SQLite）============
-# 1. 启 Redis（SQLite 是文件型 DB 不需要单独启）
 docker run -d --name blog-redis -p 6379:6379 redis:7-alpine
-
-# 2. 启动后端（默认 SQLite，dev profile）
 cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev
-
-# 2.1 可选：切回 MySQL profile
-# docker run -d --name blog-mysql -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=blog \
-#   -p 3306:3306 -v blog-mysql-data:/var/lib/mysql \
-#   mysql:8.0 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
-# docker exec -i blog-mysql mysql -uroot -proot --default-character-set=utf8mb4 blog < docs/sql/schema-mysql.sql
-# cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev,mysql
-
-# 3. 启动前端（dev 模式，HMR）
 cd frontend && npm run dev
-
-# 4. 健康检查
 curl http://localhost:8080/api/v1/health
-# 期望 {"code":200,"data":{"status":"UP",...}}
-
-# 5. 端到端验证（29 端点）
 bash scripts/verify-sqlite.sh
 
 # ============ Prod（v2.6.0/v2.7.0：无 docker）============
-# 上传 jar + schema + 脚本到 ECS
-scp backend/blog-app/target/blog-app.jar myblog@<ecs-ip>:/tmp/
-scp docs/sql/schema-sqlite.sql myblog@<ecs-ip>:/tmp/
-scp scripts/deploy-server.sh myblog@<ecs-ip>:/tmp/
-
-# ECS 一键部署（v4.4.0 起：DEPLOY_MODE=full + 可选 IMPORT_DB=1 钩子）
-sudo DEPLOY_MODE=full bash /opt/myblog/scripts/deploy-server.sh
-
-# 每日 cron rebuild（v2.7.0 配套）
+sudo DEPLOY_MODE=full bash /opt/myblog/scripts/deploy-server.sh v5.3.10
 0 3 * * * bash /opt/myblog/scripts/rebuild-static.sh
-
-# 数据库热备份（SQLite）
 sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%M%S).db"
 
 # ============ Dev → Prod 加密数据迁移(2026-06-18 起)============
-# 1. dev 导出加密 dump(交互式输两次密码)
 bash scripts/sqlite-export.sh --exclude page_view -o /tmp/migration.sql.gz.enc
-
-# 2. 上传到生产(走任意介质:scp/邮件附件/OSS——加密态下不敏感)
-scp /tmp/migration.sql.gz.enc myblog@<ecs-ip>:/tmp/
-
-# 3. 生产端解密 + 导入(交互式输一次密码)
 ssh myblog@<ecs-ip> "sudo bash /opt/myblog/scripts/sqlite-import.sh /opt/myblog/db/blog.db /tmp/migration.sql.gz.enc"
-# 注:scp + ssh 走 SSH 加密通道,但加 .enc 是**第二道防线**——dump 落到本地磁盘/U 盘/OSS 时也安全
-
-# 4. publish-release + deploy-server 集成(两个外置开关,默认关)
-EXPORT_DB=1 ./scripts/publish-release.sh          # dev:数据加密导出到 release
-IMPORT_DB=1 sudo DEPLOY_MODE=full ./scripts/deploy-server.sh v3.x.x   # 代码 + 数据一起升级
-DEPLOY_MODE=full sudo ./scripts/deploy-server.sh v3.x.x              # 全量代码升级(默认)
-# v4.4.0:7 模式精简为 4 模式(init/full/docker-create/docker-init);code/frontend/backend/sql/data 已删除
-# 本地 docker 模拟生产: ./scripts/deploy-server.sh docker-create + docker-init vX.Y.Z
+EXPORT_DB=1 ./scripts/publish-release.sh
+IMPORT_DB=1 sudo DEPLOY_MODE=full ./scripts/deploy-server.sh v5.3.10
 ```
 
 ---
@@ -227,6 +180,8 @@ DEPLOY_MODE=full sudo ./scripts/deploy-server.sh v3.x.x              # 全量代
 | **8.3 过程文件：放项目目录** | 主动写的 draft / 临时分析 / 截图 / 比对资料一律写到**对应项目目录下**（docs/、scripts/、.workbuddy/、var/tmp/、screenshots/ 等），或只输出在对话里。**不写到 `~/`、`~/Desktop/`、`~/.mavis/` 等家目录**。mavis 系统自管文件（scratchpad / memory / session log）不受此约束 |
 | **8.4 git commit 默认不自动** | 默认不自动 git commit —— 改完代码停留在工作区，等用户显式说"提交"才执行；触发词必须是用户原话 |
 | **8.5 本地 docker 服务报错 → 查 `myblog-sim` 容器日志** | 用户说"本地 docker 服务报错"（含 traceId / 5xx / 接口异常等）时，**直接进 `myblog-sim` 容器查日志**：`docker logs myblog-sim 2>&1 \| grep <traceId>` + 容器内 `/opt/myblog/logs/blog.log` 配套；不要先查 dev 本地文件日志（`/tmp/blog-dev-logs/`）或 host 上其它路径——`myblog-sim` 才是本地 docker 部署的运行实例。仅本项目适用 |
+| **8.6 打包需显式触发** | 处理完问题后**不要自动打包**，等用户显式说"打包"才执行 `publish-release.sh`；触发词必须是用户原话 |
+| **8.7 先说方案再动手** | 遇到问题时，**先在对话里给出解决方案**（含根因分析 + 修复步骤），等用户确认后再执行代码修改/操作 |
 
 跨项目 / 跨会话 / 跨场景适用。
 
@@ -275,7 +230,7 @@ DEPLOY_MODE=full sudo ./scripts/deploy-server.sh v3.x.x              # 全量代
 | `scripts/sudoers-myblog-restore.example` | sudoers 白名单（5 条精确命令，**无通配符**） | 🔴 必读 |
 | `docs/design/博客数据恢复方案设计.md` | 恢复功能设计稿（v5 设计稿，5 轮迭代） | 🟠 重要 |
 | `scripts/publish-release.sh` | 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子） | 🟠 重要 |
-| `scripts/deploy-server.sh` | 服务器端一键部署（v4.4.0：4 种 DEPLOY_MODE = `init` / `full` / `docker-create` / `docker-init`，外置开关 `IMPORT_DB=1` 灌数据） | 🟠 重要 |
+| `scripts/deploy-server.sh` | 服务器端一键部署（v4.4.0：4 种 DEPLOY_MODE = `init` / `full` / `docker-create` / `docker-init`，外置开关 `IMPORT_DB=1` 灌数据；v5.3.1：下载用 `releases/latest/download/`，执行时传版本号） | 🟠 重要 |
 | `scripts/upgrade-agent.py` | Python 升级代理（v5.3.0，监听 127.0.0.1:28081，SSE 流式日志） | 🟠 重要 |
 | `scripts/upgrade-agent.service` | upgrade-agent systemd 服务文件 | 🟡 可选 |
 | `backend/blog-app/.../upgrade/UpgradeController.java` | 升级控制器（5 端点：升级/状态/版本/历史/回滚） | 🟠 重要 |
@@ -313,17 +268,13 @@ DEPLOY_MODE=full sudo ./scripts/deploy-server.sh v3.x.x              # 全量代
 | `scripts/publish-release.sh` | line 279（README 模板里的 deploy 例子） | GitHub Release README 解锁用的初始内容 |
 
 **B 类 — 绝对不改的"历史引用"**（破坏它就破坏历史追溯）：
-
-| 类别 | 例子 |
-|---|---|
-| 历史 changelog | `docs/changelogs/*.md` 所有文件 |
-| 历史设计文档 | `docs/design/博客系统设计方案.md` / `docs/项目部署解决方案.md` §十六实施记录 |
-| AGENTS.md / README.md 里的"历史描述"段 | §3 Tech Stack / §4 关键决策 / §10 关键文件索引里所有 `v2.x` 引用 |
-| 历史升级指南 | `scripts/upgrade-guide.md` 里所有 `v2.x` 引用 |
-| 代码注释里的"vX.Y.Z 加的"标注 | `frontend/middleware/admin-auth.ts` / `frontend/composables/*.ts` / `frontend/nuxt.config.ts` / `backend/**/application*.yml` |
+- 历史 changelog（`docs/changelogs/*.md` 所有文件）
+- 历史设计文档（`docs/design/博客系统设计方案.md` / `docs/项目部署解决方案.md` §十六实施记录）
+- AGENTS.md / README.md 里的"历史描述"段（§3 Tech Stack / §4 关键决策 / §10 关键文件索引里所有 `v2.x` 引用）
+- 历史升级指南（`scripts/upgrade-guide.md` 里所有 `v2.x` 引用）
+- 代码注释里的"vX.Y.Z 加的"标注（`frontend/middleware/admin-auth.ts` / `frontend/composables/*.ts` / `frontend/nuxt.config.ts` / `backend/**/application*.yml`）
 
 **C 类 — 每次版本变更新建**：
-
 - `docs/changelogs/YYYY-MM-DD-vX.Y.Z-{slug}.md`（命名按既有风格：`v2.6.0-sqlite-migration` / `v2.7.0-nuxt-static`）
 
 ### 12.3 改版本号的工作流

@@ -71,6 +71,18 @@ fi
 TAG="${1:-${RELEASE_TAG:-}}"
 GITHUB_REPO="${GITHUB_REPO:-}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/myblog}"
+
+# 如果未指定版本号，自动获取 GitHub 最新 release
+if [ -z "$TAG" ] && [ -n "$GITHUB_REPO" ] && [ "$LOCAL_SIM" != "1" ]; then
+    info "未指定版本号，正在获取 GitHub 最新 release..."
+    TAG=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
+    if [ -z "$TAG" ]; then
+        err "无法获取最新版本，请指定版本号"
+        err "Usage: $0 <tag>  e.g. $0 v5.3.10"
+        exit 1
+    fi
+    info "最新版本: $TAG"
+fi
 SERVER_PORT="${SERVER_PORT:-8080}"
 PUBLIC_PORT="${PUBLIC_PORT:-80}"
 DB_FILE="${DB_FILE:-$INSTALL_DIR/db/blog.db}"
@@ -865,6 +877,17 @@ UPGRADE_EOF
         info "  generated: $UPGRADE_SUPERVISOR_CONF"
         supervisorctl reread
         supervisorctl update upgrade-agent
+
+        # ---------- 更新升级记录状态（v5.3.14+）----------
+        # 在重启 upgrade-agent 之前更新数据库，避免旧进程被杀后无法更新
+        if [ -f "$DB_FILE" ] && command -v sqlite3 >/dev/null 2>&1; then
+            RUNNING_ID=$(sqlite3 "$DB_FILE" "SELECT id FROM upgrade_record WHERE status = 'RUNNING' ORDER BY id DESC LIMIT 1" 2>/dev/null)
+            if [ -n "$RUNNING_ID" ]; then
+                sqlite3 "$DB_FILE" "UPDATE upgrade_record SET status = 'SUCCESS', finished_at = datetime('now', 'localtime') WHERE id = $RUNNING_ID;" 2>/dev/null
+                info "[OK] 升级记录 #$RUNNING_ID 标记为 SUCCESS"
+            fi
+        fi
+
         supervisorctl start upgrade-agent
         info "[OK] upgrade-agent supervisord configured and started (LOCAL_SIM)"
     else
@@ -905,6 +928,16 @@ EOF
     flush_redis
     systemctl restart myblog
     info "[OK] systemd service configured and started"
+
+    # ---------- 更新升级记录状态（v5.3.14+）----------
+    # 在重启 upgrade-agent 之前更新数据库，避免旧进程被杀后无法更新
+    if [ -f "$DB_FILE" ] && command -v sqlite3 >/dev/null 2>&1; then
+        RUNNING_ID=$(sqlite3 "$DB_FILE" "SELECT id FROM upgrade_record WHERE status = 'RUNNING' ORDER BY id DESC LIMIT 1" 2>/dev/null)
+        if [ -n "$RUNNING_ID" ]; then
+            sqlite3 "$DB_FILE" "UPDATE upgrade_record SET status = 'SUCCESS', finished_at = datetime('now', 'localtime') WHERE id = $RUNNING_ID;" 2>/dev/null
+            info "[OK] 升级记录 #$RUNNING_ID 标记为 SUCCESS"
+        fi
+    fi
 
     # ---------- upgrade-agent systemd unit（v5.3.0+）----------
     UPGRADE_AGENT_SERVICE="/etc/systemd/system/upgrade-agent.service"

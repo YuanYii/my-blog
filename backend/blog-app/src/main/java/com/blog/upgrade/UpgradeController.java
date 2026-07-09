@@ -48,6 +48,7 @@ public class UpgradeController {
 
     /**
      * POST /admin/upgrade — 触发升级，SSE 流式返回日志
+     * version 可选：为空时自动获取 GitHub 最新 release
      */
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter upgrade(@RequestBody Map<String, Object> body, HttpServletRequest request) {
@@ -56,8 +57,16 @@ public class UpgradeController {
         boolean importDb = Boolean.TRUE.equals(body.get("importDb"));
         String confirm = String.valueOf(body.getOrDefault("confirm", "")).trim();
 
+        // version 为空时，尝试获取最新版本
         if (version.isEmpty()) {
-            return sendError("version 不能为空");
+            try {
+                version = upgradeService.getLatestVersion();
+            } catch (Exception e) {
+                return sendError("无法获取最新版本：" + e.getMessage());
+            }
+            if (version.isEmpty()) {
+                return sendError("version 不能为空，也无法获取最新版本");
+            }
         }
         if (!"full".equals(mode) && !"init".equals(mode)) {
             return sendError("mode 必须是 full 或 init");
@@ -82,12 +91,15 @@ public class UpgradeController {
 
         String detail = String.format("version=%s, mode=%s, importDb=%s", version, mode, importDb);
 
+        // 创建 final 变量供 lambda 使用
+        final String finalVersion = version;
+
         sseExecutor.execute(() -> {
             try {
                 String agentUrl = "http://" + agentHost + ":" + agentPort + "/upgrade";
                 String requestBody = String.format(
                     "{\"version\":\"%s\",\"mode\":\"%s\",\"importDb\":%s,\"confirm\":\"%s\"}",
-                    version, mode, importDb, confirm
+                    finalVersion, mode, importDb, confirm
                 );
 
                 // 连接 agent（捕获 ConnectException）

@@ -426,13 +426,13 @@ export GITHUB_REPO=yourname/your-repo
 export ENABLE_HTTPS=1
 export HTTPS_DOMAIN=blog.croeyai.cn
 export HTTPS_EMAIL=you@email.com
-sudo ./deploy-server.sh v4.0.1
+sudo ./deploy-server.sh v5.3.10
 ```
 
 ### 8.2 HTTP-only 部署（向后兼容）
 
 ```bash
-sudo ./deploy-server.sh v4.0.1
+sudo ./deploy-server.sh v5.3.10
 ```
 
 ### 8.3 验证
@@ -464,7 +464,7 @@ echo | openssl s_client -connect blog.croeyai.cn:443 -servername blog.croeyai.cn
 | cron `30 3` 和 rebuild-static `0 3` 并发冲突 | 故意错开 30 分钟；两个任务都是 CPU/IO 轻量，且 certbot renew 多数天是 no-op |
 | HTTPS 切换瞬间老 token 因 secure cookie 失效（如果有） | 当前 token 存 localStorage（非 cookie），**不受影响**；未来若改 cookie 需同步加 `Secure` flag |
 | `/var/www/certbot` 权限问题 | `chown -R www-data:www-data` 或 `nginx:nginx`（按发行版）；脚本里两套都尝试 |
-| 覆盖 step 9 的 `myblog.conf` 后回滚麻烦 | GitHub release 里保留旧版 deploy-server.sh，回滚 `sudo ./deploy-server.sh v4.0.0` 自动恢复 |
+| 覆盖 step 9 的 `myblog.conf` 后回滚麻烦 | GitHub release 里保留旧版 deploy-server.sh，回滚时指定版本号 `sudo ./deploy-server.sh v4.0.0` 自动恢复 |
 
 ---
 

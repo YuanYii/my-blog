@@ -138,6 +138,28 @@ public class UpgradeService {
     }
 
     /**
+     * 获取 GitHub 最新 release 版本号
+     */
+    public String getLatestVersion() {
+        try {
+            String url = "https://api.github.com/repos/" + githubRepo + "/releases/latest";
+            String json = httpGet(url);
+            // 解析 tag_name 字段
+            int idx = json.indexOf("\"tag_name\":\"");
+            if (idx >= 0) {
+                int start = idx + 12;
+                int end = json.indexOf("\"", start);
+                if (end > start) {
+                    return json.substring(start, end);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[upgrade] 获取最新版本失败: {}", e.getMessage());
+        }
+        return "";
+    }
+
+    /**
      * 设置升级状态
      */
     public void setStatus(String status) {

@@ -118,7 +118,11 @@ def run_deploy(version, mode, import_db):
         if import_db:
             env["IMPORT_DB"] = "1"
 
-        cmd = ["bash", DEPLOY_SCRIPT, version]
+        # 统一方案：version 为空时不传版本号，让 deploy-server.sh 自动获取最新 release
+        if version:
+            cmd = ["bash", DEPLOY_SCRIPT, version]
+        else:
+            cmd = ["bash", DEPLOY_SCRIPT]
         state.append_log(f"[upgrade-agent] 开始执行: {' '.join(cmd)}")
 
         process = subprocess.Popen(
@@ -134,6 +138,12 @@ def run_deploy(version, mode, import_db):
             line = line.rstrip("\n")
             if line:
                 state.append_log(line)
+                # 检测 deploy-server.sh 输出的实际版本号（"最新版本: vX.Y.Z"）
+                if "最新版本:" in line and version is None:
+                    actual_version = line.split("最新版本:")[-1].strip()
+                    if actual_version:
+                        with state._lock:
+                            state.version = actual_version
 
         process.wait()
         success = process.returncode == 0
@@ -141,12 +151,41 @@ def run_deploy(version, mode, import_db):
         state.append_log(f"[upgrade-agent] 升级{'成功' if success else '失败'} (exit={process.returncode})")
         state.finish(success)
 
+        # 直接更新数据库中的升级记录状态
+        mark_upgrade_record(success)
+
     except Exception as e:
         err_msg = f"[upgrade-agent] 异常: {e}"
         state.append_log(err_msg)
         state.finish(False)
     finally:
         upgrade_lock.release()
+
+
+def mark_upgrade_record(success):
+    """更新数据库中最近一条 RUNNING 的升级记录状态"""
+    import sqlite3
+    db_path = os.environ.get("DB_PATH", "/opt/myblog/db/blog.db")
+    try:
+        conn = sqlite3.connect(db_path, timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM upgrade_record WHERE status = 'RUNNING' ORDER BY id DESC LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            record_id = row[0]
+            status = "SUCCESS" if success else "FAILED"
+            error_msg = None if success else "升级失败"
+            cursor.execute(
+                "UPDATE upgrade_record SET status = ?, finished_at = datetime('now', 'localtime'), error_message = ? WHERE id = ?",
+                (status, error_msg, record_id)
+            )
+            conn.commit()
+            state.append_log(f"[upgrade-agent] 升级记录 #{record_id} 标记为 {status}")
+        else:
+            state.append_log("[upgrade-agent] 未找到 RUNNING 状态的升级记录")
+        conn.close()
+    except Exception as e:
+        state.append_log(f"[upgrade-agent] 更新数据库失败: {e}")
 
 # ============ HTTP 处理器 ============
 
@@ -197,10 +236,8 @@ class UpgradeHandler(BaseHTTPRequestHandler):
         import_db = data.get("importDb", False)
         confirm = data.get("confirm", "")
 
-        # 参数校验
-        if not version:
-            self._json_response(400, {"code": 400, "message": "version 不能为空"})
-            return
+        # 统一方案：version 为空时让 deploy-server.sh 自动获取最新版本
+        # 不再强制要求传入 version
         if mode not in ("full", "init"):
             self._json_response(400, {"code": 400, "message": "mode 必须是 full 或 init"})
             return
@@ -213,8 +250,8 @@ class UpgradeHandler(BaseHTTPRequestHandler):
             self._json_response(409, {"code": 409, "message": "升级进行中，请稍后再试"})
             return
 
-        # 启动升级
-        state.start(version, mode)
+        # 启动升级（version 可能为空，run_deploy 会自动获取最新版本）
+        state.start(version or "latest", mode)
 
         # 设置 SSE 响应头
         self.send_response(200)

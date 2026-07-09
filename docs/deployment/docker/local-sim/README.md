@@ -84,8 +84,8 @@ docker exec -it myblog-sim entrypoint-helper
 **v4.4.0 起推荐**：用项目根的 `scripts/deploy-server.sh` 一行命令搞定（自动 docker cp + exec 进容器跑部署）：
 
 ```bash
-./scripts/deploy-server.sh docker-init v4.4.0
-GITHUB_REPO=你的-owner/repo ./scripts/deploy-server.sh docker-init v4.4.0
+./scripts/deploy-server.sh docker-init v5.3.10
+GITHUB_REPO=你的-owner/repo ./scripts/deploy-server.sh docker-init v5.3.10
 # 容器内 /.dockerenv 自动 LOCAL_SIM=1,跳 apt/systemd/防火墙
 ```
 
@@ -106,7 +106,7 @@ cd /opt/myblog/scripts
 chmod +x deploy-server.sh
 
 # 跟生产一模一样的命令（容器内 /.dockerenv 存在，自动开 LOCAL_SIM=1）
-GITHUB_REPO=你的-owner/repo ./deploy-server.sh v4.3.0
+GITHUB_REPO=你的-owner/repo ./deploy-server.sh v5.3.10
 ```
 
 ### 2.5 验收

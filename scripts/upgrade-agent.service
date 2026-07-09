@@ -12,7 +12,7 @@ RestartSec=5
 Environment=AGENT_HOST=127.0.0.1
 Environment=AGENT_PORT=28081
 Environment=DEPLOY_SCRIPT=/opt/myblog/scripts/deploy-server.sh
-Environment=GITHUB_REPO=YuanYii/my-blog
+Environment=GITHUB_REPO=YuanYii/my-blog-prov
 
 [Install]
 WantedBy=multi-user.target

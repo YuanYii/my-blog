@@ -418,7 +418,7 @@ docker exec -it myblog-sim bash
 ```bash
 # 前提：DNS A 记录已解析，安全组已放行 80+443
 sudo ENABLE_HTTPS=1 HTTPS_DOMAIN=blog.croeyai.cn HTTPS_EMAIL=your@email.com \
-    DEPLOY_MODE=full ./deploy-server.sh v5.0.0
+    DEPLOY_MODE=full ./deploy-server.sh v5.3.10
 
 # 验证
 curl -I http://blog.croeyai.cn          # → 301 + Location: https://
