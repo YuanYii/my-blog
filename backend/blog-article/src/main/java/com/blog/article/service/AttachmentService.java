@@ -206,7 +206,7 @@ public class AttachmentService {
             return;
         }
         UpdateWrapper<Attachment> uw = new UpdateWrapper<>();
-        uw.eq("id", a.getId()).set("deleted", 1).set("updated_at", java.time.LocalDateTime.now());
+        uw.eq("id", a.getId()).set("deleted", 1).set("updated_at", LocalDateTime.now());
         attachmentMapper.update(null, uw);
         log.info("附件软删：id={} articleId={} fileName={} operator={}",
                 a.getId(), articleId, a.getFileName(), AuthContext.uid(request));
@@ -221,7 +221,7 @@ public class AttachmentService {
         UpdateWrapper<Attachment> uw = new UpdateWrapper<>();
         uw.eq("article_id", articleId).eq("deleted", 0)
                 .set("deleted", 1)
-                .set("updated_at", java.time.LocalDateTime.now());
+                .set("updated_at", LocalDateTime.now());
         int n = attachmentMapper.update(null, uw);
         if (n > 0) {
             log.info("附件按文章软删：articleId={} count={}", articleId, n);

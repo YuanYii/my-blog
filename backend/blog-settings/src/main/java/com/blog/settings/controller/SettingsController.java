@@ -41,7 +41,6 @@ public class SettingsController {
 
     private final UserMapper userMapper;
     private final SiteSettingsService siteSettingsService;
-    // 2026-07-01 DEV-005：md 文档导入器（解析 + 4 段原子写入）
     private final SettingsMdImporter settingsMdImporter;
 
     /**

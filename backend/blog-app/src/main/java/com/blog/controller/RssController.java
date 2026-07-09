@@ -87,12 +87,12 @@ public class RssController {
             .body(sb.toString());
     }
 
-    private static String formatPubDate(Object pub) {
+    private String formatPubDate(Object pub) {
         if (pub == null) return null;
         try {
             LocalDateTime t = pub instanceof LocalDateTime ? (LocalDateTime) pub
                 : LocalDateTime.parse(String.valueOf(pub).replace(' ', 'T'));
-            return RFC822.format(t.atZone(ZoneId.of("Asia/Shanghai")));
+            return RFC822.format(t.atZone(ZoneId.systemDefault()));
         } catch (Exception e) {
             return null;
         }

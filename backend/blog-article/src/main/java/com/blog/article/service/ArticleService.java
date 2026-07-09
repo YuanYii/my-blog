@@ -349,7 +349,7 @@ public class ArticleService {
             throw new BusinessException(1010, "status 取值非法: " + article.getStatus());
         }
         if (Integer.valueOf(1).equals(article.getStatus()) && article.getPublishedAt() == null) {
-            article.setPublishedAt(java.time.LocalDateTime.now());
+            article.setPublishedAt(LocalDateTime.now());
         }
         articleMapper.insert(article);
         if (tagIds != null && !tagIds.isEmpty()) {
@@ -412,7 +412,7 @@ public class ArticleService {
         if (Integer.valueOf(1).equals(effectiveStatus)
                 && article.getPublishedAt() == null
                 && existing.getPublishedAt() == null) {
-            article.setPublishedAt(java.time.LocalDateTime.now());
+            article.setPublishedAt(LocalDateTime.now());
         }
         articleMapper.updateById(article);
         if (tagIds != null) {

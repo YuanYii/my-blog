@@ -26,10 +26,7 @@ export function formatDateTime(d: string | number | null | undefined): string {
     if (isNaN(date.getTime())) return ''
     return formatYmdHm(date)
   }
-  const hasTime = d.includes('T') || d.includes(' ')
-  const hasTzMarker = d.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(d)
-  const utc = hasTime && !hasTzMarker ? d + 'Z' : d
-  const date = new Date(utc)
+  const date = new Date(d.replace(' ', 'T'))
   if (isNaN(date.getTime())) {
     return d.replace('T', ' ').substring(0, 16)
   }
