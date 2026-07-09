@@ -5,7 +5,8 @@
     "_comment": "项目基本信息",
     "name": "blog-parent",
     "nameEn": "My Blog",
-    "workspace": "项目根目录"
+    "workspace": "项目根目录",
+    "version": "5.3.0"
   },
 
   "modules": {
@@ -21,43 +22,57 @@
   },
 
   "database": {
-    "_comment": "数据库配置",
+    "_comment": "数据库配置（dev/prod 默认 SQLite，MySQL 可选）",
     "type": "SQLite",
-    "devFile": "blog.db"
+    "devFile": "blog.db",
+    "mysqlProfile": "mysql"
   },
 
   "techStack": {
     "_comment": "技术栈（用于代码审查规则、编译命令）",
-    "backend": "Spring Boot",
-    "orm": "MyBatis-Plus",
+    "backend": "Spring Boot 2.7",
+    "orm": "MyBatis-Plus 3.4.3",
     "frontend": "Nuxt 3",
-    "language": ["Java", "TypeScript"],
-    "cache": "Redis"
+    "language": ["Java 1.8", "TypeScript"],
+    "cache": "Redis 7.x",
+    "markdown": "flexmark-java 0.42.14"
   },
 
   "ports": {
     "_comment": "服务端口（用于启动检查、API 调用）",
     "backend": 8080,
     "frontend": 3000,
-    "redis": 6379
+    "redis": 6379,
+    "dockerFrontend": 28000,
+    "dockerBackend": 28080
   },
 
   "api": {
     "_comment": "API 配置（用于健康检查、接口调用）",
     "prefix": "/api/v1",
-    "healthCheck": "/articles/categories"
+    "healthCheck": "/api/v1/health"
   },
 
   "docs": {
     "_comment": "文档路径（用于文档同步）",
     "design": "docs/design/博客系统设计方案.md",
     "readme": "README.md",
-    "agents": "AGENTS.md"
+    "agents": "AGENTS.md",
+    "changelogs": "docs/changelogs/"
   },
 
   "docker": {
     "_comment": "Docker 配置（用于集成测试启动服务）",
     "redisImage": "redis:7-alpine",
-    "containerName": "blog-redis"
+    "containerName": "myblog-sim",
+    "simNetwork": "bridge"
+  },
+
+  "upgrade": {
+    "_comment": "系统升级模块配置",
+    "agentPort": 28081,
+    "agentHost": "127.0.0.1",
+    "githubRepo": "YuanYii/my-blog-prov",
+    "deployScript": "scripts/deploy-server.sh"
   }
 }

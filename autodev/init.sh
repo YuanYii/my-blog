@@ -73,9 +73,25 @@ else
     echo "⚠️  流程状态文件已存在，跳过：$STATUS_FILE"
 fi
 
-# 4. 读取当前版本号
+# 4. 拷贝工具脚本
 echo ""
-echo "=== 4. 检查当前版本号 ==="
+echo "=== 4. 拷贝工具脚本 ==="
+SCRIPTS_SRC="$WORKSPACE/autodev/skills/autodev-flow/scripts"
+SCRIPTS_DST="$WORKSPACE/autodev"
+for script in status.sh; do
+    src="$SCRIPTS_SRC/$script"
+    dst="$SCRIPTS_DST/$script"
+    if [ -f "$src" ]; then
+        cp "$src" "$dst"
+        echo "✅ 已拷贝：$script → autodev/"
+    else
+        echo "⚠️  脚本不存在：$src"
+    fi
+done
+
+# 5. 读取当前版本号
+echo ""
+echo "=== 5. 检查当前版本号 ==="
 POM_FILE="$WORKSPACE/backend/pom.xml"
 if [ -f "$POM_FILE" ]; then
     VERSION=$(grep -oP '<revision>\K[^<]+' "$POM_FILE" 2>/dev/null || echo "未找到")

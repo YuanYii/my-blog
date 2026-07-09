@@ -31,11 +31,9 @@
 
 ```bash
 # Codex
-npx @openai/codex skill install --repo <your-username>/autodev-flow
+npx @openai/codex skill install --repo 你的用户名/autodev-flow
 # Claude Code
 cp -r autodev-flow ~/.claude/skills/autodev-flow
-# Cursor
-mkdir -p .cursor/rules  # 将 SKILL.md 合并到 .cursor/rules/autodev-flow.md
 ```
 
 **直接拷贝到项目路径**（不依赖 Agent 的 skills 目录，任何 Agent 通用）：
@@ -65,8 +63,6 @@ vim autodev/skills/autodev-flow/config.json
 ```
 
 **查看状态**：
-
-> **依赖**：`status.sh` 需要 `jq`，安装方式：`brew install jq`（macOS）或 `apt install jq`（Linux）
 
 ```bash
 # 统一命令（Stage 0 自动拷贝到 autodev/status.sh）
@@ -209,40 +205,6 @@ autodev/
 | Claude Code | `.claude/skills/autodev-flow/` |
 | Cursor | `.cursor/rules/autodev-flow.md` |
 | 通用 | 任意 Agent 可访问路径 |
-
-## 版本
-
-当前版本：v1.0.0（2026-07-07）
-
-## 卸载
-
-```bash
-# Codex
-npx @openai/codex skill uninstall autodev-flow
-
-# Claude Code / 手动安装
-rm -rf ~/.claude/skills/autodev-flow
-# 或删除项目中的 skill
-rm -rf autodev/skills/autodev-flow
-```
-
-## 更新
-
-```bash
-# 重新拉取最新版本
-git clone https://github.com/<your-username>/autodev-flow.git
-cp -r autodev-flow/skills/autodev-flow /your/project/autodev/skills/
-```
-
-## 故障排除
-
-| 问题 | 解决方案 |
-|------|----------|
-| `status.sh` 报错 "需要安装 jq" | 安装 jq：`brew install jq` 或 `apt install jq` |
-| Stage 0 无法检测技术栈 | 手动编辑 `autodev/config.json`，标注 "待确认" |
-| Stage 2 编译失败 | 检查 `config.json` 中的模块路径是否正确 |
-| Stage 5 服务启动失败 | 检查端口是否被占用，或手动启动服务 |
-| 任务编号冲突 | 删除 `autodev/auto_iteration/` 下的旧文件，重新执行 Stage 1 |
 
 ## License
 
