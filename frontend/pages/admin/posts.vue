@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 2026-06-22 抽出 → composables/useMarkdownUtils.ts
-import { formatDate } from '~/composables/useMarkdownUtils'
+import { formatDateTime } from '~/composables/useMarkdownUtils'
 
 definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
@@ -387,7 +387,7 @@ onMounted(async () => {
             <th style="width: 80px;">阅读</th>
             <!-- 2026-07-01 OPT-001：新增「附件」列,按行展示 attachmentCount -->
             <th style="width: 70px;">附件</th>
-            <th>更新时间</th>
+            <th>发布时间</th>
             <th style="text-align: right;">操作</th>
           </tr>
         </thead>
@@ -413,7 +413,7 @@ onMounted(async () => {
               <span v-if="(a.attachmentCount || 0) > 0">📎 {{ a.attachmentCount }}</span>
               <span v-else style="color: var(--muted);">-</span>
             </td>
-            <td style="font-size: 12px; color: var(--muted); font-family: 'JetBrains Mono', monospace;">{{ formatDate(a.publishedAt || a.updatedAt || a.createdAt) }}</td>
+            <td style="font-size: 12px; color: var(--muted); font-family: 'JetBrains Mono', monospace;">{{ formatDateTime(a.publishedAt) }}</td>
             <td>
               <div class="row-actions">
                 <button @click="handleEdit(a)" class="row-action" title="编辑">

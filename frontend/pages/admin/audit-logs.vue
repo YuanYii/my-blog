@@ -28,11 +28,13 @@ const operationOptions = ref<string[]>([])
 // 操作类型中英文映射
 const operationLabelMap: Record<string, string> = {
   CREATE: '新增', UPDATE: '修改', DELETE: '删除',
-  APPROVE: '通过', REJECT: '拒绝', DOWNLOAD: '下载'
+  APPROVE: '通过', REJECT: '拒绝', DOWNLOAD: '下载',
+  UPGRADE: '升级', ROLLBACK: '回滚'
 }
 const operationValueMap: Record<string, string> = {
   '新增': 'CREATE', '修改': 'UPDATE', '删除': 'DELETE',
-  '通过': 'APPROVE', '拒绝': 'REJECT', '下载': 'DOWNLOAD'
+  '通过': 'APPROVE', '拒绝': 'REJECT', '下载': 'DOWNLOAD',
+  '升级': 'UPGRADE', '回滚': 'ROLLBACK'
 }
 
 const operationColor: Record<string, string> = {
@@ -41,7 +43,9 @@ const operationColor: Record<string, string> = {
   DELETE:   'var(--danger, #dc2626)', // 红
   APPROVE:  'var(--accent)',
   REJECT:   'var(--warning, #d97706)',
-  DOWNLOAD: 'var(--muted)'
+  DOWNLOAD: 'var(--muted)',
+  UPGRADE:  'var(--info, #3b82f6)', // 蓝
+  ROLLBACK: 'var(--warning, #d97706)' // 橙
 }
 
 const loadFilters = async () => {

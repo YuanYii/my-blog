@@ -134,6 +134,11 @@ public class AuditLogAspect {
             return;
         }
 
+        // ===== 特殊：系统升级/回滚 — 由 UpgradeController 手动记录 UPGRADE/ROLLBACK（含版本/模式等详情），aspect 跳过 =====
+        if (path.startsWith("/admin/upgrade")) {
+            return;
+        }
+
         // ===== 通用：POST/CREATE、PUT/UPDATE、DELETE/DELETE =====
         String operation;
         switch (httpMethod) {

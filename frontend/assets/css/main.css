@@ -891,8 +891,24 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
 
 /* ========== Pagination ========== */
 .pagination {
-  display: flex; align-items: center; justify-content: center; gap: 4px;
-  margin-top: 32px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 32px; flex-wrap: wrap;
+}
+.pagination-left, .pagination-right {
+  display: flex; align-items: center; gap: 8px;
+}
+.pagination-center {
+  display: flex; align-items: center; gap: 4px;
+}
+.pagination-size {
+  padding: 6px 10px; border-radius: 6px; font-size: 13px;
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+  cursor: pointer;
+}
+.pagination-jump {
+  width: 52px; padding: 6px 8px; border-radius: 6px; font-size: 13px;
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+  text-align: center;
 }
 .page-btn {
   min-width: 36px; height: 36px; padding: 0 10px;

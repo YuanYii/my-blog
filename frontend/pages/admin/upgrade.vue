@@ -46,6 +46,7 @@ interface UpgradeRecord {
 const records = ref<UpgradeRecord[]>([])
 const recordsTotal = ref(0)
 const recordsPage = ref(1)
+const recordsSize = ref(5)
 const recordsLoading = ref(false)
 
 // ============= 格式化工具 =============
@@ -91,7 +92,7 @@ const fetchVersions = async () => {
 const fetchRecords = async () => {
   recordsLoading.value = true
   try {
-    const res: any = await get('/admin/upgrade/records', { page: recordsPage.value, size: 20 })
+    const res: any = await get('/admin/upgrade/records', { page: recordsPage.value, size: recordsSize.value })
     records.value = res?.data?.records || []
     recordsTotal.value = res?.data?.total || 0
   } catch (e: any) {
@@ -425,6 +426,16 @@ onMounted(() => {
           </tbody>
         </table>
       </div>
+
+      <!-- 分页 -->
+      <AdminPagination
+        :page="recordsPage"
+        :size="recordsSize"
+        :total="recordsTotal"
+        @update:page="(v: number) => recordsPage = v"
+        @update:size="(v: number) => recordsSize = v"
+        @change="fetchRecords"
+      />
     </div>
   </div>
 </template>

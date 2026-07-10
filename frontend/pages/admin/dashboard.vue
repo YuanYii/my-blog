@@ -197,7 +197,7 @@ const todos = computed(() => [
 const recentPosts = ref<any[]>([])
 const loadRecent = async () => {
   try {
-    const res = await get<any>('/articles/admin/all', { size: 5 })
+    const res = await get<any>('/articles/admin/all', { size: 5, sort: 'published_at:desc' })
     recentPosts.value = res.data?.records || []
   } catch { /* ignore */ }
 }
@@ -407,7 +407,7 @@ onBeforeUnmount(() => {
       </div>
       <div v-if="!recentPosts.length" style="padding: 24px; text-align: center; color: var(--muted); font-size: 13px;">还没有文章</div>
       <table v-else class="recent-table">
-        <thead><tr><th class="col-title">标题</th><th class="col-status" style="width: 90px;">状态</th><th class="col-views" style="width: 90px;">浏览</th><th class="col-time" style="width: 140px;">更新时间</th><th class="col-action" style="width: 60px;"></th></tr></thead>
+        <thead><tr><th class="col-title">标题</th><th class="col-status" style="width: 90px;">状态</th><th class="col-views" style="width: 90px;">浏览</th><th class="col-time" style="width: 140px;">发布时间</th><th class="col-action" style="width: 60px;"></th></tr></thead>
         <tbody>
           <tr v-for="a in recentPosts" :key="a.id">
             <td class="col-title">
@@ -418,7 +418,7 @@ onBeforeUnmount(() => {
             </td>
             <td class="col-status"><span class="recent-status" :class="a.status === 1 ? 'published' : 'draft'">{{ statusLabel(a.status) }}</span></td>
             <td class="col-views"><span class="recent-meta">{{ (a.viewCount || 0).toLocaleString() }}</span></td>
-            <td class="col-time"><span class="recent-meta">{{ formatDateTime(a.updatedAt || a.createdAt) }}</span></td>
+            <td class="col-time"><span class="recent-meta">{{ formatDateTime(a.publishedAt) }}</span></td>
             <td class="col-action"><NuxtLink :to="`/admin/edit?id=${a.id}`" style="color: var(--primary); font-size: 12px;">编辑</NuxtLink></td>
           </tr>
         </tbody>

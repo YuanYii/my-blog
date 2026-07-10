@@ -20,18 +20,20 @@ const [health, categoriesRes, tagsRes, profileRes, socialRes, blogRes] = await P
 
 // 列表分页状态
 const currentPage = ref(1)
-const pageSize = 4
+const pageSize = ref(5)
+const jumpInput = ref('')
+const sizeOptions = [5, 10, 20, 50]
 
-// 文章列表：随 currentPage 变化自动重新拉取
+// 文章列表：随 currentPage/pageSize 变化自动重新拉取
 const { data: articlesRes } = await useAsyncData(
   'home-articles',
-  () => get<any>('/articles', { page: currentPage.value, size: pageSize }),
-  { watch: [currentPage] }
+  () => get<any>('/articles', { page: currentPage.value, size: pageSize.value }),
+  { watch: [currentPage, pageSize] }
 )
 
 const articles = computed(() => articlesRes.value?.data?.records || [])
 const total = computed(() => articlesRes.value?.data?.total || 0)
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const categories = computed(() => categoriesRes.data.value?.data || [])
 const tags = computed(() => tagsRes.data.value?.data || [])
 const profile = computed(() => profileRes.data.value?.data || {})
@@ -76,6 +78,19 @@ const goPage = (p: number | string) => {
     nextTick(() => {
       document.querySelector('.post-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
+  }
+}
+
+const onSizeChange = (e: Event) => {
+  pageSize.value = Number((e.target as HTMLSelectElement).value)
+  currentPage.value = 1
+}
+
+const onJump = () => {
+  const n = parseInt(jumpInput.value)
+  if (!isNaN(n)) {
+    goPage(n)
+    jumpInput.value = ''
   }
 }
 
@@ -197,17 +212,28 @@ const pageList = computed(() => {
       </div>
 
       <div v-if="totalPages > 1" class="pagination">
-        <button class="page-btn" :disabled="currentPage === 1" @click="goPage(currentPage - 1)" aria-label="上一页">‹</button>
-        <template v-for="(p, i) in pageList" :key="i">
-          <span v-if="p === '…'" class="page-btn" style="cursor: default;">…</span>
-          <button
-            v-else
-            class="page-btn"
-            :class="{ active: p === currentPage }"
-            @click="goPage(p)"
-          >{{ p }}</button>
-        </template>
-        <button class="page-btn" :disabled="currentPage === totalPages" @click="goPage(currentPage + 1)" aria-label="下一页">›</button>
+        <div class="pagination-left">
+          <select class="pagination-size" :value="pageSize" @change="onSizeChange">
+            <option v-for="s in sizeOptions" :key="s" :value="s">{{ s }} 篇/页</option>
+          </select>
+        </div>
+        <div class="pagination-center">
+          <button class="page-btn" :disabled="currentPage === 1" @click="goPage(currentPage - 1)" aria-label="上一页">‹</button>
+          <template v-for="(p, i) in pageList" :key="i">
+            <span v-if="p === '…'" class="page-btn" style="cursor: default;">…</span>
+            <button
+              v-else
+              class="page-btn"
+              :class="{ active: p === currentPage }"
+              @click="goPage(p)"
+            >{{ p }}</button>
+          </template>
+          <button class="page-btn" :disabled="currentPage === totalPages" @click="goPage(currentPage + 1)" aria-label="下一页">›</button>
+        </div>
+        <div class="pagination-right">
+          <input v-model="jumpInput" class="pagination-jump" placeholder="页码" @keydown.enter="onJump" />
+          <button class="page-btn" @click="onJump">跳转</button>
+        </div>
       </div>
     </section>
 

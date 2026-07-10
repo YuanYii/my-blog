@@ -49,7 +49,7 @@ interface BackupItem {
 const list = ref<BackupItem[]>([])
 const total = ref(0)
 const page = ref(1)
-const size = ref(20)
+const size = ref(5)
 const loading = ref(false)
 
 // v4.3.0 polish：备份轮询改用模块级 usePollingTask ——
