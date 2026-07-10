@@ -274,6 +274,10 @@ fi
 cp "$ROOT_DIR/scripts/migrate-logs.sh"    "$STAGE_DIR/assets/migrate-logs.sh"
 chmod +x "$STAGE_DIR/assets/migrate-logs.sh"
 
+# universal-script.sh 通用数据刷数脚本
+cp "$ROOT_DIR/scripts/universal-script.sh" "$STAGE_DIR/assets/universal-script.sh"
+chmod +x "$STAGE_DIR/assets/universal-script.sh"
+
 # upgrade-agent v5.3.0 系统升级代理（Python + systemd 服务）
 if [ ! -f "$ROOT_DIR/scripts/upgrade-agent.py" ]; then
     err "$ROOT_DIR/scripts/upgrade-agent.py 不存在，无法发布"
@@ -336,7 +340,7 @@ fi
 # 计算每个 asset 的 sha256(包含可选的 .enc)
 info "生成 SHA256SUMS..."
 cd "$STAGE_DIR/assets"
-SUM_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service"
+SUM_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh universal-script.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service"
 [ -f dev-blog-dump.sql.gz.enc ] && SUM_FILES="$SUM_FILES dev-blog-dump.sql.gz.enc"
 shasum -a 256 $SUM_FILES > SHA256SUMS 2>/dev/null || \
     sha256sum $SUM_FILES > SHA256SUMS
@@ -345,7 +349,7 @@ cd "$ROOT_DIR"
 # 打 zip 冷部署包
 BUNDLE="deploy-bundle-${TAG}.zip"
 cd "$STAGE_DIR/assets"
-ZIP_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service SHA256SUMS"
+ZIP_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh universal-script.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service SHA256SUMS"
 [ -f dev-blog-dump.sql.gz.enc ] && ZIP_FILES="$ZIP_FILES dev-blog-dump.sql.gz.enc"
 zip -q "$BUNDLE" $ZIP_FILES
 cd "$ROOT_DIR"
@@ -363,7 +367,7 @@ README_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token 
 if [ "$README_EXISTS" != "200" ]; then
     info "仓库是空的（或无 README.md），自动补一个初始 README 解锁 release..."
     # GNU base64 默认折行，必须 tr -d '\n' 产合法 JSON
-    README_CONTENT=$(printf '# my-blog-prov\n\nmy-blog 部署专用仓库。\n\n本仓只放 GitHub Release assets（jar / static / sql / 部署脚本），代码仓在 [YuanYii/my-blog](https://github.com/YuanYii/my-blog)。\n\n## 部署方式\n\n参见每个 release 的 assets：\n- `deploy-bundle-vX.Y.Z.zip` 冷部署包（推荐，1 个文件拉完）\n- `blog-app.jar` Spring Boot fat jar\n- `frontend-static.tar.gz` Nuxt 生成的静态文件\n- `schema-sqlite.sql` SQLite 初始化\n- `deploy-server.sh` 服务器端一键部署脚本\n- `SHA256SUMS` 校验文件\n\n服务器端：\n```bash\nexport GITHUB_REPO=YuanYii/my-blog-prov\nsudo ./deploy-server.sh v5.0.0\n```\n' | base64 | tr -d '\n')
+    README_CONTENT=$(printf '# my-blog-prov\n\nmy-blog 部署专用仓库。\n\n本仓只放 GitHub Release assets（jar / static / sql / 部署脚本），代码仓在 [YuanYii/my-blog](https://github.com/YuanYii/my-blog)。\n\n## 部署方式\n\n参见每个 release 的 assets：\n- `deploy-bundle-vX.Y.Z.zip` 冷部署包（推荐，1 个文件拉完）\n- `blog-app.jar` Spring Boot fat jar\n- `frontend-static.tar.gz` Nuxt 生成的静态文件\n- `schema-sqlite.sql` SQLite 初始化\n- `deploy-server.sh` 服务器端一键部署脚本\n- `SHA256SUMS` 校验文件\n\n服务器端：\n```bash\nexport GITHUB_REPO=YuanYii/my-blog-prov\nsudo ./deploy-server.sh v5.4.2\n```\n' | base64 | tr -d '\n')
     # 用 Contents API 创建 README.md（base64 编码 + commit message）
     INITIAL_PAYLOAD=$(printf '{"message":"chore: initial README (unlock release for empty repo)","content":"%s"}' "$README_CONTENT")
     HTTP_CODE=$(curl -s -o "$STAGE_DIR/init.json" -w "%{http_code}" -X PUT \
@@ -445,6 +449,7 @@ upload_one "$STAGE_DIR/assets/sqlite-import.sh"        "sqlite-import.sh"
 upload_one "$STAGE_DIR/assets/sqlite-export.sh"        "sqlite-export.sh"
 upload_one "$STAGE_DIR/assets/blog-backup.sh"          "blog-backup.sh"
 upload_one "$STAGE_DIR/assets/migrate-logs.sh"         "migrate-logs.sh"
+upload_one "$STAGE_DIR/assets/universal-script.sh"     "universal-script.sh"
 upload_one "$STAGE_DIR/assets/upgrade-agent.py"        "upgrade-agent.py"
 upload_one "$STAGE_DIR/assets/upgrade-agent.service"   "upgrade-agent.service"
 upload_one "$STAGE_DIR/assets/nginx-http.conf"         "nginx-http.conf"

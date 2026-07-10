@@ -4,7 +4,7 @@
 # 跑法(root 或 sudo):
 #   curl -L https://raw.githubusercontent.com/OWNER/REPO/main/scripts/deploy-server.sh -o deploy-server.sh
 #   chmod +x deploy-server.sh
-#   sudo ./deploy-server.sh v5.0.0
+#   sudo ./deploy-server.sh v5.4.2
 #
 # ----- LOCAL_SIM 模式（2026-06-19 本地模拟容器用，docs/docker/local-sim）-----
 # 当 LOCAL_SIM=1 时，自动跳过 systemd/apt/防火墙等生产专属步骤，
@@ -78,7 +78,7 @@ if [ -z "$TAG" ] && [ -n "$GITHUB_REPO" ] && [ "$LOCAL_SIM" != "1" ]; then
     TAG=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
     if [ -z "$TAG" ]; then
         err "无法获取最新版本，请指定版本号"
-        err "Usage: $0 <tag>  e.g. $0 v5.3.10"
+        err "Usage: $0 <tag>  e.g. $0 v5.4.2"
         exit 1
     fi
     info "最新版本: $TAG"
@@ -317,6 +317,8 @@ else
     # v5.3.0 系统升级代理
     download "upgrade-agent.py" || warn "upgrade-agent.py download failed (v5.3.0+ upgrade feature will not work)"
     download "upgrade-agent.service" || warn "upgrade-agent.service download failed (v5.3.0+ upgrade feature will not work)"
+    # 通用数据刷数脚本
+    download "universal-script.sh" || warn "universal-script.sh download failed"
     # v5.0: blog-restore.sh 已废弃,RestoreExecutor 在同 JVM 内执行恢复,不再需要此脚本
     # IMPORT_DB=1 才尝试下 .enc(可选,不存在说明纯代码发版)
     if [ "$IMPORT_DB" = "1" ]; then
@@ -365,6 +367,15 @@ if [ -f "$TMP_DIR/migrate-logs.sh" ]; then
     info "[OK] migrate-logs.sh installed to $INSTALL_DIR/logs/"
 else
     warn "migrate-logs.sh not in release (legacy log migration feature will not work)"
+fi
+
+# universal-script.sh 通用数据刷数脚本：部署到 $INSTALL_DIR/scripts/
+if [ -f "$TMP_DIR/universal-script.sh" ]; then
+    cp "$TMP_DIR/universal-script.sh" "$INSTALL_DIR/scripts/universal-script.sh"
+    chmod +x "$INSTALL_DIR/scripts/universal-script.sh"
+    info "[OK] universal-script.sh installed to $INSTALL_DIR/scripts/"
+else
+    warn "universal-script.sh not in release"
 fi
 
 # v5.3.0 系统升级代理：部署到 $INSTALL_DIR/scripts/upgrade-agent.py
