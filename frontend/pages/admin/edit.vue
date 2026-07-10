@@ -165,12 +165,14 @@ const loadArticle = async () => {
   }
 }
 
-const autoSlug = () => {
-  if (!isEdit.value && !form.slug) {
-    form.slug = form.title.toLowerCase()
-      .replace(/[^a-z0-9一-龥]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 60)
+const autoSlug = async () => {
+  if (!isEdit.value && !form.slug && form.title) {
+    const data = new TextEncoder().encode(form.title)
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+    form.slug = Array.from(new Uint8Array(hashBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+      .slice(0, 16)
   }
 }
 
