@@ -4,6 +4,7 @@
 > 当前状态：v2.6.0 dev/prod 默认 SQLite（一文件 0 内存占用，MySQL 降级为可选 profile） + v2.7.0 前端全静态化（`nuxt generate` + nginx serve，省 150-250MB 内存）+ 公开页 SEO 预渲染 + **v4.0.0 日志体系（SLF4J/Logback + traceId + 文件滚动 30 天）+ IP 限流封禁（Redis + DB 持久化）+ 动态 favicon** + **v4.2.0 数据备份（加密上传 GitHub Release）+ v4.2.1 备份 polish（删除记录 / traceId 全链路 / UI 对齐）** + **v5.0.0 文章附件管理（一文一附件 5MB zip，软删/恢复/硬删 + 后台列表 7 列 + useDialog 文案污染修复 + edit.vue 新建附件可见 + 文章二段删除）** + **v5.1.0 审计日志系统（Spring AOP 全局拦截 admin 写端点 + 公开下载，21 模块名映射 + 报表页筛选）+ md 文档批量更新 settings（前端静态模版 + 后端 SnakeYAML SafeConstructor 严格 schema 校验 + 整体原子事务）** + **v5.2.0 SEO 可搜索（后端返回含文章内容的 HTML 页面 + 渐进增强 + robots.txt + sitemap.xml）** + **v5.3.0 系统升级（管理后台一键升级，Python 标准库代理 + SSE 流式日志 + 升级记录表）**。
 
 ---
+https://blog.coreyai.cn/
 
 ## 一、项目介绍
 
