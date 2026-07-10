@@ -21,8 +21,7 @@ import javax.servlet.http.HttpServletRequest;
  *  - GET    /api/v1/admin/backup/list    历史列表（分页）
  *  - GET    /api/v1/admin/backup/{id}    单条详情 + 状态
  *  - DELETE /api/v1/admin/backup/{id}    删除一条备份记录(v4.2.1 polish)
- *          SUCCESS → 先删 GitHub Release(best-effort) + 删 db
- *          FAILED  → 直删 db
+ *          仅删除本地 db 记录，GitHub Release 文件保留
  *          PENDING/RUNNING → 拒绝(3002 BACKUP_RECORD_RUNNING)
  *
  * 鉴权：admin（AdminAuthFilter 已在 /admin/** 路径统一拦截）

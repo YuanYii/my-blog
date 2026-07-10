@@ -570,18 +570,7 @@ public class BackupService {
         String tag = r.getTag();
         String username = AuthContext.username(request);
 
-        // SUCCESS: 先删 GitHub Release(best-effort)
-        if ("SUCCESS".equals(status) && tag != null && !tag.isEmpty()) {
-            boolean releaseDeleted = deleteGitHubRelease(tag);
-            if (!releaseDeleted) {
-                // 沿用 trimOldRecords 的策略:WARN 不回滚 db,避免重复手动清理
-                log.warn("删除备份记录: GitHub Release {} 删除失败(可能已被手动删),仍删 db 行 operator={}",
-                        tag, username);
-            } else {
-                log.info("删除备份记录: GitHub Release {} 已删除 operator={}", tag, username);
-            }
-        }
-
+        // 仅删除本地 db 记录，GitHub Release 文件保留（用户可手动在 GitHub 管理）
         backupRecordMapper.deleteById(id);
         log.info("删除备份记录成功: id={} status={} tag={} operator={}", id, status, tag, username);
     }
