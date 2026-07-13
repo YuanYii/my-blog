@@ -1,0 +1,6 @@
+{
+  "args": ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--font-render-hinting=none"],
+  "headless": "new",
+  "executablePath": "/Users/yuanyi/.cache/puppeteer/chrome/mac_arm-150.0.7871.24/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "defaultViewport": { "width": 1800, "height": 1000 }
+}
