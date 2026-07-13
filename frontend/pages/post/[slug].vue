@@ -433,4 +433,21 @@ onBeforeUnmount(() => {
   margin-right: 6px;
   accent-color: var(--primary);
 }
+
+@media (max-width: 768px) {
+  .post-layout { gap: 0; }
+  .post-main { padding: 0 4px; }
+  .prose :deep(h1) { font-size: 24px; margin: 20px 0 10px; }
+  .prose :deep(h2) { font-size: 20px; margin: 18px 0 8px; padding-top: 6px; }
+  .prose :deep(h3) { font-size: 17px; margin: 14px 0 6px; }
+  .prose :deep(p) { font-size: 16px; line-height: 1.85; margin: 10px 0; }
+  .prose :deep(pre) { font-size: 13px; padding: 12px; margin: 12px 0; }
+  .prose :deep(code) { font-size: 0.9em; }
+  .prose :deep(table) { font-size: 13px; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .prose :deep(th), .prose :deep(td) { padding: 8px 10px; }
+  .prose :deep(blockquote) { margin: 12px 0; padding: 8px 14px; }
+  .prose :deep(ul), .prose :deep(ol) { padding-left: 22px; }
+  .prose :deep(li) { font-size: 16px; line-height: 1.75; margin: 3px 0; }
+  .prose :deep(img) { border-radius: 8px; margin: 14px 0; }
+}
 </style>

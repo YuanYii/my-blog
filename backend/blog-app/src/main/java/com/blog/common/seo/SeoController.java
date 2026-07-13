@@ -159,6 +159,7 @@ public class SeoController {
                 + "<html lang=\"zh-CN\">\n"
                 + "<head>\n"
                 + "    <meta charset=\"UTF-8\">\n"
+                + "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
                 + "    <title>" + title + " | blog.coreyai.cn</title>\n"
                 + "    <meta name=\"description\" content=\"" + summary + "\">\n"
                 + "    <meta property=\"og:title\" content=\"" + title + "\">\n"
