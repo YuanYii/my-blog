@@ -3,10 +3,10 @@
 | 项 | 值 |
 |---|---|
 | 文档编号 | DESIGN-DEPLOY-BLOG-LOG-2026-07-13 |
-| 文档版本 | v1.1（补充执行步骤 + 实施状态） |
-| 日期 | 2026-07-13 |
+| 文档版本 | v1.3（Phase 2 本地验证通过） |
+| 日期 | 2026-07-14 |
 | 作者 | 钱架构（系统架构师） |
-| 状态 | Phase 0-1 已完成，Phase 2-4 待执行 |
+| 状态 | Phase 0-2 已完成；Phase 3-4 待执行（生产部署） |
 | 关联文档 | `博客日志接入Loki方案设计.md`（DESIGN-LOKI-2026-07-07 v1.2，设计依据）<br>`05-博客日志接入agent_log_monitoring-接入技术方案.md`（ADR-INTEG-BLOG-LOG-2026-07-12，决策依据）<br>`服务日志体系设计.md`（REQ-LOG-2026-06-18） |
 
 ---
@@ -23,6 +23,7 @@
 | D4 | 层 B 触发模式 | **拉模式**（博客日志作 W2 研判上下文） | 05 §6 |
 | S1 | Loki 端口整改 | 改 `127.0.0.1:30004:3100`（仅本地回路） | 05 §3.② |
 | 端口 | Prometheus `30009` / Grafana `30010` | 已分配固化 | MEMORY 端口段 |
+| D5 | 验证策略 | **本地 sim 优先**：先在本地 `myblog-sim` 容器跑通整链（`myblog-sim → 本地 Promtail → Loki → Grafana`），验证通过**后再**部署生产 VPS | 本方案 §2.6 / §4 阶段2 |
 
 > 本方案所有端口、标签、链路均以此为准。DESIGN-LOKI（v1.2）中 "Grafana(:3000)" 与 "Loki 0.0.0.0 暴露" 两处与现状不符，**以本方案 + 05 为准**，待后续回填 DESIGN-LOKI。
 
@@ -66,6 +67,8 @@
 
 ![跨环境部署拓扑](images/fig-deploy-拓扑.png)
 
+> **🔧 验证策略变更（D5）**：上图"生产 VPS"分支为**目标生产形态**。按本方案，正式打通前先在**本地**起一个 `myblog-sim` 容器模拟博客（产出同格式日志），由**本地 Promtail 直连 Loki**（同 docker 网络 `agent-logging`，URL `http://loki:3100`，**无需 cloudflared / Cloudflare Tunnel**）跑通整链。本地验证通过 = 日志契约（标签 `service=my-blog-backend`、regex、traceId、Grafana 看板）全部成立，**之后**才推进"生产 VPS + Tunnel"分支。见 §2.6 与 §4 阶段2。
+
 ### 1.2 端口与服务分配
 
 | 服务 | 位置 | 容器端口 | 宿主映射 | 绑定 | 说明 |
@@ -90,6 +93,7 @@
 | **当前系统侧 — Loki 端口整改**（S1） | 0 行 | 改 1 行 | 小 | `docker-compose.yml` 中 `loki.ports` 由 `30004:3100` 改为 `127.0.0.1:30004:3100` |
 | **当前系统侧 — Grafana 新增**（S2/S3） | 0 行 | 新增服务 + provisioning | 中 | 新增 `grafana` 服务（端口 30010）+ 数据源自动配置 + 博客日志看板（provisioning 载入） |
 | **当前系统侧 — W2 研判**（层 B，Phase 2） | 有（WP-5.2） | 0 | 大 | `LokiAdapter` 实现 + 查询契约（按 `service`/`traceId`/时间窗）；属系统自身演进，**不在本次部署范围** |
+| **本地验证设施 — myblog-sim 容器**（D5，验证优先） | 0 行 | 新增 | 小 | 本地起 `myblog-sim`（模拟博客日志产出）+ `myblog-sim-promtail`（同 B2 配置，仅 `clients.url` 指向 `http://loki:3100`）；**纯本地、不触生产**，验证通过即销毁或保留为回归沙箱 |
 
 **结论**
 
@@ -262,9 +266,121 @@ schema_config:
 
 ---
 
+## 2.6 本地验证沙箱：myblog-sim（验证优先，生产后置 · D5）
+
+为在不触生产 VPS 的前提下验证整链，本地起一个 `myblog-sim` 容器模拟博客日志产出，并由 `myblog-sim-promtail` 直连 Loki（同 `agent-logging` 网络，URL `http://loki:3100`，**免去 Cloudflare Tunnel / cloudflared**）。验证通过后再走 §3–§4 的生产部署。
+
+### 2.6.1 myblog-sim 日志格式
+
+必须**严格复刻**生产博客 `logback-spring.xml` 输出格式，否则 Promtail 正则(B2)匹配不到：
+
+```
+YYYY-MM-DD HH:MM:SS.mmm LEVEL [thread] [traceId] logger - message
+例：2026-07-14 08:00:00.123 INFO  [main] [trace-abc123] c.blog.Sim - 模拟博客日志接入
+```
+
+### 2.6.2 docker-compose 追加（与现有 agent-logging 网络同一栈）
+
+```yaml
+  # ---- 本地验证沙箱：模拟博客（非生产镜像）----
+  myblog-sim:
+    image: python:3.13-slim
+    container_name: myblog-sim
+    command: >
+      bash -c "mkdir -p /opt/myblog/logs && while true; do
+      TS=$$(date '+%Y-%m-%d %H:%M:%S.000');
+      for LV in INFO WARN ERROR; do
+        echo \"$$TS $$LV [main] [trace-$$RANDOM] c.blog.Sim - 模拟博客日志 level=$$LV\"
+        >> /opt/myblog/logs/blog.log;
+      done; sleep 3; done"
+    volumes:
+      - myblog-sim-logs:/opt/myblog/logs
+    networks:
+      - agent-logging
+
+  # ---- 本地验证 Promtail：复用 B2 契约，仅 clients.url 指向本地 Loki ----
+  myblog-sim-promtail:
+    image: grafana/promtail:3.4.2
+    container_name: myblog-sim-promtail
+    volumes:
+      - myblog-sim-logs:/var/log/myblog:ro
+      - ./loki/config/promtail-blog-sim.yaml:/etc/promtail/config.yaml:ro
+    command: -config.file=/etc/promtail/config.yaml
+    networks:
+      - agent-logging
+    depends_on:
+      - loki
+      - myblog-sim
+
+volumes:
+  myblog-sim-logs:
+```
+
+> ⚠️ `myblog-sim` 仅为验证用仿真，**绝不进生产**；生产侧日志产出由真实博客 Jar（VPS systemd）负责，见 §3。
+
+### 2.6.3 Promtail 配置（复用 B2 正则/标签，仅 clients.url 改本地 Loki）
+
+新增 `loki/config/promtail-blog-sim.yaml`：
+
+```yaml
+server:
+  http_listen_port: 9081
+positions:
+  filename: /tmp/positions.yaml
+clients:
+  - url: http://loki:3100/loki/api/v1/push   # ★ 本地验证：直连 Loki，非 Tunnel URL
+scrape_configs:
+  - job_name: blog-app
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: blog
+          source: my-blog
+          env: sim            # 本地验证用 sim，生产为 prod
+          service: my-blog-backend
+          logfile: app
+    pipeline_stages:
+      - files:
+          - /var/log/myblog/*.log
+      - regex:
+          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\s+(?P<level>\w+)\s+\[(?P<thread>[^\]]*)\]\s+\[(?P<traceId>[^\]]*)\]\s+(?P<logger>\S+)\s+-\s+(?P<msg>.*)$'
+      - labels:
+          level:
+          traceId:
+      - timestamp:
+          source: timestamp
+          format: "2006-01-02 15:04:05.000"
+  - job_name: blog-warn
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: blog
+          source: my-blog
+          env: sim
+          service: my-blog-backend
+          logfile: warn
+    pipeline_stages:
+      - files:
+          - /var/log/myblog/*.log
+      - regex:
+          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\s+(?P<level>\w+)\s+\[(?P<thread>[^\]]*)\]\s+\[(?P<traceId>[^\]]*)\]\s+(?P<logger>\S+)\s+-\s+(?P<msg>.*)$'
+      - labels:
+          level:
+          traceId:
+      - timestamp:
+          source: timestamp
+          format: "2006-01-02 15:04:05.000"
+```
+
+> 与 §3 B2 的唯一差异：`clients.url`（本地 `http://loki:3100` vs 生产 Tunnel URL）+ `env: sim` vs `prod`。其余正则/标签/解析**完全一致** → 本地验证通过即代表生产 Promtail 契约正确，仅剩传输层（Tunnel）待验证。
+
+---
+
 ## 3. 博客侧部署（VPS · 运维动作）— 引用 DESIGN-LOKI §4
 
 owner：博客部署负责人。以下仅列出与 DESIGN-LOKI 的**差异点**（即 `service=my-blog-backend` 补强），完整步骤/命令/二进制下载见 DESIGN-LOKI §4.1–§4.4。
+
+> **Docker 用途澄清**：仓库中 `backend/blog-app/Dockerfile`、`frontend/Dockerfile` 仅用于本地模拟生产（`scripts/deploy-server.sh` 在 `LOCAL_SIM=1` 时启用），**VPS 生产为 `blog-app.jar` + systemd 直跑，不使用 Docker**。本方案 VPS 侧接入组件（Promtail）因此走二进制部署，不引入 Docker——与评估「VPS 1C2G 性能受限」的前提一致，接入不会增加 Docker 运行时开销。
 
 ### 3.1 Promtail 配置补强（B2 差异）
 
@@ -300,28 +416,37 @@ owner：博客部署负责人。以下仅列出与 DESIGN-LOKI 的**差异点**�
 ## 4. 实施顺序与里程碑
 
 ```
-阶段 1：当前系统侧（本地，S1→S2→S3）
+阶段 1：本地接收端（S1→S2→S3，已完成 ✅）
   S1 Loki 端口改 127.0.0.1        → docker compose restart loki
   S2 新增 Grafana + 数据源配置    → docker compose up -d grafana
   S3 博客日志看板（provisioning） → 启动后自动载入
   验证：Grafana :30010 可登录、Loki/Prometheus 数据源 green
 
-阶段 2：博客侧（VPS，B1→B6）
-  B1 Promtail 二进制  B2 配置(+service)  B3 systemd
-  B4 Cloudflare Tunnel + Access  B5 本地 cloudflared  B6 Promtail clients 改 URL
-  验证：Promtail active、Tunnel "Registered"、Grafana 查到 {source="my-blog"}
+阶段 2：本地 myblog-sim 验证（⏳ 待执行，D5 验证优先）
+  myblog-sim 容器产出日志 → myblog-sim-promtail 直连 Loki(:3100) → Grafana 查到 {source="my-blog"}
+  验证：§5.1 全部通过（标签契约 + 看板实时）→ 方进阶段3
 
-阶段 3：联调
-  端到端：VPS 写一条测试日志 → Grafana 实时可见 → 验证标签 service=my-blog-backend
+阶段 3：生产部署（VPS，B1→B6，⏳ 待执行）
+  B1 Promtail 二进制  B2 配置(+service)  B3 systemd
+  B4 Cloudflare Tunnel + Access  B5 本地 cloudflared  B6 Promtail clients 改 Tunnel URL
+  验证：Promtail active、Tunnel "Registered"
+
+阶段 4：生产联调（⏳ 待执行）
+  端到端：VPS 写测试日志 → 经 Tunnel → Loki → Grafana 实时可见 → 验证 service=my-blog-backend
 ```
 
-> 阶段 1 与阶段 2 可并行（互不依赖）；但**阶段 1 的 S1 是安全前置**，建议优先。
+> 阶段 1 已完成；**阶段 2（本地 sim）必须先于阶段 3/4（生产）通过**（D5）；阶段 3 与阶段 4 顺序依赖（先建 Tunnel 再联调）。
 
 ### 4.1 详细执行步骤
 
 > 以下为可直接复制执行的完整命令。每步标注预期输出，便于排查。
+>
+> **执行位置说明**：
+> - 🖥️ **本地（Agent 执行）**：在开发机上由 Agent 自动完成
+> - 🖧 **VPS（用户执行）**：需 SSH 到 VPS 手动执行
+> - 🌐 **Cloudflare Dashboard（用户执行）**：需在浏览器中操作
 
-#### Phase 0：修复 Loki unhealthy + 端口整改（本地）
+#### Phase 0：修复 Loki unhealthy + 端口整改 🖥️ 本地（Agent 执行）✅ 已完成
 
 **背景**：Loki 容器为 distroless 镜像（无 wget/curl/sh），原有 healthcheck 用 `wget` 导致误报 unhealthy。Loki 进程本身正常运行。
 
@@ -361,7 +486,7 @@ nc -z 192.168.x.x 30004 && echo "FAIL: 外部可达" || echo "OK: 外部不可�
 
 ---
 
-#### Phase 1：本地新增 Grafana + provisioning + 看板
+#### Phase 1：本地新增 Grafana + provisioning + 看板 🖥️ 本地（Agent 执行）✅ 已完成
 
 ```bash
 # ---- 1.1 创建 provisioning 目录结构 ----
@@ -460,7 +585,7 @@ curl -sI http://127.0.0.1:30010/login | head -1
 # 预期: HTTP/1.1 200 OK
 
 # 浏览器打开 http://localhost:30010
-# 登录 admin / admin
+# 登录 admin / change_me_in_prod
 # 左侧 Connections → Data sources → 确认 Loki + Prometheus 状态 green
 # 左侧 Dashboards → 确认「博客日志监控」看板存在
 ```
@@ -469,11 +594,64 @@ curl -sI http://127.0.0.1:30010/login | head -1
 
 ---
 
-#### Phase 2：VPS 部署 Promtail + Cloudflare Tunnel
+#### Phase 2：本地 myblog-sim 验证沙箱 🖥️ 本地（Agent 执行）✅ 已完成
 
-> ⚠️ 需要 SSH 登录 VPS（`ssh myblog@192.236.223.130`）
+> 验证策略 D5：在本地 docker 用 `myblog-sim` 容器模拟博客，由本地 `myblog-sim-promtail` 直连 Loki 跑通整链，**不触生产**。验证通过后再走 Phase 3/4 生产部署。配置见 §2.6。
 
-##### B1：下载 Promtail 二进制
+##### 2.1 启动 myblog-sim + myblog-sim-promtail 🖥️ 本地
+
+```bash
+cd /path/to/agent_log_monitoring
+docker compose up -d myblog-sim myblog-sim-promtail
+# 预期: 两容器 Up；myblog-sim 每 ~3s 写一条同格式日志到卷 myblog-sim-logs
+docker logs myblog-sim --tail 3          # 预期: 见 INFO/WARN/ERROR 同格式日志
+docker logs myblog-sim-promtail --tail 3 # 预期: 无 ERROR，有 "starting tail" / "sending batch"
+```
+
+##### 2.2 验证本地整链 🖥️ 本地
+
+```bash
+# 核心判定：Loki 是否收到 sim 日志
+curl -s "http://127.0.0.1:30004/loki/api/v1/query?query=%7Bsource%3D%22my-blog%22%7D" \
+  | python3 -c "import sys,json;d=json.load(sys.stdin);r=d.get('data',{}).get('result',[]);print('匹配流数:',len(r));[print(' -',s['stream']) for s in r[:3]]"
+# 预期: 匹配流数 >= 1，stream 含 source=my-blog, service=my-blog-backend, env=sim
+
+# Grafana 看板实时可见
+# 浏览器开 http://localhost:30010 → 「博客日志监控」→ 见到 sim 日志滚动
+```
+
+**判定通过标准（全部满足方可进生产 Phase 3）**：
+1. `{source="my-blog"}` 有数据；
+2. `{source="my-blog", service="my-blog-backend"}` 结果一致（标签契约成立）；
+3. `traceId` 标签可解析（按 traceId 能查到对应日志）；
+4. `level` 标签生效（INFO/WARN/ERROR 可分）；
+5. Grafana「博客日志监控」看板实时刷新。
+
+##### 2.3 验证证据（架构师实测，2026-07-14）
+
+| 验证项 | 实测方法 | 结果 |
+|---|---|---|
+| 容器运行 | `docker ps` | `myblog-sim` Up 7m / `myblog-sim-promtail` Up 10m ✅ |
+| Loki 收数 | `series` + `label/{source,service,env}/values` | `source=my-blog`、`service=my-blog-backend`、`env=sim` 全部存在；活跃流 895 ✅ |
+| 真实日志行 | `query_range {source="my-blog"}` | 原文 `2026-07-14 00:33:48.000 WARN [main] [trace-57345] c.blog.Sim - test level=WARN` ✅ |
+| 结构化标签 | stream 标签 | `level=WARN`、`traceId=trace-57345`、`service/my-blog-backend`、`source/my-blog`、`env=sim` 全部提取 ✅ |
+| `level` 标签 | `label/level/values` | 返回 `ERROR`/`INFO`/`WARN` ✅ |
+| `traceId` 标签 | `label/traceId/values` | 返回数百个 `trace-xxxxx`，正则解析生效 ✅ |
+| 看板接线 | 读 `blog-logs.json` | 3 个面板全指向 `{source="my-blog"}`，uid `blog-logs-monitor` ✅ |
+| 看板渲染 | Grafana API `uid=blog-logs-monitor` + `/api/ds/query {source="my-blog"}` | 看板已载入（标题「博客日志监控」、3 面板）；面板查询返回 frames=1，**实时渲染出博客日志数据** ✅ |
+| Grafana 登录态 | `admin:admin` vs fallback `change_me_in_prod` | `admin:admin`→401；**fallback `change_me_in_prod`→200**（`.env` 未设 `GRAFANA_ADMIN_PASSWORD`，容器用 compose fallback）⚠️ 非真硬化，见下方安全发现 |
+
+> **安全发现（P2·§7）**：Grafana 口令实际仍为 compose 默认值 `change_me_in_prod`（`.env` 未配置 `GRAFANA_ADMIN_PASSWORD`），并非部署时硬化。当前 dev 环境 + 127.0.0.1 绑定，风险低；**进入生产 Phase 3 前须在 `.env` 设强口令并重载**，否则属明文弱口令。
+
+> 结论：本地 sim 整链（myblog-sim → myblog-sim-promtail → Loki → 结构化标签 → Grafana 看板实时渲染）**已实证全链路打通**，可进入 Phase 3 生产部署。仅 Grafana 口令待生产前硬化（P2）。
+
+**状态**：✅ 已完成（2026-07-14，全部 5 项验证通过，实测证据见 §2.3）
+
+---
+
+#### Phase 3：生产 VPS 部署 Promtail + Cloudflare Tunnel 🖧 VPS + 🌐 Cloudflare（用户执行）⏳ 待执行
+
+##### B1：下载 Promtail 二进制 🖧 VPS
 
 ```bash
 ssh myblog@192.236.223.130
@@ -493,7 +671,7 @@ promtail --version
 # 预期: Promtail version 3.4.2
 ```
 
-##### B2：创建 Promtail 配置
+##### B2：创建 Promtail 配置 🖧 VPS
 
 ```bash
 sudo mkdir -p /etc/promtail /var/lib/promtail
@@ -552,7 +730,7 @@ scrape_configs:
 PROMTAIL_EOF
 ```
 
-##### B3：创建 systemd 服务
+##### B3：创建 systemd 服务 🖧 VPS
 
 ```bash
 sudo tee /etc/systemd/system/promtail.service > /dev/null << 'SVC_EOF'
@@ -579,7 +757,7 @@ sudo systemctl status promtail
 # 预期: active (running)
 ```
 
-##### B4：验证 Promtail 采集（本地模式）
+##### B4：验证 Promtail 采集（本地模式） 🖧 VPS
 
 ```bash
 # 检查 positions 文件
@@ -591,7 +769,7 @@ sudo journalctl -u promtail -n 20 --no-pager
 # 预期: 无 ERROR，有 "starting tail" 类信息
 ```
 
-##### B5：Cloudflare Dashboard 配置 Tunnel
+##### B5：Cloudflare Dashboard 配置 Tunnel 🌐 Cloudflare Dashboard
 
 1. 登录 https://dash.cloudflare.com → 选择 `blog.coreyai.cn` 域名
 2. 左侧 **Zero Trust** → **Networks** → **Tunnels** → **Create a tunnel**
@@ -604,7 +782,7 @@ sudo journalctl -u promtail -n 20 --no-pager
    - URL: `localhost:30004`（你**本地机器**的 Loki 端口）
 6. 保存
 
-##### B6：Cloudflare Access Service Token
+##### B6：Cloudflare Access Service Token 🌐 Cloudflare Dashboard + 🖧 VPS
 
 1. Cloudflare Dashboard → **Zero Trust** → **Settings** → **Service Tokens**
 2. **Create Service Token** → 记录 `Client ID` 和 `Client Secret`
@@ -669,11 +847,11 @@ sudo systemctl status promtail
 # 预期: active (running)，无报错
 ```
 
-**状态**：⏳ 待执行（需 VPS SSH）
+**状态**：⏳ 待执行（需 VPS SSH + Cloudflare Dashboard 操作）
 
 ---
 
-#### Phase 3：本地安装 cloudflared + 配置 Tunnel
+#### Phase 4：本地安装 cloudflared + 配置 Tunnel 🖥️ 本地（Agent 执行）⏳ 待执行
 
 ```bash
 # ---- 3.1 安装 cloudflared（macOS）----
@@ -708,44 +886,76 @@ tail -f /tmp/cloudflared.out.log
 # 预期: "Registered tunnel connection" 或 "connection" 字样
 ```
 
-**状态**：⏳ 待执行（依赖 T1.3 的 Tunnel Token）
+**状态**：⏳ 待执行（依赖 Phase 3.B5 的 Tunnel Token）
 
 ---
 
-#### Phase 4：端到端联调验证
+#### Phase 5：生产端到端联调验证 🖧 VPS + 🖥️ 本地（协作执行）⏳ 待执行
 
 ```bash
-# ---- 4.1 在 VPS 上写一条测试日志 ----
+# ---- 5.1 在 VPS 上写一条测试日志 ----
 echo "$(date '+%Y-%m-%d %H:%M:%S.000') INFO  [main] [test-trace-id-12345] c.blog.Test - 测试日志接入" >> /opt/myblog/logs/blog.log
 
-# ---- 4.2 在本地 Grafana 查询 ----
+# ---- 5.2 在本地 Grafana 查询 ----
 # 浏览器打开 http://localhost:30010
 # 进入「博客日志监控」看板
 # 或在 Explore 中输入 LogQL：
 #   {source="my-blog"}
 # 预期: 看到刚写入的测试日志
 
-# ---- 4.3 验证 service 标签 ----
+# ---- 5.3 验证 service 标签 ----
 # Explore → Loki → 输入：
 #   {source="my-blog", service="my-blog-backend"}
 # 预期: 结果与 {source="my-blog"} 一致（所有博客日志都有此标签）
 
-# ---- 4.4 验证 traceId 解析 ----
+# ---- 5.4 验证 traceId 解析 ----
 # Explore → Loki → 输入：
 #   {source="my-blog", traceId="test-trace-id-12345"}
 # 预期: 看到刚写入的测试日志
 
-# ---- 4.5 验证 level 标签 ----
+# ---- 5.5 验证 level 标签 ----
 # Explore → Loki → 输入：
 #   {source="my-blog"} | level = "INFO"
 # 预期: 只显示 INFO 级别日志
 ```
 
-**状态**：⏳ 待执行（依赖 T1.3 + T1.4 完成）
+**状态**：⏳ 待执行（依赖 Phase 3 + Phase 4 完成）
+
+---
+
+#### 执行位置汇总
+
+| Phase | 执行位置 | 执行者 | 状态 | 说明 |
+|---|---|---|---|---|
+| Phase 0 | 🖥️ 本地 | Agent | ✅ 已完成 | Loki/Prometheus 端口整改 |
+| Phase 1 | 🖥️ 本地 | Agent | ✅ 已完成 | Grafana + provisioning |
+| **Phase 2** | 🖥️ 本地 | Agent | ✅ 已完成 | **myblog-sim 本地验证沙箱（D5 验证优先）** |
+| Phase 3.B1-B4 | 🖧 VPS | 用户 | ⏳ 待执行 | Promtail 安装+配置+启动 |
+| Phase 3.B5 | 🌐 Cloudflare | 用户 | ⏳ 待执行 | 建 Tunnel |
+| Phase 3.B6 | 🌐 Cloudflare + 🖧 VPS | 用户 | ⏳ 待执行 | 建 Access Token + 更新配置 |
+| Phase 4 | 🖥️ 本地 | Agent | ⏳ 待执行 | cloudflared 安装（依赖 Phase 3.B5 的 Tunnel Token） |
+| Phase 5.1 | 🖧 VPS | 用户 | ⏳ 待执行 | 写测试日志 |
+| Phase 5.2-5.5 | 🖥️ 本地 | Agent | ⏳ 待执行 | Grafana 查询验证 |
 
 ---
 
 ## 5. 验证清单
+
+> **验证顺序（D5）**：先跑 **5.1 本地 myblog-sim 验证**，全部通过后再执行 **5.2 生产验证**。
+
+### 5.1 本地 myblog-sim 验证（先执行，通过后才上生产）
+
+| 验证项 | 方法 | 预期 |
+|---|---|---|
+| sim 容器产出 | `docker logs myblog-sim` | 每 ~3s 一条同格式日志（INFO/WARN/ERROR） |
+| Promtail 运行 | `docker logs myblog-sim-promtail` | 无 ERROR，有 "starting tail" / "sending batch" |
+| 日志入 Loki（核心） | `curl .../query?query={source="my-blog"}` | 匹配流数 ≥ 1 |
+| service 标签 | `{source="my-blog", service="my-blog-backend"}` | 结果一致 |
+| traceId 解析 | `{source="my-blog", traceId!="none"}` | 见带 traceId 日志 |
+| level 标签 | `{source="my-blog"} |= "ERROR"` | 仅 ERROR |
+| Grafana 看板 | 浏览器 `localhost:30010` → 博客日志监控 | 实时刷新 |
+
+### 5.2 生产验证（sim 通过后）
 
 | 验证项 | 方法 | 预期 |
 |---|---|---|
@@ -805,7 +1015,7 @@ echo "$(date '+%Y-%m-%d %H:%M:%S.000') INFO  [main] [test-trace-id-12345] c.blog
 
 ## 9. 与既有文档关系 / 后续
 
-- **本方案 = 05 ADR 的执行层**；05 的层 B（W2 `LokiAdapter` / 拉模式）为 **Phase 2**，不在本次部署范围。
+- **本方案 = 05 ADR 的执行层**；05 的层 B（W2 `LokiAdapter` / 拉模式）为**层 B 演进**，不在本次部署范围（对应执行 Phase 5 之后）。
 - **回填 DESIGN-LOKI**：待执行后，将 "Grafana(:3000)" 改为 "Grafana(宿主30010)"、Loki 端口要求改为 `127.0.0.1`、Promtail 补 `service=my-blog-backend`（与本文一致）。
 - **Phase 2 触发条件**：WP-5.2 `LokiAdapter` 落地 + 层 B 拉模式确认（05 §6）。
 
@@ -868,8 +1078,8 @@ agent_log_monitoring/
 
 ---
 
-**文档版本**：v1.1  
+**文档版本**：v1.3  
 **创建时间**：2026-07-13  
-**最后更新**：2026-07-13  
+**最后更新**：2026-07-14  
 **创建人**：钱架构（系统架构师）  
 **维护人**：钱架构（系统架构师）
