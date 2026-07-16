@@ -41,6 +41,8 @@ my-blog 项目已部署到生产环境（VPS 1C2G，coreyai.cn），具备完善
 | 零侵入 | 不修改博客项目代码，不修改 Logback 配置 |
 | 跨网络传输 | VPS（公网）→ 本地开发环境（Loki 在本地 Docker） |
 
+> **注（Docker 用途澄清）**：仓库中 `backend/blog-app/Dockerfile`、`frontend/Dockerfile` 仅用于**本地模拟生产**（`scripts/deploy-server.sh` 在 `LOCAL_SIM=1` 时 build/run 镜像），**VPS 生产实际以 `blog-app.jar` + systemd（`myblog.service`）直跑，不使用 Docker**。因此本方案 VPS 侧接入组件（Promtail）同样走**二进制部署**，不引入 Docker，与 §1.3「无 Docker 部署」约束一致。
+
 ---
 
 ## 2. 架构设计

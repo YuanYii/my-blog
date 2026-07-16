@@ -164,25 +164,25 @@ public class PageViewService {
     }
 
     /**
-     * 今日 UV（v2.6.0：传 today 进去，跨方言）
+     * 今日 UV（按 IP 去重）
      */
     public long countTodayUv() {
         LocalDate today = LocalDate.now();
         Long n = jdbc.queryForObject(
-                "SELECT COUNT(DISTINCT visitor) FROM page_view WHERE visit_date = ?",
+                "SELECT COUNT(DISTINCT ip) FROM page_view WHERE visit_date = ?",
                 Long.class, today);
         return n == null ? 0L : n;
     }
 
     /**
-     * 近 N 天每日 PV + UV（v2.6.0：传 fromDate 进去）
+     * 近 N 天每日 PV + UV（按 IP 去重）
      */
     public List<Map<String, Object>> dailyStats(int days) {
         LocalDate fromDate = LocalDate.now().minusDays(days - 1);
         return jdbc.queryForList(
                 "SELECT visit_date AS date, " +
                         "       COUNT(*) AS pv, " +
-                        "       COUNT(DISTINCT visitor) AS uv " +
+                        "       COUNT(DISTINCT ip) AS uv " +
                         "FROM page_view " +
                         "WHERE visit_date >= ? " +
                         "GROUP BY visit_date " +
@@ -253,6 +253,81 @@ public class PageViewService {
             Map<String, Object> row = new java.util.LinkedHashMap<>();
             row.put("domain", domain);
             row.put("label", domainLabel(domain));
+            row.put("count", count);
+            row.put("percentage", Math.round((double) count / (double) total * 10000.0) / 100.0);
+            result.add(row);
+        }
+        return result;
+    }
+
+    /**
+     * 今日访客 IP 来源 Top N（2026-07-16 新增，仪表盘"今日访客"页签）
+     *
+     * 与 topVisitorIps 逻辑一致，仅 WHERE 条件改为 visit_date = TODAY。
+     */
+    public List<Map<String, Object>> topVisitorIpsToday(int limit) {
+        if (limit <= 0) limit = 5;
+        LocalDate today = LocalDate.now();
+
+        Long totalObj = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM page_view WHERE visit_date = ? AND ip IS NOT NULL AND ip != ''",
+                Long.class, today);
+        long total = (totalObj == null) ? 0L : totalObj;
+        if (total == 0L) return new java.util.ArrayList<>();
+
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT ip, COUNT(*) AS cnt FROM page_view " +
+                        "WHERE visit_date = ? AND ip IS NOT NULL AND ip != '' " +
+                        "GROUP BY ip ORDER BY cnt DESC LIMIT ?",
+                today, limit);
+
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        for (Map<String, Object> r : rows) {
+            String ip = String.valueOf(r.get("ip"));
+            long count = (r.get("cnt") instanceof Number) ? ((Number) r.get("cnt")).longValue() : 0L;
+            Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("ip", ip);
+            row.put("count", count);
+            row.put("percentage", Math.round((double) count / (double) total * 10000.0) / 100.0);
+            result.add(row);
+        }
+        return result;
+    }
+
+    /**
+     * 访客 IP 来源 Top N（2026-07-15 DEV-001 新增）
+     *
+     * 设计：
+     * - 按 page_view.ip 列分组（ip 已是经 TrustedProxyUtil 解析的真实公网 IP）
+     * - SQL 端过滤空 IP（IS NOT NULL AND ip != ''），跨方言（SQLite/MySQL 对 != '' 行为一致）
+     * - 百分比分母 = 近 N 天非空 IP 访问总数（COUNT(*)），各 IP 占比
+     * - 返回 [{ip, count, percentage}]，percentage 浮点除法（避免 int 截断）
+     * - topReferrers(referer 维度) 保留但本卡片不再调用，原 referer 维度由前端彻底移除
+     */
+    public List<Map<String, Object>> topVisitorIps(int days, int limit) {
+        if (days <= 0) days = 30;
+        if (limit <= 0) limit = 5;
+        LocalDate fromDate = LocalDate.now().minusDays(days - 1);
+
+        // 非空 IP 总访问数（百分比分母）
+        Long totalObj = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM page_view WHERE visit_date >= ? AND ip IS NOT NULL AND ip != ''",
+                Long.class, fromDate);
+        long total = (totalObj == null) ? 0L : totalObj;
+        if (total == 0L) return new java.util.ArrayList<>();
+
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT ip, COUNT(*) AS cnt FROM page_view " +
+                        "WHERE visit_date >= ? AND ip IS NOT NULL AND ip != '' " +
+                        "GROUP BY ip ORDER BY cnt DESC LIMIT ?",
+                fromDate, limit);
+
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        for (Map<String, Object> r : rows) {
+            String ip = String.valueOf(r.get("ip"));
+            long count = (r.get("cnt") instanceof Number) ? ((Number) r.get("cnt")).longValue() : 0L;
+            Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("ip", ip);
             row.put("count", count);
             row.put("percentage", Math.round((double) count / (double) total * 10000.0) / 100.0);
             result.add(row);

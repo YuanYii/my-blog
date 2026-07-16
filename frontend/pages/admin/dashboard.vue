@@ -24,9 +24,12 @@ const publishTrend = ref<any[]>([])
 const visitTrend = ref<any[]>([])
 const visitTrend7 = ref<any[]>([])
 const topArticles = ref<any[]>([])
-// 2026-06-24 DEV-001：流量来源从硬编码改真实统计（后端按 referer 域名分组）
-// 后端返回 [{domain, label, count, percentage}]
-const trafficSources = ref<Array<{ domain: string; label: string; count: number; percentage: number }>>([])
+// 2026-07-15 DEV-001：访客 IP 来源（按 page_view.ip 真实公网 IP 分组）
+// 后端返回 [{ip, count, percentage}]，替换原 referer 维度
+const visitorIpSources = ref<Array<{ ip: string; count: number; percentage: number }>>([])
+const visitorIpSourcesHistory = ref<Array<{ ip: string; count: number; percentage: number }>>([])
+// 2026-07-16：访客来源页签切换（今日 / 历史）
+const visitorTab = ref<'today' | 'history'>('today')
 
 const now = new Date()
 const hour = now.getHours()
@@ -46,7 +49,8 @@ const loadAll = async () => {
     visitTrend7.value = res.data?.visitTrend7 || []
     topArticles.value = res.data?.topArticles || []
     lastBackup.value = res.data?.lastBackup || null
-    trafficSources.value = res.data?.trafficSources || []
+    visitorIpSources.value = res.data?.visitorIpSources || []
+    visitorIpSourcesHistory.value = res.data?.visitorIpSourcesHistory || []
   } catch {
     kpi.value = {}
   } finally {
@@ -202,15 +206,19 @@ const loadRecent = async () => {
   } catch { /* ignore */ }
 }
 
-// 2026-06-24 DEV-001：trafficSources 从硬编码改后端真实统计
-// - 后端 DashboardController + PageViewService.topReferrers 按 page_view.referer 列分组
-// - 返回 [{domain, label, count, percentage}], 上面 loadAll() 填充 trafficSources ref
+// 2026-07-15 DEV-001：visitorIpSources 按公网 IP 分组（替换原 referer 维度）
+// - 后端 DashboardController + PageViewService.topVisitorIps 按 page_view.ip 列分组
+// - 返回 [{ip, count, percentage}], 上面 loadAll() 填充 visitorIpSources ref
 // - 颜色按位置循环（最多 5 项,顺序对齐 backend Top N）
 // 调色板：primary / accent / 蓝 / 紫 / 灰
 const trafficColors = ['var(--primary)', 'var(--accent)', '#3b82f6', '#8b5cf6', 'var(--muted)']
-const decoratedTrafficSources = computed(() =>
-  trafficSources.value.map((s, i) => ({
-    name: s.label,
+const activeVisitorSources = computed(() =>
+  visitorTab.value === 'today' ? visitorIpSources.value : visitorIpSourcesHistory.value
+)
+const decoratedVisitorIpSources = computed(() =>
+  activeVisitorSources.value.map((s, i) => ({
+    name: s.ip,
+    count: s.count,
     pct: s.percentage,
     color: trafficColors[i % trafficColors.length]
   }))
@@ -343,15 +351,27 @@ onBeforeUnmount(() => {
           <!-- 分类分布饼图 -->
           <AdminCategoryChart ref="categoryChartRef" :category-dist="categoryDist" />
           <div class="dashboard-traffic">
-            <div class="panel-header"><h3 class="panel-title">流量来源</h3></div>
-            <div v-if="!decoratedTrafficSources.length" style="padding: 24px 8px; text-align: center; color: var(--muted); font-size: 12px;">
+            <div class="panel-header">
+              <h3 class="panel-title">访客 IP 来源</h3>
+              <div style="display: flex; gap: 2px; background: var(--muted-soft, #f1f5f9); border-radius: 6px; padding: 2px;">
+                <button
+                  :style="{ padding: '4px 10px', fontSize: '11px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontWeight: visitorTab === 'today' ? '600' : '400', background: visitorTab === 'today' ? 'var(--bg, #fff)' : 'transparent', color: visitorTab === 'today' ? 'var(--text)' : 'var(--muted)', boxShadow: visitorTab === 'today' ? '0 1px 2px rgba(0,0,0,.06)' : 'none', transition: 'all .15s' }"
+                  @click="visitorTab = 'today'"
+                >今日访客</button>
+                <button
+                  :style="{ padding: '4px 10px', fontSize: '11px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontWeight: visitorTab === 'history' ? '600' : '400', background: visitorTab === 'history' ? 'var(--bg, #fff)' : 'transparent', color: visitorTab === 'history' ? 'var(--text)' : 'var(--muted)', boxShadow: visitorTab === 'history' ? '0 1px 2px rgba(0,0,0,.06)' : 'none', transition: 'all .15s' }"
+                  @click="visitorTab = 'history'"
+                >历史访客</button>
+              </div>
+            </div>
+            <div v-if="!decoratedVisitorIpSources.length" style="padding: 24px 8px; text-align: center; color: var(--muted); font-size: 12px;">
               暂无访问数据
             </div>
             <div v-else class="traffic-list">
-              <div v-for="s in decoratedTrafficSources" :key="s.name" class="traffic-row">
+              <div v-for="s in decoratedVisitorIpSources" :key="s.name" class="traffic-row">
                 <div class="traffic-row-head">
                   <span class="traffic-name">{{ s.name }}</span>
-                  <span class="traffic-pct">{{ s.pct }}%</span>
+                  <span class="traffic-pct">{{ s.count }} 次</span>
                 </div>
                 <div class="traffic-bar">
                   <div class="traffic-bar-fill" :style="{ width: s.pct + '%', background: s.color }"></div>

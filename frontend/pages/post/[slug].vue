@@ -5,13 +5,20 @@ import { formatDate as formatDateShared, formatDateTime as formatDateTimeShared,
 definePageMeta({ layout: 'post' })
 
 const route = useRoute()
+const preview = computed(() => route.query.preview === '1')
 const { get, post, downloadAttachment } = usePublicApi()
+// 2026-07-15 BUG-001：草稿预览——preview=1 时改走管理员鉴权端点（绕过 status=1 过滤）
+const { get: adminGet } = useAdminApi()
 const $toast = useToast()
 const slug = route.params.slug as string
 
-const { data: articleRes } = await useAsyncData(
+// 2026-07-15 BUG-003：解构 error/status/refresh，使预览请求失败时
+// 能有明确错误态（而非静默空白 / 白屏）。
+const { data: articleRes, error: articleError, status: articleStatus, refresh: refreshArticle } = await useAsyncData(
   `post-article-${slug}`,
-  () => get<any>(`/articles/${slug}`),
+  () => preview.value
+    ? adminGet<any>(`/articles/admin/preview/${slug}`)
+    : get<any>(`/articles/${slug}`),
   { transform: (r: any) => r.data }
 )
 const { data: metaRes } = await useAsyncData(
@@ -33,7 +40,15 @@ const related = ref<any[]>([])
 const newComment = reactive({ nickname: '', email: '', content: '' })
 const submitting = ref(false)
 const submitted = ref(false)
-const loading = computed(() => !article.value && articleRes.value === null)
+// 2026-07-15 BUG-003：用 useAsyncData 的 status 判断加载态，
+// 避免请求失败时 articleRes.value 非 null 导致 loading 既非 true 也非 false → 静默空白。
+const loading = computed(() => articleStatus.value === 'pending')
+const articleErrorMsg = computed(() => {
+  const e = articleError.value as any
+  if (!e) return ''
+  return e?.data?.message || e?.message || '请检查网络连接或重新登录'
+})
+const retryPreview = () => { articleError.value = null; refreshArticle() }
 
 const getCategoryName = (id: number) => categories.value.find(c => c.id === id)?.name || ''
 const getTagName = (id: number) => tags.value.find(t => t.id === id)?.name || ''
@@ -179,7 +194,17 @@ onBeforeUnmount(() => {
   <div>
     <div v-if="loading" style="padding: 40px; text-align: center; color: var(--muted);">加载中…</div>
 
-    <div v-else-if="article" class="post-layout">
+    <div v-else-if="articleError" style="padding: 40px; text-align: center;">
+      <div style="color: var(--danger); font-size: 15px; margin-bottom: 12px;">{{ preview ? '草稿预览加载失败：' : '文章加载失败：' }}{{ articleErrorMsg }}</div>
+      <button @click="retryPreview" class="btn btn-primary btn-sm">重试</button>
+    </div>
+
+    <div v-else-if="article">
+      <!-- 2026-07-15 BUG-001：草稿预览标记（仅管理员可进入此页） -->
+      <div v-if="preview" class="preview-banner">
+        🔍 草稿预览模式（仅管理员可见，访客看不到此文章）
+      </div>
+      <div class="post-layout">
       <!-- 主内容区 -->
       <article class="post-main">
         <header style="margin-bottom: 32px; padding-bottom: 24px; border-bottom: 1px solid var(--line);">
@@ -284,7 +309,10 @@ onBeforeUnmount(() => {
           </nav>
         </div>
       </aside>
+      </div>
     </div>
+
+    <div v-else style="padding: 40px; text-align: center; color: var(--muted);">文章不存在或已被删除</div>
   </div>
 </template>
 
@@ -298,6 +326,18 @@ onBeforeUnmount(() => {
 .post-main {
   flex: 1;
   min-width: 0;
+}
+
+/* 2026-07-15 BUG-001：草稿预览标记条 */
+.preview-banner {
+  margin-bottom: 16px;
+  padding: 10px 16px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 /* TOC 侧边栏 */
@@ -432,5 +472,22 @@ onBeforeUnmount(() => {
 .prose :deep(input[type="checkbox"]) {
   margin-right: 6px;
   accent-color: var(--primary);
+}
+
+@media (max-width: 768px) {
+  .post-layout { gap: 0; }
+  .post-main { padding: 0 4px; }
+  .prose :deep(h1) { font-size: 24px; margin: 20px 0 10px; }
+  .prose :deep(h2) { font-size: 20px; margin: 18px 0 8px; padding-top: 6px; }
+  .prose :deep(h3) { font-size: 17px; margin: 14px 0 6px; }
+  .prose :deep(p) { font-size: 16px; line-height: 1.85; margin: 10px 0; }
+  .prose :deep(pre) { font-size: 13px; padding: 12px; margin: 12px 0; }
+  .prose :deep(code) { font-size: 0.9em; }
+  .prose :deep(table) { font-size: 13px; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .prose :deep(th), .prose :deep(td) { padding: 8px 10px; }
+  .prose :deep(blockquote) { margin: 12px 0; padding: 8px 14px; }
+  .prose :deep(ul), .prose :deep(ol) { padding-left: 22px; }
+  .prose :deep(li) { font-size: 16px; line-height: 1.75; margin: 3px 0; }
+  .prose :deep(img) { border-radius: 8px; margin: 14px 0; }
 }
 </style>

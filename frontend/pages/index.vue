@@ -186,14 +186,14 @@ const pageList = computed(() => {
       </div>
       <div v-else class="post-list">
         <NuxtLink v-for="(a, i) in articles" :key="a.id" :to="`/post/${a.slug}`" style="display: block;">
-          <article class="post-card" :class="{ featured: i === 0 }">
+          <article class="post-card" :class="{ featured: i === 0 && currentPage === 1 }">
             <div class="post-card-head">
               <span class="post-card-cat">{{ categoryName(a.categoryId) }}</span>
               <span class="post-card-date">{{ formatDate(a.publishedAt || a.createdAt) }}</span>
             </div>
             <h3 class="post-card-title">
               {{ a.title }}
-              <span v-if="i === 0" class="featured-badge">
+              <span v-if="i === 0 && currentPage === 1" class="featured-badge">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4-6.2-4.5-6.2 4.5 2.4-7.4L2 9.4h7.6L12 2z"/></svg>
                 最新
               </span>

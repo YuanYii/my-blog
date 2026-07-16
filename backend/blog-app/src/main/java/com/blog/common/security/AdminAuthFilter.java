@@ -74,6 +74,7 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         new RouteSpec("GET",    "/articles/admin/"),           // GET /articles/admin/all
         new RouteSpec("GET",    "/articles/id/"),              // GET /articles/id/{id}
         new RouteSpec("POST",   "/articles"),                  // POST /articles（精确）
+        new RouteSpec("POST",   "/articles/admin/batch-delete"), // POST /articles/admin/batch-delete（批量软删）
         new RouteSpec("PUT",    "/articles/"),                 // PUT /articles/{id}
         new RouteSpec("DELETE", "/articles/"),                 // DELETE /articles/{id}
 

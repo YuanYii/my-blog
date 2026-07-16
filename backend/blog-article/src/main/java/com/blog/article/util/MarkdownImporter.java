@@ -1,5 +1,8 @@
 package com.blog.article.util;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -205,10 +208,8 @@ public final class MarkdownImporter {
 
     /**
      * 从 .md 路径生成 slug（用于 article.slug 字段）
-     *  - 文件名去 .md 扩展
-     *  - 去 YYYY-MM-DD- 前缀
-     *  - 非法字符（除字母数字中文-）替换为 -
-     *  - 末尾去 -
+     *  - 文件名去 .md 扩展、去 YYYY-MM-DD- 前缀
+     *  - 对剩余部分取 MD5，取前 16 位 hex（与前端新建文章 SHA-256 16 位格式一致）
      */
     public static String filenameToSlug(String fileName) {
         if (fileName == null || fileName.isEmpty()) return "";
@@ -217,10 +218,21 @@ public final class MarkdownImporter {
         if (slash >= 0) name = name.substring(slash + 1);
         if (name.toLowerCase().endsWith(".md")) name = name.substring(0, name.length() - 3);
         name = DATE_PREFIX.matcher(name).replaceFirst("");
-        name = name.toLowerCase()
-            .replaceAll("[^a-z0-9\\u4e00-\\u9fa5\\-]+", "-")
-            .replaceAll("^-+|-+$", "");
-        return name;
+        return md5Hex(name).substring(0, 16);
+    }
+
+    private static String md5Hex(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] digest = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(32);
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b & 0xff));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("MD5 not available", e);
+        }
     }
 
     /**

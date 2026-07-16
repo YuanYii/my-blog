@@ -1,0 +1,25 @@
+flowchart TB
+    subgraph VPS["生产 VPS blog.coreyai.cn (1C2G, 无 Docker)"]
+        APP[Spring Boot :8080]
+        LOGS[("/opt/myblog/logs/*.log")]
+        PT["Promtail 二进制<br/>+service=my-blog-backend"]
+        APP -->|logback 落盘| LOGS
+        PT -->|tail -f| LOGS
+    end
+    subgraph CF["Cloudflare CDN（已有）"]
+        CDN["TLS终止 + Access Service Token<br/>路由 /loki/api/v1/push"]
+    end
+    subgraph LOCAL["本地开发环境 agent_log_monitoring (docker agent-logging)"]
+        CFD["cloudflared<br/>(launchd 持久化)"]
+        LK[("Loki :3100<br/>bind 127.0.0.1:30004")]
+        GF["Grafana :3000<br/>宿主 30010"]
+        PR[("Prometheus :9090<br/>宿主 30009")]
+        W2["W2 fetch_log_context<br/>LokiAdapter ⏳WP-5.2<br/>层 B"]
+        CFD -->|HTTP localhost:30004| LK
+        LK -->|LogQL| GF
+        PR -.->|层 B 待补| W2
+        LK -.->|LogQL 契约| W2
+    end
+    PT -->|HTTPS POST + Token| CDN
+    CDN -->|Cloudflare Tunnel| CFD
+    GF -.->|看板/检索 层A| GF

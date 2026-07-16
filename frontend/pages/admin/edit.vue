@@ -203,9 +203,16 @@ const save = async (publishNow = false) => {
   }
 }
 
-const handlePreview = () => {
-  if (!form.slug) { $toast.warning('请先保存以生成 slug'); return }
-  window.open(`/post/${form.slug}`, '_blank')
+// 2026-07-15 BUG-003：草稿从未保存时，预览端点按 slug 查不到（1001）
+// → 先自动保存草稿，再打开预览，避免空白。
+const handlePreview = async () => {
+  if (!form.slug) { $toast.warning('请先填写标题以生成 slug'); return }
+  if (!form.id) {
+    await save(false)
+    if (!form.id) { $toast.warning('请先保存草稿后再预览'); return }
+  }
+  // 2026-07-15 BUG-001：草稿预览——带 preview=1 走管理员鉴权端点（绕过 status=1 过滤）
+  window.open(`/post/${form.slug}?preview=1`, '_blank')
 }
 
 let saveTimer: any = null

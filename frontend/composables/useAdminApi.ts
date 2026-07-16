@@ -169,6 +169,10 @@ export const useAdminApi = () => {
   const restoreArticle = <T = any>(id: number) =>
     put<T>(`/articles/admin/articles/${id}/restore`)
 
+  /** 批量软删文章 POST /articles/admin/batch-delete（body: ID 数组） */
+  const batchDeleteArticles = <T = any>(ids: number[]) =>
+    post<T>('/articles/admin/batch-delete', ids)
+
   // ============ 2026-07-01 DEV-004：审计日志查询 ============
 
   /**
@@ -230,7 +234,7 @@ export const useAdminApi = () => {
   return {
     request, get, post, put, del, upload,
     uploadAttachment, softDeleteAttachment, listAttachments, restoreAttachment, hardDeleteAttachment,
-    hardDeleteArticle, restoreArticle,
+    hardDeleteArticle, restoreArticle, batchDeleteArticles,
     listAuditLogs, listAuditLogTargets, listAuditLogOperations,
     uploadSettingsMd,
     getUpgradeStatus, getUpgradeVersions, getUpgradeRecords, triggerUpgrade

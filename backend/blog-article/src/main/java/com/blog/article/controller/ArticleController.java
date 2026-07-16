@@ -66,6 +66,16 @@ public class ArticleController {
         return articleService.detailById(id);
     }
 
+    /**
+     * 2026-07-15 BUG-001：管理员预览草稿（绕过 status=1 过滤）。
+     * 路径 /articles/admin/preview/{slug} 命中 AdminAuthFilter 的 /admin/ 白名单 → 仅管理员可访问，
+     * 公开 /post/{slug} 仍只显示已发布，草稿不被访客访问。
+     */
+    @GetMapping("/admin/preview/{slug}")
+    public Result<Map<String, Object>> adminPreview(@PathVariable String slug) {
+        return articleService.adminPreview(slug);
+    }
+
     @GetMapping("/admin/all")
     public Result<PageResult<Map<String, Object>>> adminList(
             @RequestParam(defaultValue = "1") long page,
@@ -95,6 +105,15 @@ public class ArticleController {
         // 2026-07-01 BUG-002：行为变更——原 articleMapper.deleteById 物理删除
         //   现在改为软删除（UPDATE deleted=1）。前端用 hardDelete 端点做硬删。
         return articleService.delete(id, request);
+    }
+
+    /**
+     * 批量软删文章（单次请求处理多个 ID，避免并发触发 IP 限流）。
+     * 用 POST 而非 DELETE：HTTP DELETE 规范不建议带 request body。
+     */
+    @PostMapping("/admin/batch-delete")
+    public Result<Map<String, Object>> batchDelete(@RequestBody List<Long> ids, HttpServletRequest request) {
+        return articleService.batchDelete(ids, request);
     }
 
     /**

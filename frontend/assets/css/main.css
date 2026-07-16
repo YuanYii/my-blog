@@ -160,7 +160,8 @@ body.code-theme-monokai pre, body.code-theme-nord pre, body.code-theme-monokai c
   width: 240px; background: var(--card);
   border-right: 1px solid var(--line);
   display: flex; flex-direction: column;
-  position: sticky; top: 0; height: 100dvh;
+  /* 2026-07-15 BUG-002：桌面端固定侧栏（sticky 在 flex 滚动上下文未生效） */
+  position: fixed; left: 0; top: 0; height: 100dvh;
 }
 .admin-sidebar-head {
   padding: 20px 20px 16px;
@@ -196,7 +197,7 @@ button.admin-nav-item { background: transparent; border: none; cursor: pointer; 
 .admin-nav-subdot { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); flex-shrink: 0; opacity: 0.6; }
 .admin-nav-subitem.active .admin-nav-subdot { background: var(--primary); opacity: 1; }
 
-.admin-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.admin-main { flex: 1; min-width: 0; display: flex; flex-direction: column; margin-left: 240px; }
 .admin-header {
   height: 60px; background: var(--card);
   border-bottom: 1px solid var(--line);
@@ -1021,6 +1022,8 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
   .admin-sidebar.open {
     transform: translateX(0);
   }
+  /* 移动端侧栏是抽屉（translateX(-100%）离屏），主内容区回到满宽 */
+  .admin-main { margin-left: 0; }
   /* 汉堡按钮：仅移动端显示 */
   .admin-header .hamburger-btn {
     display: flex !important;

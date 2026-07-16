@@ -149,6 +149,22 @@ public class ArticleService {
         return Result.success(m);
     }
 
+    /**
+     * 2026-07-15 BUG-001：管理员草稿预览。
+     * 绕过公开 detail() 的 status=1 硬过滤——只查 deleted=0，草稿(status=0)/归档(status=2)均可取。
+     * 不递增 view_count（预览是只读操作，不应污染阅读数）。
+     * 软删(deleted=1)仍查不到 → 抛 1001，与公开页语义一致。
+     */
+    public Result<Map<String, Object>> adminPreview(String slug) {
+        QueryWrapper<Article> qw = new QueryWrapper<>();
+        qw.eq("slug", slug).eq("deleted", 0);
+        Article article = articleMapper.selectOne(qw);
+        if (article == null) throw new BusinessException(1001, "文章不存在");
+        Map<String, Object> data = toMap(article, true);
+        populateAttachment(data, article.getId());
+        return Result.success(data);
+    }
+
     // ===== Admin 文章 =====
 
     public Result<PageResult<Map<String, Object>>> adminList(long page, long size,
@@ -472,6 +488,49 @@ public class ArticleService {
         }
         log.info("文章软删：id={} slug={} operator={}", id, existing.getSlug(), AuthContext.uid(request));
         return Result.success();
+    }
+
+    /**
+     * 批量软删文章（单事务内循环处理多个 ID，避免前端并发触发 IP 限流）。
+     */
+    @Transactional
+    public Result<Map<String, Object>> batchDelete(List<Long> ids, HttpServletRequest request) {
+        if (ids == null || ids.isEmpty()) {
+            throw new BusinessException(400, "文章 ID 列表不能为空");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        int success = 0;
+        int skipped = 0;
+        for (Long id : ids) {
+            Article existing = articleMapper.selectById(id);
+            if (existing == null) {
+                skipped++;
+                continue;
+            }
+            if (existing.getDeleted() != null && existing.getDeleted() == 1) {
+                skipped++;
+                continue;
+            }
+            int updated = jdbc.update(
+                "UPDATE article SET deleted = 1, updated_at = ? WHERE id = ? AND deleted = 0",
+                now, id);
+            if (updated == 0) {
+                skipped++;
+                continue;
+            }
+            UpdateWrapper<Attachment> uw = new UpdateWrapper<>();
+            uw.eq("article_id", id).eq("deleted", 0)
+                    .set("deleted", 1)
+                    .set("updated_at", now);
+            attachmentMapper.update(null, uw);
+            success++;
+        }
+        log.info("批量软删：total={} success={} skipped={} operator={}",
+                ids.size(), success, skipped, AuthContext.uid(request));
+        Map<String, Object> data = new HashMap<>();
+        data.put("success", success);
+        data.put("skipped", skipped);
+        return Result.success(data);
     }
 
     /**
