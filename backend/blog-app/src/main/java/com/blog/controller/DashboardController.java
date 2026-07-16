@@ -106,14 +106,16 @@ public class DashboardController {
         // === v2.5.0 新增：热门文章 TOP 10 ===
         data.put("topArticles", pageViewService.topArticles(10));
 
-        // === 2026-06-24 DEV-001：流量来源 Top 5（30 天）从硬编码改真实统计 ===
-        // 后端按 page_view.referer 列提取域名 + 友好名映射 + percentage 浮点计算
-        // 返回格式 [{domain, label, count, percentage}]，前端原硬编码 trafficSources 替换
+        // === 2026-07-15 DEV-001：访客 IP 来源 Top 5（30 天）替换原 referer 维度 ===
+        // 按 page_view.ip（真实公网 IP）分组；原 trafficSources(referer) 维度移除
+        // 返回格式 [{ip, count, percentage}]，前端 visitorIpSources 渲染
         try {
-            data.put("trafficSources", pageViewService.topReferrers(30, 5));
+            data.put("visitorIpSources", pageViewService.topVisitorIpsToday(10));
+            data.put("visitorIpSourcesHistory", pageViewService.topVisitorIps(30, 10));
         } catch (Exception e) {
             // 兜底：page_view 表查询异常不阻断 dashboard 其他字段
-            data.put("trafficSources", new ArrayList<Map<String, Object>>());
+            data.put("visitorIpSources", new ArrayList<Map<String, Object>>());
+            data.put("visitorIpSourcesHistory", new ArrayList<Map<String, Object>>());
         }
 
         // === 待办 ===

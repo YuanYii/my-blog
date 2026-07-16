@@ -6,7 +6,7 @@ definePageMeta({ middleware: 'admin-auth', layout: 'admin' })
 
 const router = useRouter()
 const route = useRoute()
-const { get, del, put, hardDeleteArticle, restoreArticle } = useAdminApi()
+const { get, del, put, hardDeleteArticle, restoreArticle, batchDeleteArticles } = useAdminApi()
 const $toast = useToast()
 const $dialog = useDialog()
 // 2026-06-24 BUG-003：删除文章后侧栏数量不刷新——dashboard.vue 在 loadAll 末尾调了
@@ -185,8 +185,10 @@ const handleBulkDelete = async () => {
       danger: true
     })
     if (!confirmed || value !== 'DELETE') return
-    const results = await Promise.allSettled(selected.value.map(id => hardDeleteArticle(id)))
-    const failed = results.filter(r => r.status === 'rejected').length
+    let failed = 0
+    for (const id of selected.value) {
+      try { await hardDeleteArticle(id) } catch { failed++ }
+    }
     if (failed > 0) {
       $toast.warning(`批量硬删除完成：${selected.value.length - failed} 成功，${failed} 失败`)
     } else {
@@ -201,12 +203,12 @@ const handleBulkDelete = async () => {
       danger: true
     })
     if (!confirmed) return
-    const results = await Promise.allSettled(selected.value.map(id => del(`/articles/${id}`)))
-    const failed = results.filter(r => r.status === 'rejected').length
-    if (failed > 0) {
-      $toast.warning(`批量删除完成：${selected.value.length - failed} 成功，${failed} 失败`)
+    const res = await batchDeleteArticles(selected.value)
+    const data = res.data || { success: 0, skipped: 0 }
+    if (data.skipped > 0) {
+      $toast.warning(`批量删除完成：${data.success} 成功，${data.skipped} 跳过`)
     } else {
-      $toast.success(`已删除 ${selected.value.length} 篇`)
+      $toast.success(`已删除 ${data.success} 篇`)
     }
   }
   selected.value = []
@@ -222,8 +224,10 @@ const handleBulkRestore = async () => {
     confirmText: '恢复'
   })
   if (!confirmed) return
-  const results = await Promise.allSettled(selected.value.map(id => restoreArticle(id)))
-  const failed = results.filter(r => r.status === 'rejected').length
+  let failed = 0
+  for (const id of selected.value) {
+    try { await restoreArticle(id) } catch { failed++ }
+  }
   if (failed > 0) {
     $toast.warning(`批量恢复完成：${selected.value.length - failed} 成功，${failed} 失败`)
   } else {
@@ -236,8 +240,10 @@ const handleBulkRestore = async () => {
 }
 
 const handleBulkPublish = async () => {
-  const results = await Promise.allSettled(selected.value.map(id => put(`/articles/${id}`, { status: 1 })))
-  const failed = results.filter(r => r.status === 'rejected').length
+  let failed = 0
+  for (const id of selected.value) {
+    try { await put(`/articles/${id}`, { status: 1 }) } catch { failed++ }
+  }
   if (failed > 0) {
     $toast.warning(`批量发布完成：${selected.value.length - failed} 成功，${failed} 失败`)
   } else {
