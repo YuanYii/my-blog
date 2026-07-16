@@ -11,6 +11,7 @@
  */
 const emit = defineEmits<{ (e: 'close', refreshed?: boolean): void }>()
 
+const router = useRouter()
 const { upload, get, request } = useAdminApi()
 const $toast = useToast()
 const config = useRuntimeConfig()
@@ -26,6 +27,8 @@ const uploading = ref(false)
 const currentId = ref<number | null>(null)
 const currentRecord = ref<any>(null)
 const polling = ref(false)
+// 2026-07-15 OPT-001：导入成功后展示「前往草稿箱」入口
+const justImportedDraft = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const history = ref<any[]>([])
@@ -62,6 +65,7 @@ const startImport = async () => {
     $toast.warning('请先选择 ZIP 文件')
     return
   }
+  justImportedDraft.value = false
   uploading.value = true
   try {
     const res = await upload<any>('/articles/admin/import', file.value)
@@ -86,7 +90,11 @@ const startPolling = (id: number) => {
         if (res.data?.status === 'SUCCESS') {
           const succ = res.data?.successCount ?? 0
           const fail = res.data?.failCount ?? 0
-          if (fail === 0) $toast.success(`导入完成,共 ${succ} 篇`)
+          if (fail === 0) {
+            // 2026-07-15 OPT-001：导入文章默认进草稿箱，提示用户去发布
+            $toast.success(`导入完成,共 ${succ} 篇（已放入草稿箱，待发布）`)
+            justImportedDraft.value = true
+          }
           else $toast.warning(`导入完成: ${succ} 成功 / ${fail} 失败`)
         } else {
           $toast.error('导入失败: ' + (res.data?.errorMessage || '未知错误'))
@@ -200,6 +208,10 @@ onBeforeUnmount(stopPolling)
 
         <!-- 当前任务进度 -->
         <div v-if="currentRecord" class="import-progress">
+          <!-- 2026-07-15 OPT-001：导入进草稿箱后，提供「前往草稿箱」入口 -->
+          <div v-if="justImportedDraft" class="draft-link">
+            <NuxtLink to="/admin/posts?status=0">前往草稿箱发布 →</NuxtLink>
+          </div>
           <div class="row">
             <span>状态</span>
             <span :style="{ color: statusColor(currentRecord.status) }">{{ statusLabel(currentRecord.status) }}</span>
@@ -305,6 +317,16 @@ onBeforeUnmount(stopPolling)
 .import-progress .row {
   display: flex; justify-content: space-between;
 }
+.draft-link {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.draft-link a {
+  color: var(--primary);
+  font-weight: 500;
+  text-decoration: none;
+}
+.draft-link a:hover { text-decoration: underline; }
 .error-box {
   background: var(--danger-soft, #fef2f2);
   border-radius: 4px; padding: 6px 8px;
