@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS article (
   -- 2026-06-19：时间由 Java（北京时间）填充，不用 DEFAULT CURRENT_TIMESTAMP（SQLite 写 UTC）。
   created_at      DATETIME      NOT NULL,
   updated_at      DATETIME      NOT NULL,
+  is_pinned       TINYINT       NOT NULL DEFAULT 0,    -- 0-普通 1-置顶
   deleted         TINYINT       NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_article_slug ON article(slug);

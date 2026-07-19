@@ -455,7 +455,6 @@ flush_redis() {
 SKIP_JAR=false
 SKIP_SCHEMA=false
 SKIP_FRONTEND=false
-SKIP_MIGRATION=false
 
 # docker-create / docker-init 是顶层命令,不进入下面的部署流程,直接走 docker 分支
 case "$DEPLOY_MODE" in
@@ -547,47 +546,7 @@ else
     info "[OK] Backend jar deployed"
 fi
 
-# ---- schema 增量兜底:在删旧 DB 之前补齐生产历史库的列 ----
-# 2026-06-21 v4.2.0 引入:Commit 5 把 step 5 改成"删旧 DB → 全量重建"后,生产历史 db
-# 缺的新列(如 backup_record.trace_id)再也不会被"DEPLOY_MODE=code 保留 db"路径自动补上。
-# 在删之前跑幂等 ALTER → 旧 db 备份文件(blog-before-{TAG}-*.db)里也带新列,
-# 未来从备份恢复不会缺列。
-#
-# 通用模式(未来加列照抄):
-#   if ! sqlite3 "$DB_FILE" "PRAGMA table_info(表名);" | grep -q "列名"; then
-#       info "Patching 表名: adding 列名 column"
-#       sqlite3 "$DB_FILE" "ALTER TABLE 表名 ADD COLUMN 列名 类型;"
-#   fi
-if [ -f "$DB_FILE" ]; then
-    if ! sqlite3 "$DB_FILE" "PRAGMA table_info(backup_record);" | grep -q trace_id; then
-        info "Patching backup_record: adding trace_id column (v4.2.0)"
-        sqlite3 "$DB_FILE" "ALTER TABLE backup_record ADD COLUMN trace_id VARCHAR(64);" \
-            || err "failed to ALTER TABLE backup_record ADD COLUMN trace_id"
-        # ALTER ADD COLUMN 不会自动建 NOT NULL 默认值的索引(本列允许 NULL,免建)
-        info "[OK] backup_record.trace_id column added"
-    fi
-    # upgrade_record 表增量兜底（v5.3.0+）
-    if ! sqlite3 "$DB_FILE" "SELECT name FROM sqlite_master WHERE type='table' AND name='upgrade_record';" | grep -q upgrade_record; then
-        info "Patching: creating upgrade_record table (v5.3.0+)"
-        sqlite3 "$DB_FILE" "CREATE TABLE IF NOT EXISTS upgrade_record (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            target_version VARCHAR(32) NOT NULL,
-            mode VARCHAR(16) NOT NULL,
-            import_db TINYINT NOT NULL DEFAULT 0,
-            status VARCHAR(16) NOT NULL,
-            started_at DATETIME NOT NULL,
-            finished_at DATETIME,
-            from_version VARCHAR(32),
-            error_message TEXT,
-            operator_id BIGINT,
-            operator_name VARCHAR(64),
-            ip VARCHAR(45)
-        );" || err "failed to create upgrade_record table"
-        sqlite3 "$DB_FILE" "CREATE INDEX IF NOT EXISTS idx_upgrade_record_started_at ON upgrade_record(started_at DESC);"
-        sqlite3 "$DB_FILE" "CREATE INDEX IF NOT EXISTS idx_upgrade_record_status ON upgrade_record(status);"
-        info "[OK] upgrade_record table created"
-    fi
-fi
+# ---- schema 增量兜底已迁移至 upgrade.sql（§5.1 执行） ----
 
 # 根据 DEPLOY_MODE 处理 DB
 if [ "$SKIP_SCHEMA" = true ]; then
@@ -627,55 +586,32 @@ else
     fi
 fi
 
-# ============= 5.1 执行增量 SQL migration =============
-if [ "$SKIP_MIGRATION" = false ] && [ -f "$DB_FILE" ]; then
-    info "=== 5.1 Running incremental SQL migrations ==="
-    
-    # 确保 _migration_history 表存在(首次可能没有)
-    sqlite3 "$DB_FILE" "CREATE TABLE IF NOT EXISTS _migration_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        script_name VARCHAR(255) NOT NULL UNIQUE,
-        executed_at DATETIME NOT NULL DEFAULT (datetime('now','localtime'))
-    );"
-    
-    # 扫描并执行未执行的 migration
-    MIGRATION_DIR="$TMP_DIR/migrations"
-    if [ -d "$MIGRATION_DIR" ]; then
-        MIGRATION_COUNT=0
-        MIGRATION_FAILED=""
-        
-        for script in $(ls "$MIGRATION_DIR"/*.sql 2>/dev/null | sort); do
-            script_name=$(basename "$script")
-            
-            # 检查是否已执行
-            already_executed=$(sqlite3 "$DB_FILE" "SELECT COUNT(*) FROM _migration_history WHERE script_name='$script_name';")
-            
-            if [ "$already_executed" = "0" ]; then
-                info "  Executing migration: $script_name"
-                if sqlite3 "$DB_FILE" < "$script"; then
-                    sqlite3 "$DB_FILE" "INSERT INTO _migration_history (script_name, executed_at) VALUES ('$script_name', datetime('now','localtime'));"
-                    info "    [OK] $script_name executed successfully"
-                    MIGRATION_COUNT=$((MIGRATION_COUNT + 1))
-                else
-                    MIGRATION_FAILED="$script_name"
-                    err "    [FAIL] $script_name execution failed"
-                    break
-                fi
-            else
-                info "  Skipping migration: $script_name (already executed)"
-            fi
-        done
-        
-        if [ -n "$MIGRATION_FAILED" ]; then
-            err "Migration failed at: $MIGRATION_FAILED"
-            err "  Check the script for errors and fix manually"
-        elif [ $MIGRATION_COUNT -gt 0 ]; then
-            info "[OK] Executed $MIGRATION_COUNT migration(s)"
-        else
-            info "  No pending migrations to execute"
+# ============= 5.1 执行增量升级脚本 =============
+if [ -f "$DB_FILE" ]; then
+    info "=== 5.1 Running upgrade.sql ==="
+    UPGRADE_SQL="$TMP_DIR/upgrade.sql"
+    if [ -f "$UPGRADE_SQL" ]; then
+        # 先执行幂等部分（CREATE TABLE/INDEX IF NOT EXISTS）
+        BASIC_SQL=$(sed '/^-- /d;/^$/d;/ALTER TABLE/d;/PLACEHOLDER/d' "$UPGRADE_SQL")
+        if [ -n "$BASIC_SQL" ]; then
+            echo "$BASIC_SQL" | sqlite3 "$DB_FILE" && info "[OK] upgrade.sql (幂等部分) executed"
+        fi
+        # ALTER TABLE 逐条检查后执行（非幂等，需 PRAGMA 先检）
+        # backup_record.trace_id（v4.2.0+）
+        if ! sqlite3 "$DB_FILE" "PRAGMA table_info(backup_record);" | grep -q trace_id; then
+            info "  Patching backup_record: adding trace_id column"
+            sqlite3 "$DB_FILE" "ALTER TABLE backup_record ADD COLUMN trace_id VARCHAR(64);" \
+                && info "  [OK] backup_record.trace_id column added"
+        fi
+        # article.is_pinned（v6.0.2+）
+        if ! sqlite3 "$DB_FILE" "PRAGMA table_info(article);" | grep -q is_pinned; then
+            info "  Patching article: adding is_pinned column"
+            sqlite3 "$DB_FILE" "ALTER TABLE article ADD COLUMN is_pinned TINYINT NOT NULL DEFAULT 0;" \
+                && sqlite3 "$DB_FILE" "CREATE INDEX IF NOT EXISTS idx_article_pinned ON article(is_pinned);" \
+                && info "  [OK] article.is_pinned column added"
         fi
     else
-        info "  No migrations directory found at $MIGRATION_DIR, skipping"
+        info "  No upgrade.sql found, skipping"
     fi
 fi
 

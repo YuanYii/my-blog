@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS `article` (
   `published_at`   DATETIME       DEFAULT NULL            COMMENT '发布时间',
   `created_at`     DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`     DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `is_pinned`      TINYINT        NOT NULL DEFAULT 0      COMMENT '0-普通 / 1-置顶',
   `deleted`        TINYINT        NOT NULL DEFAULT 0      COMMENT '逻辑删除 0-未删 / 1-已删',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_slug` (`slug`),
