@@ -309,6 +309,7 @@ else
     download "blog-app.jar"
     download "frontend-static.tar.gz"
     download "schema-sqlite.sql"
+    download "upgrade.sql" || warn "upgrade.sql download failed (incremental upgrades will be skipped)"
     download "deploy-server.sh"
     download "sqlite-import.sh" || warn "sqlite-import.sh download failed (needed when IMPORT_DB=1)"
     # v4.2.0 数据备份脚本：admin 后台「数据备份」菜单由后端 ProcessBuilder 调它

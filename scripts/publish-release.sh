@@ -340,7 +340,7 @@ fi
 # 计算每个 asset 的 sha256(包含可选的 .enc)
 info "生成 SHA256SUMS..."
 cd "$STAGE_DIR/assets"
-SUM_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh universal-script.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service"
+SUM_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql upgrade.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh universal-script.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service"
 [ -f dev-blog-dump.sql.gz.enc ] && SUM_FILES="$SUM_FILES dev-blog-dump.sql.gz.enc"
 shasum -a 256 $SUM_FILES > SHA256SUMS 2>/dev/null || \
     sha256sum $SUM_FILES > SHA256SUMS
@@ -349,7 +349,7 @@ cd "$ROOT_DIR"
 # 打 zip 冷部署包
 BUNDLE="deploy-bundle-${TAG}.zip"
 cd "$STAGE_DIR/assets"
-ZIP_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh universal-script.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service SHA256SUMS"
+ZIP_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql upgrade.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh universal-script.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service SHA256SUMS"
 [ -f dev-blog-dump.sql.gz.enc ] && ZIP_FILES="$ZIP_FILES dev-blog-dump.sql.gz.enc"
 zip -q "$BUNDLE" $ZIP_FILES
 cd "$ROOT_DIR"
