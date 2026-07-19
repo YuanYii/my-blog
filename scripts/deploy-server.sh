@@ -587,14 +587,6 @@ if [ -f "$DB_FILE" ]; then
         sqlite3 "$DB_FILE" "CREATE INDEX IF NOT EXISTS idx_upgrade_record_status ON upgrade_record(status);"
         info "[OK] upgrade_record table created"
     fi
-    # article.is_pinned 增量兜底（v6.0.2+）
-    if ! sqlite3 "$DB_FILE" "PRAGMA table_info(article);" | grep -q is_pinned; then
-        info "Patching article: adding is_pinned column (v6.0.2+)"
-        sqlite3 "$DB_FILE" "ALTER TABLE article ADD COLUMN is_pinned TINYINT NOT NULL DEFAULT 0;" \
-            || err "failed to ALTER TABLE article ADD COLUMN is_pinned"
-        sqlite3 "$DB_FILE" "CREATE INDEX IF NOT EXISTS idx_article_pinned ON article(is_pinned);"
-        info "[OK] article.is_pinned column added"
-    fi
 fi
 
 # 根据 DEPLOY_MODE 处理 DB
