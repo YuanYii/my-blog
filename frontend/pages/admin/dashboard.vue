@@ -436,7 +436,10 @@ onBeforeUnmount(() => {
                 /{{ a.slug }}<span class="recent-views-inline">{{ (a.viewCount || 0).toLocaleString() }} 次浏览</span>
               </div>
             </td>
-            <td class="col-status"><span class="recent-status" :class="a.status === 1 ? 'published' : 'draft'">{{ statusLabel(a.status) }}</span></td>
+            <td class="col-status">
+              <span class="recent-status" :class="a.status === 1 ? 'published' : 'draft'">{{ statusLabel(a.status) }}</span>
+              <span v-if="a.isPinned === 1" style="margin-left: 4px; color: var(--accent);" title="置顶">⭐</span>
+            </td>
             <td class="col-views"><span class="recent-meta">{{ (a.viewCount || 0).toLocaleString() }}</span></td>
             <td class="col-time"><span class="recent-meta">{{ formatDateTime(a.publishedAt) }}</span></td>
             <td class="col-action"><NuxtLink :to="`/admin/edit?id=${a.id}`" style="color: var(--primary); font-size: 12px;">编辑</NuxtLink></td>

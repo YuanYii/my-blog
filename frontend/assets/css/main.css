@@ -1348,7 +1348,7 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
 
 /* Stats row */
 .stats-row {
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   gap: 12px; margin-bottom: 20px;
 }
 .stat-card {

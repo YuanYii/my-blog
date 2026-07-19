@@ -112,6 +112,7 @@ const form = reactive({
   contentMd: '',
   coverUrl: '',
   status: 0,
+  isPinned: 0,
   categoryId: null as number | null,
   publishedAt: null as string | null
 })
@@ -145,7 +146,7 @@ const loadArticle = async () => {
     Object.assign(form, {
       id: a.id, title: a.title, slug: a.slug,
       summary: a.summary || '', contentMd: a.contentMd || '',
-      coverUrl: a.coverUrl || '', status: a.status,
+      coverUrl: a.coverUrl || '', status: a.status, isPinned: a.isPinned || 0,
       categoryId: a.categoryId, publishedAt: a.publishedAt || null
     })
     selectedTags.value = Array.isArray(a.tagIds) ? [...a.tagIds] : []
@@ -298,6 +299,15 @@ onMounted(async () => {
             </button>
             <button class="status-btn" :class="{ active: form.status === 0 }" @click="form.status = 0">草稿</button>
             <button class="status-btn" :class="{ active: form.status === 2 }" @click="form.status = 2">归档</button>
+          </div>
+          <div class="form-group" style="margin: 8px 0 0;">
+            <label class="form-label" style="font-size: 11px;">置顶</label>
+            <button @click="form.isPinned = form.isPinned ? 0 : 1" type="button"
+                    class="status-btn" :class="{ active: form.isPinned === 1 }">
+              <svg v-if="form.isPinned === 1" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4-6.2-4.5-6.2 4.5 2.4-7.4L2 9.4h7.6L12 2z"/></svg>
+              {{ form.isPinned ? '已置顶' : '置顶' }}
+            </button>
+            <div style="font-size: 10px; color: var(--muted); margin-top: 4px;">同时只能置顶一篇文章</div>
           </div>
           <div class="form-group" style="margin: 0;">
             <label class="form-label" style="font-size: 11px;">发布时间</label>

@@ -22,6 +22,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.servlet.http.HttpServletRequest;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -57,6 +59,7 @@ public class ArticleService {
         ADMIN_SORT_FIELDS.put("view_count", false);    // 默认 desc（最热在前）
         ADMIN_SORT_FIELDS.put("updated_at", false);    // 默认 desc（最近编辑在前）
         ADMIN_SORT_FIELDS.put("created_at", false);    // 默认 desc（最新创建在前）
+        ADMIN_SORT_FIELDS.put("is_pinned", false);     // 默认 desc（置顶在前）
     }
 
     // ===== 公开接口 =====
@@ -88,7 +91,7 @@ public class ArticleService {
             // A1（2026-06-20）：占位符参数化
             qw.exists(true, "SELECT 1 FROM article_tag at WHERE at.article_id = article.id AND at.tag_id = {0}", tagId);
         }
-        qw.orderByDesc("published_at");
+        qw.orderByDesc("is_pinned").orderByDesc("published_at");
 
         Page<Article> p = articleMapper.selectPage(new Page<>(page, size), qw);
         List<Map<String, Object>> records = p.getRecords().stream().map(a -> toMap(a, true)).collect(Collectors.toList());
@@ -120,6 +123,7 @@ public class ArticleService {
             new QueryWrapper<Article>()
                 .eq("status", 1)
                 .eq("deleted", 0)
+                .orderByDesc("is_pinned")
                 .orderByDesc("published_at")
                 .last("LIMIT 1000"));
         List<Map<String, Object>> records = list.stream()
@@ -208,29 +212,29 @@ public class ArticleService {
             params.add(kw);
         }
 
-        // ORDER BY（白名单）
+        // ORDER BY（白名单）—— 始终 is_pinned DESC 优先
         String orderBy;
+        String pinPrefix = "is_pinned DESC, ";
         if (sort != null && !sort.isEmpty()) {
             String[] parts = sort.split(":", 3);
             if (parts.length == 2 && ADMIN_SORT_FIELDS.containsKey(parts[0].trim())) {
                 String field = parts[0].trim();
                 String dir = parts[1].trim().toLowerCase();
                 boolean asc = "asc".equals(dir) || !"desc".equals(dir) && ADMIN_SORT_FIELDS.get(field);
-                orderBy = "ORDER BY " + field + (asc ? " ASC" : " DESC");
+                orderBy = "ORDER BY " + pinPrefix + field + (asc ? " ASC" : " DESC");
             } else {
-                orderBy = "ORDER BY updated_at DESC";
+                orderBy = "ORDER BY " + pinPrefix + "updated_at DESC";
             }
         } else if ("1".equals(deletedFilter)) {
-            // 已删除 tab 默认按"删除时间倒序"（复用 updated_at）
-            orderBy = "ORDER BY updated_at DESC";
+            orderBy = "ORDER BY " + pinPrefix + "updated_at DESC";
         } else {
-            orderBy = "ORDER BY updated_at DESC";
+            orderBy = "ORDER BY " + pinPrefix + "updated_at DESC";
         }
 
         String countSql = "SELECT COUNT(*) FROM article " + where;
         Long total = jdbc.queryForObject(countSql, Long.class, params.toArray());
 
-        String listSql = "SELECT id, title, slug, summary, cover_url AS coverUrl, status, deleted, view_count AS viewCount, "
+        String listSql = "SELECT id, title, slug, summary, cover_url AS coverUrl, status, is_pinned AS isPinned, deleted, view_count AS viewCount, "
                 + "category_id AS categoryId, published_at AS publishedAt, created_at AS createdAt, "
                 + "updated_at AS updatedAt, content_md AS contentMd "
                 + "FROM article " + where + " " + orderBy + " LIMIT ? OFFSET ?";
@@ -248,6 +252,7 @@ public class ArticleService {
             m.put("summary", r.get("summary"));
             m.put("coverUrl", r.get("coverUrl"));
             m.put("status", ((Number) r.get("status")).intValue());
+            m.put("isPinned", r.get("isPinned") == null ? 0 : ((Number) r.get("isPinned")).intValue());
             m.put("deleted", ((Number) r.get("deleted")).intValue());
             m.put("viewCount", r.get("viewCount") == null ? 0 : ((Number) r.get("viewCount")).longValue());
             m.put("categoryId", r.get("categoryId") == null ? null : ((Number) r.get("categoryId")).longValue());
@@ -367,6 +372,14 @@ public class ArticleService {
         if (Integer.valueOf(1).equals(article.getStatus()) && article.getPublishedAt() == null) {
             article.setPublishedAt(LocalDateTime.now());
         }
+        if (article.getIsPinned() == null) article.setIsPinned(0);
+        if (!Arrays.asList(0, 1).contains(article.getIsPinned())) {
+            throw new BusinessException(400, "isPinned 取值非法: " + article.getIsPinned());
+        }
+        if (Integer.valueOf(1).equals(article.getIsPinned())) {
+            // 置顶互斥：把其他置顶文章改回普通
+            jdbc.update("UPDATE article SET is_pinned = 0, updated_at = ? WHERE is_pinned = 1", LocalDateTime.now());
+        }
         articleMapper.insert(article);
         if (tagIds != null && !tagIds.isEmpty()) {
             for (Long tid : tagIds) {
@@ -423,6 +436,14 @@ public class ArticleService {
         if (article.getStatus() != null && !Arrays.asList(0, 1, 2).contains(article.getStatus())) {
             log.warn("文章更新校验失败：status 非法 id={} status={} operator={}", id, article.getStatus(), AuthContext.uid(request));
             throw new BusinessException(1010, "status 取值非法: " + article.getStatus());
+        }
+        if (article.getIsPinned() != null && !Arrays.asList(0, 1).contains(article.getIsPinned())) {
+            throw new BusinessException(400, "isPinned 取值非法: " + article.getIsPinned());
+        }
+        Integer effectiveIsPinned = article.getIsPinned() != null ? article.getIsPinned() : existing.getIsPinned();
+        if (Integer.valueOf(1).equals(effectiveIsPinned)) {
+            // 置顶互斥：把其他置顶文章改回普通（排除自身）
+            jdbc.update("UPDATE article SET is_pinned = 0, updated_at = ? WHERE is_pinned = 1 AND id != ?", LocalDateTime.now(), id);
         }
         Integer effectiveStatus = article.getStatus() != null ? article.getStatus() : existing.getStatus();
         if (Integer.valueOf(1).equals(effectiveStatus)
@@ -488,6 +509,69 @@ public class ArticleService {
         }
         log.info("文章软删：id={} slug={} operator={}", id, existing.getSlug(), AuthContext.uid(request));
         return Result.success();
+    }
+
+    /**
+     * 上传 HTML 文件创建文章（admin）。
+     * - slug 格式: html + 时间戳(10位) + 随机数(4位)
+     * - title: 从文件名提取（去掉 .html/.htm 后缀）
+     * - contentMd: 存储 HTML 文件路径（/uploads/html/xxx.html）
+     * - status: 默认 0（草稿），用户可手动发布
+     */
+    @Transactional
+    public Result<Map<String, Object>> createHtmlArticle(String htmlContent, String fileName, 
+                                                          String htmlFilePath, HttpServletRequest request) {
+        if (htmlContent == null || htmlContent.trim().isEmpty()) {
+            throw new BusinessException(400, "HTML 内容不能为空");
+        }
+        // 提取 title（文件名去掉 .html/.htm 后缀）
+        String title = fileName;
+        if (title != null) {
+            title = title.replaceAll("\\.(html?|HTML?)$", "").trim();
+        }
+        if (title == null || title.isEmpty()) {
+            title = "HTML 页面";
+        }
+        if (title.length() > 200) {
+            title = title.substring(0, 200);
+        }
+
+        // 生成唯一 slug: html + 时间戳 + 随机数
+        String slug = generateUniqueHtmlSlug();
+
+        // 创建文章 - contentMd 存储 HTML 文件路径
+        Article article = new Article();
+        article.setTitle(title);
+        article.setSlug(slug);
+        article.setSummary("HTML 页面");
+        article.setContentMd(htmlFilePath); // 存储文件路径，而非内容
+        article.setViewCount(0);
+        article.setDeleted(0);
+        article.setStatus(0); // 默认草稿
+        article.setCreatedAt(LocalDateTime.now());
+        article.setUpdatedAt(LocalDateTime.now());
+        articleMapper.insert(article);
+
+        log.info("HTML文章创建：id={} slug={} title={} filePath={} operator={}",
+                article.getId(), slug, title, htmlFilePath, AuthContext.uid(request));
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("id", article.getId());
+        data.put("slug", article.getSlug());
+        data.put("title", article.getTitle());
+        return Result.success(data);
+    }
+
+    /**
+     * 生成唯一的 HTML 文章 slug。
+     * 格式: html + 时间戳(10位) + 随机数(4位)
+     * 确保每次生成的 slug 都是唯一的
+     */
+    private String generateUniqueHtmlSlug() {
+        // 时间戳（秒）+ 4位随机数，确保唯一性
+        long timestamp = System.currentTimeMillis() / 1000;
+        int random = (int) (Math.random() * 10000);
+        return String.format("html%d%04d", timestamp, random);
     }
 
     /**
@@ -770,6 +854,7 @@ public class ArticleService {
         m.put("summary", a.getSummary());
         m.put("coverUrl", a.getCoverUrl());
         m.put("status", a.getStatus());
+        m.put("isPinned", a.getIsPinned() == null ? 0 : a.getIsPinned());
         // 2026-06-22 v4.x polish：viewCount null 兜底为 0——
         //   Article.viewCount 是 Integer（可空包装类），任何绕过 create() setViewCount(0) 的路径
         //   都可能让前端拿到 null（NaN 渲染/JSON 反序列化异常）。

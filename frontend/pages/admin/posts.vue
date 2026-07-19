@@ -38,7 +38,7 @@ const loadCategories = async () => {
 }
 
 // 统计
-const stats = ref({ total: 0, published: 0, draft: 0, archived: 0, totalViews: 0 })
+const stats = ref({ total: 0, published: 0, draft: 0, archived: 0, pinned: 0, totalViews: 0 })
 const loadStats = async () => {
   try {
     const res = await get<any>('/admin/dashboard')
@@ -49,6 +49,7 @@ const loadStats = async () => {
       draft: k.draftArticles || 0,
       // 2026-06-12 修复：后端 KPI 现在返回 archivedArticles；前端 tab "已归档" 不再 hard-code 0
       archived: k.archivedArticles || 0,
+      pinned: k.pinnedArticles || 0,
       totalViews: k.totalViewCount || 0
     }
   } catch { /* ignore */ }
@@ -257,6 +258,7 @@ const handleBulkPublish = async () => {
 
 const statusLabel = (s: number) => ({ 0: '草稿', 1: '已发布', 2: '已归档' }[s] || '未知')
 const statusBadge = (s: number) => ({ 1: 'badge-success', 0: 'badge-warning', 2: 'badge-muted' }[s] || 'badge-muted')
+const pinLabel = (p: number) => p === 1 ? '置顶' : ''
 
 // 缩略图：取标题前 2 字符
 const thumb = (a: any) => {
@@ -275,6 +277,13 @@ const totalPages = computed(() => Math.max(1, Math.ceil(total.value / size.value
 const showImport = ref(false)
 const onImportClose = (refreshed?: boolean) => {
   showImport.value = false
+  if (refreshed) { load(); loadStats() }
+}
+
+// HTML 上传对话框开关
+const showHtmlUpload = ref(false)
+const onHtmlUploadClose = (refreshed?: boolean) => {
+  showHtmlUpload.value = false
   if (refreshed) { load(); loadStats() }
 }
 
@@ -304,6 +313,10 @@ onMounted(async () => {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
           导入
         </button>
+        <button @click="showHtmlUpload = true" class="btn-new" style="background: var(--primary-soft, var(--accent)); color: var(--primary, var(--text));">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+          上传HTML
+        </button>
         <NuxtLink to="/admin/edit" class="btn-new">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           新建文章
@@ -313,6 +326,9 @@ onMounted(async () => {
 
     <!-- 2026-06-24 DEV-002：文章 ZIP 导入对话框 -->
     <AdminArticleImportDialog v-if="showImport" @close="onImportClose" />
+
+    <!-- HTML 上传对话框 -->
+    <AdminHtmlUploadDialog v-if="showHtmlUpload" @close="onHtmlUploadClose" />
 
 
     <!-- Stats（点击「总文章 / 已发布 / 草稿」筛选下方列表） -->
@@ -329,6 +345,11 @@ onMounted(async () => {
       <div class="stat-card clickable" :class="{ active: filterStatus === 0 }" @click="setFilter(0)">
         <div class="stat-card-label">草稿</div>
         <div class="stat-card-value">{{ stats.draft }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-label">置顶</div>
+        <div class="stat-card-value">{{ stats.pinned }}</div>
+        <div class="stat-card-delta">同时仅 1 篇</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-label">总阅读量</div>
@@ -406,7 +427,13 @@ onMounted(async () => {
               <div class="post-cell">
                 <div class="post-thumb">{{ thumb(a).emoji }}</div>
                 <div class="post-cell-info post-cell-clickable" @click="handleEdit(a)">
-                  <div class="post-cell-title">{{ a.title }}</div>
+                  <div class="post-cell-title">
+                    <span v-if="a.isPinned === 1" class="featured-badge" style="font-size: 10px; padding: 1px 5px; margin-right: 4px; vertical-align: middle;">
+                      <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4-6.2-4.5-6.2 4.5 2.4-7.4L2 9.4h7.6L12 2z"/></svg>
+                      置顶
+                    </span>
+                    {{ a.title }}
+                  </div>
                   <div class="post-cell-meta">/{{ a.slug }}</div>
                 </div>
               </div>
@@ -428,7 +455,8 @@ onMounted(async () => {
                 <!-- 2026-07-01 BUG-002：行操作按 tab 切换 -->
                 <!-- 未删除 / 全部 tab：编辑 + 查看 + 删除（软删） -->
                 <template v-if="filterDeleted !== '1'">
-                  <a :href="`/post/${a.slug}`" target="_blank" class="row-action" title="查看">
+                  <!-- 2026-07-19 修复：草稿/归档文章加 preview=1 走管理员预览端点（绕过 status=1 过滤） -->
+                  <a :href="`/post/${a.slug}?preview=1`" target="_blank" class="row-action" title="查看">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                   </a>
                   <button @click="handleSoftDelete(a)" class="row-action danger" title="删除">

@@ -30,6 +30,8 @@ public class Article {
     private String coverUrl;
     /** 0-草稿 1-已发布 2-已归档 */
     private Integer status;
+    /** 0-普通 1-置顶 */
+    private Integer isPinned;
     private Integer viewCount;
     private Long categoryId;
     private LocalDateTime publishedAt;

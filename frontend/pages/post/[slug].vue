@@ -5,22 +5,34 @@ import { formatDate as formatDateShared, formatDateTime as formatDateTimeShared,
 definePageMeta({ layout: 'post' })
 
 const route = useRoute()
-const preview = computed(() => route.query.preview === '1')
 const { get, post, downloadAttachment } = usePublicApi()
 // 2026-07-15 BUG-001：草稿预览——preview=1 时改走管理员鉴权端点（绕过 status=1 过滤）
 const { get: adminGet } = useAdminApi()
 const $toast = useToast()
 const slug = route.params.slug as string
+const preview = computed(() => route.query.preview === '1')
 
-// 2026-07-15 BUG-003：解构 error/status/refresh，使预览请求失败时
-// 能有明确错误态（而非静默空白 / 白屏）。
-const { data: articleRes, error: articleError, status: articleStatus, refresh: refreshArticle } = await useAsyncData(
-  `post-article-${slug}`,
-  () => preview.value
-    ? adminGet<any>(`/articles/admin/preview/${slug}`)
-    : get<any>(`/articles/${slug}`),
-  { transform: (r: any) => r.data }
-)
+// 2026-07-15 BUG-003：用 ref + onMounted 替代 useAsyncData，避免 SPA 路由初始化时 route.query 未就绪
+const article = ref<any>(null)
+const articleError = ref<any>(null)
+const articleStatus = ref('idle')
+const refreshArticle = async () => {
+  article.value = null
+  articleError.value = null
+  articleStatus.value = 'pending'
+  try {
+    const isPreview = route.query.preview === '1' || (import.meta.client && new URLSearchParams(window.location.search).get('preview') === '1')
+    const res = isPreview
+      ? await adminGet<any>(`/articles/admin/preview/${slug}`)
+      : await get<any>(`/articles/${slug}`)
+    article.value = res.data || null
+    articleStatus.value = 'success'
+  } catch (e: any) {
+    articleError.value = e
+    articleStatus.value = 'error'
+  }
+}
+await refreshArticle()
 const { data: metaRes } = await useAsyncData(
   `post-meta-${slug}`,
   async (): Promise<{ categories: any[]; tags: any[] }> => {
@@ -32,7 +44,6 @@ const { data: metaRes } = await useAsyncData(
   }
 )
 
-const article = computed(() => articleRes.value || null)
 const categories = computed(() => metaRes.value?.categories || [])
 const tags = computed(() => metaRes.value?.tags || [])
 const comments = ref<any[]>([])
@@ -129,6 +140,16 @@ const scrollToHeading = (id: string) => {
 
 const ssrSafeHtml = (md: string): string => {
   if (!md) return ''
+  // 检测是否是 HTML 内容（以 < 开头）
+  const isHtml = md.trimStart().startsWith('<')
+  if (isHtml) {
+    // HTML 内容：仅过滤危险属性，保留所有标签
+    let html = md
+    html = html.replace(/(href|src)=(["'])\s*(javascript|data|vbscript):/gi, '$1=$2#')
+    html = html.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    return html
+  }
+  // Markdown 内容：转换并过滤
   let html = renderMarkdown(md)
   html = html.replace(/(href|src)=(["'])\s*(javascript|data|vbscript):/gi, '$1=$2#')
   html = html.replace(/<(script|iframe|object|embed|style|link|meta)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
@@ -139,6 +160,16 @@ const ssrSafeHtml = (md: string): string => {
 
 const safeMarkdown = (md: string): string => {
   if (import.meta.client) {
+    // 检测是否是 HTML 内容
+    const isHtml = md.trimStart().startsWith('<')
+    if (isHtml) {
+      // HTML 内容：使用更宽松的 DOMPurify 配置
+      return DOMPurify.sanitize(md, {
+        ALLOWED_TAGS: ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'br', 'hr', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'del', 'mark', 'input', 'div', 'span', 'section', 'article', 'header', 'footer', 'nav', 'aside', 'main', 'figure', 'figcaption', 'video', 'audio', 'source', 'canvas', 'svg', 'style', 'script'],
+        ALLOWED_ATTR: ['href', 'target', 'class', 'src', 'alt', 'loading', 'id', 'checked', 'disabled', 'type', 'style', 'width', 'height', 'controls', 'autoplay', 'loop', 'muted', 'poster', 'preload', 'playsinline', 'data-*'],
+        ALLOW_DATA_ATTR: true
+      })
+    }
     return DOMPurify.sanitize(renderMarkdown(md), {
       ALLOWED_TAGS: ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'br', 'hr', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'del', 'mark', 'input'],
       ALLOWED_ATTR: ['href', 'target', 'class', 'src', 'alt', 'loading', 'id', 'checked', 'disabled', 'type'],
@@ -152,6 +183,53 @@ const proseHtml = computed(() => {
   if (!article.value?.contentMd) return ''
   return safeMarkdown(article.value.contentMd)
 })
+
+// 检测是否是 HTML 文件路径（以 /uploads/html/ 开头）
+const isHtmlFile = computed(() => {
+  if (!article.value?.contentMd) return false
+  return article.value.contentMd.startsWith('/uploads/html/')
+})
+
+// 检测是否是内联 HTML 内容（以 < 开头）
+const isHtmlContent = computed(() => {
+  if (!article.value?.contentMd) return false
+  return article.value.contentMd.trimStart().startsWith('<')
+})
+
+// HTML 文件 URL
+const htmlFileUrl = computed(() => {
+  if (!isHtmlFile.value || !article.value?.contentMd) return ''
+  const config = useRuntimeConfig()
+  return `${config.public.apiBase.replace('/api/v1', '')}${article.value.contentMd}`
+})
+
+// iframe 引用和高度调整
+const htmlIframeRef = ref<HTMLIFrameElement | null>(null)
+
+const adjustIframeHeight = () => {
+  const iframe = htmlIframeRef.value
+  if (!iframe || !iframe.contentDocument) return
+  
+  try {
+    // 获取 iframe 内容的实际高度
+    const body = iframe.contentDocument.body
+    const html = iframe.contentDocument.documentElement
+    const height = Math.max(
+      body.scrollHeight,
+      body.offsetHeight,
+      html.clientHeight,
+      html.scrollHeight,
+      html.offsetHeight
+    )
+    
+    // 设置 iframe 高度（加一些 padding 避免裁剪）
+    iframe.style.height = `${height + 20}px`
+  } catch (e) {
+    // 跨域时无法访问 contentDocument，设置一个默认高度
+    iframe.style.height = '800px'
+    console.warn('无法调整 iframe 高度（可能跨域）:', e)
+  }
+}
 
 onMounted(async () => {
   // 渐进增强：隐藏 SEO 静态内容（后端返回的 HTML 中的 #seo-content）
@@ -219,7 +297,14 @@ onBeforeUnmount(() => {
           <p v-if="article.summary" style="color: var(--text-2); font-size: 16px; line-height: 1.6;">{{ article.summary }}</p>
         </header>
 
-        <div class="prose" v-html="proseHtml"></div>
+        <!-- HTML 文件：使用 iframe 加载原始文件（保留所有交互功能） -->
+        <div v-if="isHtmlFile" class="html-iframe-container">
+          <iframe ref="htmlIframeRef" :src="htmlFileUrl" class="html-iframe" frameborder="0" allowfullscreen @load="adjustIframeHeight"></iframe>
+        </div>
+        <!-- 内联 HTML 内容：使用 v-html 渲染 -->
+        <div v-else-if="isHtmlContent" class="html-content" v-html="proseHtml"></div>
+        <!-- Markdown 内容：使用 prose 容器 -->
+        <div v-else class="prose" v-html="proseHtml"></div>
 
         <section v-if="article.attachment" style="margin: 32px 0; padding: 16px 20px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: 8px;">
           <div style="display: flex; align-items: center; gap: 12px;">
@@ -326,6 +411,28 @@ onBeforeUnmount(() => {
 .post-main {
   flex: 1;
   min-width: 0;
+}
+
+/* HTML 内容全屏展示 */
+.html-content {
+  width: 100%;
+  margin: 0;
+}
+
+/* HTML 文件 iframe 容器 */
+.html-iframe-container {
+  width: 100%;
+  margin: 0;
+}
+
+.html-iframe {
+  width: 100%;
+  min-height: 1200px;
+  height: auto;
+  border: none;
+  border-radius: 8px;
+  background: #0e0f13;
+  overflow: visible;
 }
 
 /* 2026-07-15 BUG-001：草稿预览标记条 */

@@ -45,6 +45,7 @@ public class DashboardController {
         kpi.put("publishedArticles", jdbc.queryForObject("SELECT COUNT(*) FROM article WHERE status = 1 AND deleted = 0", Long.class));
         kpi.put("draftArticles", jdbc.queryForObject("SELECT COUNT(*) FROM article WHERE status = 0 AND deleted = 0", Long.class));
         kpi.put("archivedArticles", jdbc.queryForObject("SELECT COUNT(*) FROM article WHERE status = 2 AND deleted = 0", Long.class));
+        kpi.put("pinnedArticles", jdbc.queryForObject("SELECT COUNT(*) FROM article WHERE is_pinned = 1 AND deleted = 0", Long.class));
         kpi.put("totalComments", jdbc.queryForObject("SELECT COUNT(*) FROM comment", Long.class));
         kpi.put("pendingComments", jdbc.queryForObject("SELECT COUNT(*) FROM comment WHERE status = 0", Long.class));
         kpi.put("totalCategories", jdbc.queryForObject("SELECT COUNT(*) FROM category", Long.class));

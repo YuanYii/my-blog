@@ -181,6 +181,56 @@ public class ArticleController {
     // ============ 2026-06-24 DEV-002：文章导入 ============
 
     /**
+     * 上传 HTML 文件创建文章（admin）
+     * POST /articles/admin/import-html
+     * 将 HTML 文件保存到磁盘，并在数据库中存储文件路径
+     */
+    @PostMapping("/admin/import-html")
+    public Result<Map<String, Object>> importHtml(@RequestParam("file") MultipartFile file,
+                                                   @RequestParam(value = "title", required = false) String title,
+                                                   HttpServletRequest request) throws IOException {
+        // 校验文件类型
+        String fileName = file.getOriginalFilename();
+        if (fileName == null || (!fileName.toLowerCase().endsWith(".html") && !fileName.toLowerCase().endsWith(".htm"))) {
+            throw new BusinessException(400, "仅支持 .html 或 .htm 文件");
+        }
+        // 校验文件大小（最大 2MB）
+        if (file.getSize() > 2 * 1024 * 1024) {
+            throw new BusinessException(400, "HTML 文件大小不能超过 2MB");
+        }
+        
+        // 读取文件内容
+        String htmlContent = new String(file.getBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        
+        // 保存 HTML 文件到磁盘
+        String uploadDir = System.getProperty("UPLOAD_DIR", "/opt/myblog/uploads");
+        String htmlDir = uploadDir + "/html";
+        java.io.File dir = new java.io.File(htmlDir);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        
+        // 生成唯一文件名：时间戳 + 随机数 + .html
+        long timestamp = System.currentTimeMillis();
+        int random = (int) (Math.random() * 10000);
+        String uniqueFileName = String.format("html_%d_%04d.html", timestamp, random);
+        String filePath = htmlDir + "/" + uniqueFileName;
+        
+        // 写入文件
+        java.io.File htmlFile = new java.io.File(filePath);
+        java.nio.file.Files.write(htmlFile.toPath(), file.getBytes(), java.nio.file.StandardOpenOption.CREATE);
+        
+        // 生成访问 URL
+        String htmlFileUrl = "/uploads/html/" + uniqueFileName;
+        
+        // 使用自定义标题或文件名
+        String effectiveTitle = title != null && !title.trim().isEmpty() ? title.trim() : fileName;
+        
+        // 调用 Service 创建文章（传入文件路径）
+        return articleService.createHtmlArticle(htmlContent, effectiveTitle, htmlFileUrl, request);
+    }
+
+    /**
      * 上传 ZIP 包导入文章（admin）
      * 由 admin 鉴权（/articles/admin/* 在 ApiWhitelistInterceptor 中要求 admin）
      */

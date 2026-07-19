@@ -92,6 +92,12 @@ CREATE INDEX IF NOT EXISTS idx_article_published_at ON article(published_at);
 CREATE INDEX IF NOT EXISTS idx_article_deleted ON article(deleted);
 
 -- ----------------------------------------------------
+-- 4.1 article 增量字段
+-- ----------------------------------------------------
+ALTER TABLE article ADD COLUMN is_pinned TINYINT NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_article_pinned ON article(is_pinned);
+
+-- ----------------------------------------------------
 -- 5. article_tag 文章-标签关联
 -- ----------------------------------------------------
 CREATE TABLE IF NOT EXISTS article_tag (
