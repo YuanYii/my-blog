@@ -591,12 +591,12 @@ if [ -f "$DB_FILE" ]; then
     info "=== 5.1 Running upgrade.sql ==="
     UPGRADE_SQL="$TMP_DIR/upgrade.sql"
     if [ -f "$UPGRADE_SQL" ]; then
-        # 先执行幂等部分（CREATE TABLE/INDEX IF NOT EXISTS）
-        BASIC_SQL=$(sed '/^-- /d;/^$/d;/ALTER TABLE/d;/PLACEHOLDER/d' "$UPGRADE_SQL")
+        # 执行 upgrade.sql 幂等部分（CREATE TABLE/INDEX IF NOT EXISTS）
+        BASIC_SQL=$(sed '/^-- /d;/^$/d;/ALTER TABLE/d' "$UPGRADE_SQL")
         if [ -n "$BASIC_SQL" ]; then
             echo "$BASIC_SQL" | sqlite3 "$DB_FILE" && info "[OK] upgrade.sql (幂等部分) executed"
         fi
-        # ALTER TABLE 逐条检查后执行（非幂等，需 PRAGMA 先检）
+        # ALTER TABLE 逐条 PRAGMA 检查后执行（非幂等，防止重复添加报错）
         # backup_record.trace_id（v4.2.0+）
         if ! sqlite3 "$DB_FILE" "PRAGMA table_info(backup_record);" | grep -q trace_id; then
             info "  Patching backup_record: adding trace_id column"

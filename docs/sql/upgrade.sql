@@ -40,7 +40,8 @@ CREATE INDEX IF NOT EXISTS idx_upgrade_record_started_at ON upgrade_record(start
 CREATE INDEX IF NOT EXISTS idx_upgrade_record_status ON upgrade_record(status);
 
 -- 3. backup_record.trace_id（v4.2.0+）
--- PLACEHOLDER_BACKUP_TRACE_ID
+ALTER TABLE backup_record ADD COLUMN trace_id VARCHAR(64);
 
 -- 4. article.is_pinned 置顶字段（v6.0.2+）
--- PLACEHOLDER_ARTICLE_IS_PINNED
+ALTER TABLE article ADD COLUMN is_pinned TINYINT NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_article_pinned ON article(is_pinned);
