@@ -228,6 +228,7 @@ cp "$JAR_PATH"                                 "$STAGE_DIR/assets/blog-app.jar"
 tar -czf "$STAGE_DIR/assets/frontend-static.tar.gz" -C "$STATIC_DIR" .
 # 2026-06-22 修复:sql/ 已合并到 docs/sql/(v2.6.0 整合)
 cp "$ROOT_DIR/docs/sql/schema-sqlite.sql" "$STAGE_DIR/assets/schema-sqlite.sql"
+cp "$ROOT_DIR/docs/sql/upgrade.sql"       "$STAGE_DIR/assets/upgrade.sql"
 
 # deploy-server.sh 是服务器端唯一能拉到的脚本，缺失就强制失败
 if [ ! -f "$ROOT_DIR/scripts/deploy-server.sh" ]; then
