@@ -445,6 +445,7 @@ upload_one() {
 upload_one "$STAGE_DIR/assets/blog-app.jar"             "blog-app.jar"
 upload_one "$STAGE_DIR/assets/frontend-static.tar.gz"  "frontend-static.tar.gz"
 upload_one "$STAGE_DIR/assets/schema-sqlite.sql"       "schema-sqlite.sql"
+upload_one "$STAGE_DIR/assets/upgrade.sql"              "upgrade.sql"
 upload_one "$STAGE_DIR/assets/deploy-server.sh"        "deploy-server.sh"
 upload_one "$STAGE_DIR/assets/sqlite-import.sh"        "sqlite-import.sh"
 upload_one "$STAGE_DIR/assets/sqlite-export.sh"        "sqlite-export.sh"
