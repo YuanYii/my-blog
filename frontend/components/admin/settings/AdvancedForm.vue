@@ -1,11 +1,18 @@
 <script setup lang="ts">
 defineProps<{ advanced: { enableCache: boolean; enableRss: boolean; enableSearch: boolean; enableCommentModeration: boolean } }>()
-defineEmits<{ (e: 'update:advanced', v: any): void }>()
+const emit = defineEmits<{
+  (e: 'update:advanced', v: any): void
+  (e: 'cache-label-click'): void
+}>()
+
+const handleCacheLabelClick = () => {
+  emit('cache-label-click')
+}
 </script>
 <template>
   <div class="card" style="padding: 24px;">
     <div class="form-group" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
-      <div><div class="form-label" style="margin:0;">启用缓存</div><div style="font-size:12px; color:var(--muted);">开启服务端页面缓存，降低数据库压力</div></div>
+      <div><div class="form-label" style="margin:0; cursor:default; user-select:none;" @click="handleCacheLabelClick">启用缓存</div><div style="font-size:12px; color:var(--muted);">开启服务端页面缓存，降低数据库压力</div></div>
       <label class="toggle"><input type="checkbox" :checked="advanced.enableCache" @change="$emit('update:advanced', { ...advanced, enableCache: ($event.target as HTMLInputElement).checked })" /><span></span></label>
     </div>
     <div class="form-group" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">

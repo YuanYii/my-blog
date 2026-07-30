@@ -471,6 +471,64 @@ public class SettingsController {
     }
 
     /**
+     * 模拟服务报错日志（隐藏功能，需连续点击 5 次触发）
+     * 用于测试日志采集系统，日志格式严格遵循 logback-spring.xml 的 LOG_PATTERN
+     */
+    @PostMapping("/simulate-log")
+    public Result<Void> simulateLog(@RequestBody Map<String, Object> body) {
+        String timestamp = (String) body.get("timestamp");
+        String level = (String) body.get("level");
+        String thread = (String) body.get("thread");
+        String traceId = (String) body.get("traceId");
+        String message = (String) body.get("message");
+        Object countObj = body.get("count");
+
+        // 参数校验
+        if (message == null || message.trim().isEmpty()) {
+            return Result.error(400, "错误信息不能为空");
+        }
+        if (level == null || !Arrays.asList("INFO", "WARN", "ERROR").contains(level)) {
+            return Result.error(400, "日志级别必须是 INFO / WARN / ERROR");
+        }
+
+        int count = 1;
+        if (countObj instanceof Number) {
+            count = ((Number) countObj).intValue();
+        }
+        if (count < 1 || count > 20) {
+            return Result.error(400, "打印次数必须在 1-20 之间");
+        }
+
+        // 设置 MDC traceId
+        org.slf4j.MDC.put("traceId", traceId != null ? traceId : "");
+
+        // 构建日志消息前缀
+        String prefix = "[mock-simulate] ";
+        String logMessage = prefix + message.trim();
+
+        // 根据级别打印日志
+        for (int i = 0; i < count; i++) {
+            switch (level) {
+                case "INFO":
+                    log.info(logMessage);
+                    break;
+                case "WARN":
+                    log.warn(logMessage);
+                    break;
+                case "ERROR":
+                    log.error(logMessage);
+                    break;
+            }
+        }
+
+        // 清理 MDC
+        org.slf4j.MDC.remove("traceId");
+
+        log.info("模拟日志已打印：level={} count={} thread={}", level, count, thread);
+        return Result.success();
+    }
+
+    /**
      * 紧急 SQL 执行（隐藏功能，需连续点击 5 次触发）
      * 仅支持 SELECT / INSERT / UPDATE / DELETE，禁止 DROP / ALTER / CREATE
      */
