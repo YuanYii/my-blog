@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -266,6 +267,8 @@ public class ArticleService {
         fillTagIds(records);
         // 2026-07-01 OPT-001：adminList 加 attachmentCount 字段
         fillAttachmentCounts(records);
+        // 2026-08-01 DEV-001：adminList 加 viewCount3d 字段（page_view 近3天浏览数）
+        fillViewCount3d(records);
         return Result.success(PageResult.of(records, total != null ? total : 0L, page, size));
     }
 
@@ -292,6 +295,37 @@ public class ArticleService {
         for (Map<String, Object> r : records) {
             Long aid = ((Number) r.get("id")).longValue();
             r.put("attachmentCount", counts.getOrDefault(aid, 0L));
+        }
+    }
+
+    /**
+     * 2026-08-01 DEV-001：给 records 里每篇文章填 viewCount3d（近 3 天 page_view 浏览数）。
+     * 复用 fillAttachmentCounts 模式（一条 SQL IN 取全部，in-memory merge）。
+     * 近 3 天语义 = visit_date >= LocalDate.now().minusDays(2)（含今天），与 dailyStats/topArticles 一致。
+     * 无 page_view 记录的文章兜底写 0。
+     */
+    private void fillViewCount3d(List<Map<String, Object>> records) {
+        if (records == null || records.isEmpty()) return;
+        List<Long> articleIds = records.stream()
+            .map(r -> ((Number) r.get("id")).longValue())
+            .collect(Collectors.toList());
+        String placeholders = articleIds.stream().map(x -> "?").collect(Collectors.joining(","));
+        LocalDate fromDate = LocalDate.now().minusDays(2);
+        List<Object> params = new ArrayList<>(articleIds);
+        params.add(fromDate);
+        // 只统计 article_id 非空且近3天的记录；按 article_id 聚合
+        List<Map<String, Object>> rows = jdbc.queryForList(
+            "SELECT article_id AS aid, COUNT(*) AS cnt FROM page_view "
+            + "WHERE article_id IS NOT NULL AND article_id IN (" + placeholders + ") "
+            + "AND visit_date >= ? GROUP BY article_id",
+            params.toArray());
+        Map<Long, Long> counts = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            counts.put(((Number) row.get("aid")).longValue(), ((Number) row.get("cnt")).longValue());
+        }
+        for (Map<String, Object> r : records) {
+            Long aid = ((Number) r.get("id")).longValue();
+            r.put("viewCount3d", counts.getOrDefault(aid, 0L));
         }
     }
 

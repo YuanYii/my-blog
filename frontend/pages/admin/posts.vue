@@ -411,7 +411,7 @@ onMounted(async () => {
             <th style="width: 35%;">标题</th>
             <th>分类</th>
             <th>状态</th>
-            <th style="width: 80px;">阅读</th>
+            <th style="width: 120px;">阅读</th>
             <!-- 2026-07-01 OPT-001：新增「附件」列,按行展示 attachmentCount -->
             <th style="width: 70px;">附件</th>
             <th>发布时间</th>
@@ -440,7 +440,9 @@ onMounted(async () => {
             </td>
             <td><span class="badge" style="background: var(--primary-soft); color: var(--primary);">{{ categoryName(a.categoryId) }}</span></td>
             <td><span class="badge" :class="statusBadge(a.status)">{{ statusLabel(a.status) }}</span></td>
-            <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">{{ (a.viewCount || 0).toLocaleString() }}</td>
+            <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: nowrap;">
+              {{ (a.viewCount || 0).toLocaleString() }}<span v-if="(a.viewCount3d || 0) > 0" style="color: var(--success, #16a34a); font-weight: 600;">（+{{ a.viewCount3d }}）</span>
+            </td>
             <!-- 2026-07-01 OPT-001：附件数单元格, 0 时显示 "-" -->
             <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
               <span v-if="(a.attachmentCount || 0) > 0">📎 {{ a.attachmentCount }}</span>
