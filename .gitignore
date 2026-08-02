@@ -145,3 +145,9 @@ frontend/test-results/
 # Local staging
 .release-staging/
 .mimocode/
+
+# IDE / agent 缓存（2026-08-02 新增）
+.opencode/
+config/mcporter.json
+__pycache__/
+*.pyc
