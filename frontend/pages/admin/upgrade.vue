@@ -49,6 +49,20 @@ const recordsPage = ref(1)
 const recordsSize = ref(5)
 const recordsLoading = ref(false)
 
+// 20260801-BUG-001：升级失败详情弹框（对齐数据恢复页 restore.vue 交互）
+const upgradeErrorDialog = ref(false)
+const upgradeErrorDialogItem = ref<UpgradeRecord | null>(null)
+const openUpgradeErrorDialog = (item: UpgradeRecord) => {
+  if (!item.errorMessage) return
+  upgradeErrorDialogItem.value = item
+  upgradeErrorDialog.value = true
+}
+const closeUpgradeErrorDialog = () => {
+  upgradeErrorDialog.value = false
+  upgradeErrorDialogItem.value = null
+}
+const upgradeModeLabel = (mode: string) => mode === 'init' ? '初始化' : '全量代码升级'
+
 // ============= 格式化工具 =============
 const formatError = (e: any, fallback = '操作失败'): string => {
   if (!e) return fallback
@@ -405,7 +419,12 @@ onMounted(() => {
             <tr v-for="item in records" :key="item.id">
               <td><code style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">#{{ item.id }}</code></td>
               <td>
-                <span v-if="item.status === 'FAILED'" class="status-badge status-danger">
+                <span
+                  v-if="item.status === 'FAILED' && item.errorMessage"
+                  class="status-badge status-danger clickable"
+                  @click="openUpgradeErrorDialog(item)"
+                  :title="'点击查看失败详情'"
+                >
                   {{ statusLabel(item.status) }}
                 </span>
                 <span v-else class="status-badge" :class="`status-${statusType(item.status)}`">
@@ -436,6 +455,59 @@ onMounted(() => {
         @update:size="(v: number) => recordsSize = v"
         @change="fetchRecords"
       />
+    </div>
+
+    <!-- 20260801-BUG-001：升级失败详情弹框（对齐 restore.vue） -->
+    <div v-if="upgradeErrorDialog" class="modal-backdrop" @click.self="closeUpgradeErrorDialog">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="升级失败详情">
+        <div class="modal-header">
+          <div class="modal-title">升级失败详情</div>
+          <button @click="closeUpgradeErrorDialog" class="modal-close" aria-label="关闭">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">升级记录</label>
+            <div class="form-control" style="background: var(--bg-soft); cursor: default;">
+              <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                #{{ upgradeErrorDialogItem?.id }} · {{ upgradeErrorDialogItem?.status }}
+              </code>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">目标版本</label>
+            <div class="form-control" style="background: var(--bg-soft); cursor: default;">
+              <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                {{ upgradeErrorDialogItem?.targetVersion || '-' }}
+              </code>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">来源版本</label>
+            <div class="form-control" style="background: var(--bg-soft); cursor: default;">
+              <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                {{ upgradeErrorDialogItem?.fromVersion || '-' }}
+              </code>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">升级模式</label>
+            <div class="form-control" style="background: var(--bg-soft); cursor: default;">
+              {{ upgradeModeLabel(upgradeErrorDialogItem?.mode || 'full') }}
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">错误信息</label>
+            <div class="form-control" style="background: var(--bg-soft); cursor: default; font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow-y: auto; line-height: 1.6;">
+              {{ upgradeErrorDialogItem?.errorMessage || '(空)' }}
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button @click="closeUpgradeErrorDialog" class="btn btn-ghost btn-sm">关闭</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>

@@ -162,6 +162,23 @@ def run_deploy(version, mode, import_db):
         upgrade_lock.release()
 
 
+def build_failure_message(tail_lines=50):
+    """20260801-BUG-001：从 state.logs 截取 deploy 最后 tail_lines 行作为失败详情。
+
+    返回格式：
+      失败日志（最后 50 行）：
+      <日志内容>
+      完整日志见：journalctl -u upgrade-agent
+    """
+    with state._lock:
+        logs = list(state.logs)
+    if not logs:
+        return "升级失败，无可用日志，请查看 /opt/myblog/logs/ 或 journalctl -u upgrade-agent"
+    tail = logs[-tail_lines:]
+    body = "\n".join(tail)
+    return f"失败日志（最后 {len(tail)} 行）:\n{body}\n完整日志见：journalctl -u upgrade-agent"
+
+
 def mark_upgrade_record(success):
     """更新数据库中最近一条 RUNNING 的升级记录状态"""
     import sqlite3
@@ -174,7 +191,12 @@ def mark_upgrade_record(success):
         if row:
             record_id = row[0]
             status = "SUCCESS" if success else "FAILED"
-            error_msg = None if success else "升级失败"
+            # 20260801-BUG-001：失败时写入 deploy 最后 50 行日志到 error_message，
+            # 替代写死的「升级失败」，供前端失败详情弹框展示具体原因
+            if success:
+                error_msg = None
+            else:
+                error_msg = build_failure_message()
             cursor.execute(
                 "UPDATE upgrade_record SET status = ?, finished_at = datetime('now', 'localtime'), error_message = ? WHERE id = ?",
                 (status, error_msg, record_id)
