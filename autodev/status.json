@@ -1,40 +1,40 @@
 {
-  "RUN": "20260730",
+  "RUN": "20260801",
   "stages": {
     "Stage_1": {
       "status": "success",
-      "last_update": "2026-07-30 15:00:00",
-      "message": "本轮(RUN=20260730)新增 1 张卡片：DEV-001 中「模拟服务报错隐藏功能」。在站点设置-高级界面连续点击"启用缓存"5次弹出输入界面，支持配置 timestamp/level/thread/traceId/message/count，确认后使用 SLF4J 按真实日志格式打印到 /opt/myblog/logs/blog.log，消息前缀 [mock-simulate]。去重扫描近7天无重复。"
+      "last_update": "2026-08-01 18:45:00",
+      "message": "本轮(RUN=20260801)本轮新增 2 张卡片。DEV-001 中「文章浏览近3天新增数量展示」（管理后台文章列表浏览列展示总浏览(+近3天新增)，+N绿色，用户确认 2 决策点：①展示位置=浏览列；②近3天新增为0时隐藏+N）。BUG-001 中「系统升级失败后无法查看详细日志」（升级失败后历史只显示截断30字 error-reason，无法点击看完整详情，与数据恢复页弹框体验不一致；根因：upgrade-agent.py:177 失败时 error_msg 写死「升级失败」、完整日志仅在 agent 内存不落库；方案：agent 失败时把 deploy 最后 50 行日志写入 error_message + upgrade.vue 照搬 restore.vue 失败详情弹框；用户已确认：严重程度保持中、日志写入 error_message 不新增列）。去重扫描近7天无重复。"
     },
     "Stage_2": {
       "status": "success",
-      "last_update": "2026-07-30 11:56:10",
-      "message": "本轮(RUN=20260730)新增 1 张卡片(DEV-001 中)开发完成。DEV-001：模拟服务报错隐藏功能——前端新建 LogSimulatorDialog.vue 弹窗组件(6字段+重置/确认)，AdvancedForm.vue 为「启用缓存」标签添加点击事件，advanced.vue 集成5次点击计数逻辑(3秒超时)；后端 SettingsController 新增 POST /admin/settings/simulate-log 端点，SLF4J 按级别打印[mock-simulate]前缀日志+MDC traceId透传。前端构建通过，后端编译通过。"
+      "last_update": "2026-08-01 18:50:00",
+      "message": "本轮(RUN=20260801)完成 2 张卡片开发。DEV-001：文章浏览近3天新增展示——后端 ArticleService 新增 fillViewCount3d（page_view 近3天 COUNT，visit_date>=今天-2天，复用 fillAttachmentCounts 批量模式，JdbcTemplate+LocalDate 跨方言），adminList 每条记录返回 viewCount3d（无记录为0）；前端 posts.vue 阅读列渲染 50（+10）绿色（var(--success,#16a34a)），+0 时隐藏。BUG-001：升级失败日志完整性+失败详情弹框——upgrade-agent.py 新增 build_failure_message（失败时从 state.logs 截取最后50行写入 error_message，替代写死「升级失败」，无日志保底提示），前端 upgrade.vue 照搬 restore.vue 失败详情 modal（FAILED 且含 errorMessage 时 badge clickable，展示记录/目标版本/来源版本/模式/错误信息 pre-wrap）。前端 build + 后端 compile + py_compile 均通过。"
     },
     "Stage_3": {
       "status": "success",
-      "last_update": "2026-07-30 12:00:00",
-      "message": "已完成 DEV-001 共 4 个文件的代码质量审查(规范/性能/安全三维)。0 个严重；1 个警告(日志消息未做换行符清洗，存在 Log Injection 风险)；2 个建议(timestamp/thread 参数未实际使用、handleReset 冗余赋值)。报告见 auto_audit/20260730/20260730-stage3.md。"
+      "last_update": "2026-08-01 18:58:00",
+      "message": "已完成 DEV-001 + BUG-001 共 3 个文件的代码质量审查(规范/性能/安全三维)。0 个严重；0 个警告；2 个建议(SUG-001 upgrade.vue error-reason 与弹框内容重复展示可选移除；SUG-002 upgrade-agent.py build_failure_message 直接访问 state._lock 可选加访问器)。报告见 auto_audit/20260801/20260801-stage3.md。"
     },
     "Stage_4": {
       "status": "success",
-      "last_update": "2026-07-30 12:05:00",
-      "message": "已完成 DEV-001 静态审计，逐验证清单在源码层核对：5项 ✅ 通过(点击5次弹窗、字段默认值、重置按钮、确认调用API、代码结构)；3项 🔍 需运行确认(日志格式、count次打印、文件写入)。0 个 ❌ 未满足项。运行时/集成验证委托 Stage5。报告见 auto_audit/20260730/20260730-stage4.md。"
+      "last_update": "2026-08-01 18:58:30",
+      "message": "已完成 BUG-001 静态审计（模式B：新增范围=历史未审的✅任务），逐验证清单在源码层核对：4项 ✅ 全通过（FAILED badge clickable 弹框、agent 失败日志最后50行写入 error_message 非空壳、与 restore.vue 弹框结构同构、前端build+py_compile通过）。0 个 ⚠️/❌ 项，1 个 🔍 需人工确认（真实失败场景点击弹框渲染效果）。报告见 auto_audit/20260801/20260801-stage4.md。"
     },
     "Stage_5": {
-      "status": "success",
-      "last_update": "2026-07-30 12:10:00",
-      "message": "集成测试完成：1项 ✅ 通过(API端点存在性验证)，2项 ⏭ 跳过(日志格式验证需admin认证、前端弹窗交互需启动前端)。后端运行中(8080)，前端/Redis未启动。报告见 auto_audit/20260730/20260730-stage5.md。"
+      "status": "skipped",
+      "last_update": "2026-08-01 18:27:30",
+      "message": "本轮无 🔍 项。20260801-stage4.md 审计结论为「✅ 全部通过」0 个需运行确认项，集成测试跳过。报告见 auto_audit/20260801/20260801-stage5.md。"
     },
     "Stage_6": {
       "status": "success",
-      "last_update": "2026-07-30 12:15:00",
-      "message": "门控通过（本轮 DEV-001：阻断项 BUG=0，DEV=0，OPT=0）。审计报告为🔍需运行确认，无⚠️/❌项；代码审查0个严重；集成测试无❌项。零异常，不生成卡片。详见 auto_audit/20260730/20260730-stage6.md。"
+      "last_update": "2026-08-01 18:28:00",
+      "message": "门控通过（本轮 DEV-001：阻断项 BUG=0，DEV=0，OPT=0）。审计报告 ✅ 全部通过；代码审查 0 严重；集成测试 0 未通过（无🔍项跳过）。零异常，不生成卡片。详见 auto_audit/20260801/20260801-stage6.md。"
     },
     "Stage_7": {
       "status": "success",
-      "last_update": "2026-07-15 20:36:00",
-      "message": "文档同步完成：① 任务追踪卡 BUG-003 / DEV-001 验证清单全勾选 + 人工验证结果回填（真实浏览器 8/8）；② 变更日志 docs/changelogs/2026-07-15-v5.4.2-draft-preview-sidebar-fix.md 追加 BUG-003（真实浏览器空白根因①+假阳性②）与 DEV-001（访客 IP 来源替换 referer）两章节，版本号沿用 ${revision}(v5.4.2) 未升版；③ 审计产物齐备（stage3/4/5/6）。本轮 RUN=20260715 五张卡片（OPT-001/BUG-001/BUG-002/BUG-003/DEV-001）Stage 2→7 全跑通。"
+      "last_update": "2026-08-01 18:31:00",
+      "message": "已完成同步 1 个任务(DEV-001)：设计文档变更记录表 + README §1.3 版本记录各追加 v6.0.2+ 增量条目；追踪文档已追加处理报告 + 工作流状态表。文档同步状态：完成。"
     },
     "Stage_8": {
       "status": "pending",
