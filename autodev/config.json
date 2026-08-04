@@ -1,0 +1,60 @@
+{
+  "_comment": "autodev-flow 项目配置文件",
+
+  "project": {
+    "_comment": "项目基本信息",
+    "name": "my-blog",
+    "nameEn": "my-blog",
+    "workspace": "/Users/yuanyi/MyProject/vibeP/my-blog"
+  },
+
+  "modules": {
+    "_comment": "项目模块结构（用于编译检查、文件定位）",
+    "backend": "backend",
+    "frontend": "frontend",
+    "app": "backend/blog-app"
+  },
+
+  "database": {
+    "_comment": "数据库配置",
+    "type": "SQLite",
+    "devFile": "backend/blog.db",
+    "schemaSqlite": "docs/sql/schema-sqlite.sql",
+    "schemaMysql": "docs/sql/schema-mysql.sql"
+  },
+
+  "techStack": {
+    "_comment": "技术栈（用于代码审查规则、编译命令）",
+    "backend": "Spring Boot 2.7.18",
+    "orm": "MyBatis-Plus 3.4.3.4",
+    "frontend": "Nuxt 3.13",
+    "language": ["Java", "TypeScript"],
+    "cache": "Redis"
+  },
+
+  "ports": {
+    "_comment": "服务端口（用于启动检查、API 调用）",
+    "backend": 8080,
+    "frontend": 3000,
+    "redis": 6379
+  },
+
+  "api": {
+    "_comment": "API 配置（用于健康检查、接口调用）",
+    "prefix": "/api/v1",
+    "healthCheck": "/health"
+  },
+
+  "docs": {
+    "_comment": "文档路径（用于文档同步）",
+    "design": "docs/design/博客系统设计方案.md",
+    "readme": "README.md",
+    "agents": "AGENTS.md"
+  },
+
+  "docker": {
+    "_comment": "Docker 配置（用于集成测试启动服务）",
+    "redisImage": "redis:7-alpine",
+    "containerName": "blog-redis"
+  }
+}

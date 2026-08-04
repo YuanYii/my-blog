@@ -352,6 +352,11 @@ public class SettingsController {
     @PutMapping("/advanced")
     public Result<Map<String, Object>> updateAdvanced(@RequestBody(required = false) Map<String, Object> body) {
         if (body == null) return Result.error(400, "请求体不能为空");
+        // 2026-08-03 隐藏异常开关：前端「RSS 订阅」标签连点 5 次触发，仅用于验证异常日志采集链路
+        if (Boolean.TRUE.equals(body.get("__simulateArrayIndexError"))) {
+            int[] sim = new int[0];
+            int boom = sim[1];
+        }
         siteSettingsService.merge(SiteSettingsService.SECTION_ADVANCED, body);
         logSettingChange(SiteSettingsService.SECTION_ADVANCED);
         return Result.success(siteSettingsService.get(SiteSettingsService.SECTION_ADVANCED));
@@ -502,9 +507,8 @@ public class SettingsController {
         // 设置 MDC traceId
         org.slf4j.MDC.put("traceId", traceId != null ? traceId : "");
 
-        // 构建日志消息前缀
-        String prefix = "[mock-simulate] ";
-        String logMessage = prefix + message.trim();
+        // 构建日志消息
+        String logMessage = message.trim();
 
         // 根据级别打印日志
         for (int i = 0; i < count; i++) {
@@ -524,7 +528,6 @@ public class SettingsController {
         // 清理 MDC
         org.slf4j.MDC.remove("traceId");
 
-        log.info("模拟日志已打印：level={} count={} thread={}", level, count, thread);
         return Result.success();
     }
 

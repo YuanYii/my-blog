@@ -1,0 +1,19 @@
+version: "2.0"
+run_id: "{{RUN_ID}}"
+stage: "Stage_6"
+evaluator: "PM-Gate-Agent"
+overall_result: "PASSED" # PASSED | BLOCKED | INCOMPLETE
+anomaly_counts:
+  total: 0
+  bug: 0
+  dev: 0
+  opt: 0
+source_reports:
+  audit_report: "auto_audit/{RUN}/{RUN}-stage4.md"
+  code_quality_report: "auto_audit/{RUN}/{RUN}-stage3.md"
+  integration_test_report: "auto_audit/{RUN}/{RUN}-stage5.md"
+reseed_tasks:
+  total: 0
+  task_ids: []   # ["autopush-{RUN}-BUG-001", ...]
+merged_to: "autodev/auto_iteration/{RUN}.md"
+gate_file: "auto_audit/{RUN}/{RUN}-stage6.md"

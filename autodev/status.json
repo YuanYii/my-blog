@@ -1,0 +1,17 @@
+{
+  "RUN": "20260804",
+  "status": "RUNNING",
+  "current_stage": "develop",
+  "stages": {
+    "Stage_1": {
+      "status": "success",
+      "message": "Active node: requirement",
+      "last_update": "2026-08-04T22:28:19.399658+08:00"
+    },
+    "Stage_2": {
+      "status": "running",
+      "message": "Active node: develop",
+      "last_update": "2026-08-04T22:28:20.661183+08:00"
+    }
+  }
+}

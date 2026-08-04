@@ -1,0 +1,14 @@
+version: "2.0"
+run_id: "{{RUN_ID}}"
+stage: "Stage_5"
+evaluator: "INTEGRATION_TESTER"
+overall_result: "PASSED" # PASSED | FAILED | BLOCK
+metrics:
+  total_scenarios: 0
+  passed_scenarios: 0
+  failed_scenarios: 0
+system_health:
+  services_healthy: true
+  database_migrations_ok: true
+next_actions:
+  auto_reseed_tasks: []

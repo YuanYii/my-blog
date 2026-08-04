@@ -1,0 +1,13 @@
+version: "2.0"
+run_id: "{{RUN_ID}}"
+stage: "{{STAGE_NAME}}" # Stage_3
+evaluator: "Evaluator-Agent"
+overall_result: "PASSED" # PASSED | REJECTED | BLOCK
+metrics:
+  total_issues: 0
+  critical: 0
+  major: 0
+  minor: 0
+issues: []
+next_actions:
+  auto_reseed_tasks: []
