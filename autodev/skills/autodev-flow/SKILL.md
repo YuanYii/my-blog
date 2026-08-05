@@ -67,9 +67,13 @@ bash autodev/status.sh
 - `python3 <skill-dir>/scripts/graph_runner.py next [--force-skip]` — 推进到下一节点
 - `python3 <skill-dir>/scripts/graph_runner.py status` — 查看当前状态
 - `python3 <skill-dir>/scripts/graph_runner.py reset` — 重置工作流
+- `python3 <skill-dir>/scripts/graph_runner.py check-update` — 检查 Skill 是否有最新版本
+- `python3 <skill-dir>/scripts/graph_runner.py upgrade` — 执行 Skill 平滑升级（遵循产物隔离原则，不触碰 contracts 契约数据）
+- `python3 <skill-dir>/scripts/graph_runner.py rollback` — 升级异常时从快照备份回滚 Skill
 - 每个 Agent 完成后写入对应契约文件（`autodev/contracts/{RUN}-stage*.yaml`）
 - review 契约的 `overall_result` 驱动分支：PASSED→test_audit, REJECTED→bug_fix
 - 无契约或值不匹配时走 `is_default` 降级边
+
 
 ## 配置
 

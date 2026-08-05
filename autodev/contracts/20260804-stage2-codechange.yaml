@@ -1,0 +1,22 @@
+version: "2.0"
+run_id: "20260804"
+stage: "Stage_2"
+task_id: "20260804-BUG-001,20260804-DEV-002"
+change_summary: "分类与标签文章计数精准统计修复，以及分类下属文章列表增加组件级分页支持"
+design_decisions:
+  api_changes: []
+  database_changes:
+    sql_files_added: []
+    schema_migrations: false
+modified_artifacts:
+  created_files: []
+  updated_files:
+    - "backend/blog-article/src/main/java/com/blog/article/entity/Category.java"
+    - "backend/blog-article/src/main/java/com/blog/article/service/ArticleService.java"
+    - "frontend/pages/categories.vue"
+  deleted_files: []
+verification:
+  local_build_status: "SUCCESS"
+  unit_tests_run: 0
+  unit_tests_passed: 0
+  compilation_command: "cd backend && mvn compile -q && cd ../frontend && npm run generate"

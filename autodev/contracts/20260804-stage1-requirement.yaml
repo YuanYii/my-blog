@@ -1,30 +1,28 @@
 version: "2.0"
 run_id: "20260804"
-created_at: "2026-08-04T22:28:14+08:00"
+created_at: "2026-08-04T23:29:20+08:00"
 requirement:
-  id: "20260804-DEV-001"
-  title: "系统主页/全局导航栏增加分类页签与分类页面"
-  type: "FEATURE"
-  priority: "P1"
+  id: "20260804-BUG-001"
+  title: "分类与标签文章计数不一致问题修复及分类文章列表增加分页"
+  type: "BUGFIX"
+  priority: "P0"
   scope:
-    impacted_modules: ["frontend"]
+    impacted_modules: ["backend", "frontend"]
     target_files:
-      - "frontend/components/NavBar.vue"
+      - "backend/blog-article/src/main/java/com/blog/article/service/ArticleService.java"
       - "frontend/pages/categories.vue"
   user_stories:
     - id: "US-01"
       as_a: "博客访客"
-      i_want: "在全局导航栏看到分类入口，并能在分类页面查看与筛选文章"
-      so_that: "快速浏览按分类归档的文章"
+      i_want: "看到准确的分类与标签文章数，并在分类下浏览带分页的文章列表"
+      so_that: "清晰了解文章归档分布与高效翻页浏览"
   acceptance_criteria:
     - id: "AC-01"
-      description: "桌面端顶部导航栏显示分类页签，且点击可跳转至 /categories"
+      description: "公开分类接口 categories 包含正确的 articleCount 字段且仅统计 status=1 AND deleted=0 的已发布文章"
     - id: "AC-02"
-      description: "移动端汉堡菜单展开后显示分类选项，点击后自动关闭菜单并跳转至 /categories"
+      description: "公开标签接口 tags 的文章计数仅统计 status=1 AND deleted=0 的已发布文章"
     - id: "AC-03"
-      description: "新建的 /categories 页面布局与 pages/tags.vue 一致，正确展示分类总数和各分类卡片"
-    - id: "AC-04"
-      description: "点击某个分类卡片能正确加载并展示该分类下的文章列表，且高亮显示当前选中的分类卡片"
+      description: "分类页面下属文章列表增加分页功能，支持页码切换、每页条数选择与跳转"
   constraints:
-    - "导航栏文字直接硬编码显示为中文，不增加国际化语言字典"
-    - "分类页面整体 UI 与交互参考 tags.vue"
+    - "数据库 SQL 关联统计需兼容 SQLite / MySQL"
+    - "切换分类时需重置当前页码为第 1 页"

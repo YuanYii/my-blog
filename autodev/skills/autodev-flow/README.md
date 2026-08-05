@@ -1,8 +1,14 @@
-# AutoDev Flow
+# AutoDev Flow v2.0
 
 > 契约驱动的 Graph 工作流引擎 —— 把 AI 编码从"聊天"升级为"工程"。
 
 让 AI Agent 按软件工程的最佳实践来写代码：一个由 8 个节点组成的有向工作流图。节点之间通过条件边（PASSED / REJECTED / BLOCKED）自动分支、回环、熔断。每个节点产出强类型 YAML 契约，协议化传递而非口口相传。
+
+### 核心优势
+
+- **执行过程有记录**：每个阶段均产出强类型结构化 YAML 契约与 Markdown 审计产物，全流程可追溯、可审查。
+- **与 Agent 无强关联**：采用纯 Markdown 阶段指令与轻量级 Graph 状态引擎，不绑定特定 AI 平台，兼容 Codex、Claude Code、Cursor 等任意 Agent。
+- **移植性强**：零外部依赖，一键克隆嵌入项目 skills 目录即可启动，轻松适配各种编程语言与项目架构。
 
 ---
 
@@ -79,7 +85,32 @@ powershell -ExecutionPolicy Bypass -File autodev\status.ps1 -Watch
 #   ⏸️ Stage 7 文档同步 │ pending
 ```
 
+### 技能升级与回滚
+
+`autodev-flow` 遵循 **“产物隔离保护原则”**。升级过程仅刷新技能源码与公共看板脚本（`status.sh`），**严禁修改/覆写 `autodev/contracts/` 结构化契约、`state.yaml` 状态机与 `config.json` 项目配置**。
+
+#### 命令行升级/回滚
+
+```bash
+# 1. 检查是否有新版本
+python3 autodev/skills/autodev-flow/scripts/graph_runner.py check-update
+
+# 2. 执行平滑升级（自动备份技能源码至 autodev/.backup/，拉取最新代码并同步刷新 status.sh）
+python3 autodev/skills/autodev-flow/scripts/graph_runner.py upgrade
+
+# 3. 若升级异常，一键从快照恢复至升级前的技能版本
+python3 autodev/skills/autodev-flow/scripts/graph_runner.py rollback
+```
+
+#### 对话指令升级
+
+也可以在 Agent 对话框中直接发送：
+
+* **使用 autodev-flow，检查升级**
+* **使用 autodev-flow，升级技能**
+
 ---
+
 
 ## 为什么需要一套工作流？
 

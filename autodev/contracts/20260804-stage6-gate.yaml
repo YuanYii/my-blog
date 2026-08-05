@@ -1,0 +1,19 @@
+version: "2.0"
+run_id: "20260804"
+stage: "Stage_6"
+evaluator: "PM-Gate-Agent"
+overall_result: "PASSED"
+anomaly_counts:
+  total: 0
+  bug: 0
+  dev: 0
+  opt: 0
+source_reports:
+  audit_report: "auto_audit/20260804/20260804-stage4.md"
+  code_quality_report: "auto_audit/20260804/20260804-stage3.md"
+  integration_test_report: "auto_audit/20260804/20260804-stage5.md"
+reseed_tasks:
+  total: 0
+  task_ids: []
+merged_to: "autodev/auto_iteration/20260804.md"
+gate_file: "auto_audit/20260804/20260804-stage6.md"

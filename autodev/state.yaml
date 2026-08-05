@@ -1,18 +1,48 @@
 version: '2.0'
 run_id: '20260804'
 workflow_name: standard-feature-flow
-current_node: develop
-overall_status: RUNNING
-started_at: '2026-08-04T22:28:19.399217+08:00'
+current_node: doc_engineer
+overall_status: SUCCESS
+started_at: '2026-08-04T23:29:26.891512+08:00'
 node_statuses:
   requirement:
     status: success
-    started_at: '2026-08-04T22:28:19.399658+08:00'
-    completed_at: '2026-08-04T22:28:20.660927+08:00'
+    started_at: '2026-08-04T23:29:26.892069+08:00'
+    completed_at: '2026-08-04T23:29:26.935340+08:00'
   develop:
+    status: success
+    started_at: '2026-08-04T23:29:26.935842+08:00'
+    completed_at: '2026-08-04T23:30:31.461482+08:00'
+  review:
+    status: success
+    started_at: '2026-08-04T23:30:31.461737+08:00'
+    completed_at: '2026-08-04T23:30:38.771054+08:00'
+  test_audit:
+    status: success
+    started_at: '2026-08-04T23:30:38.771339+08:00'
+    completed_at: '2026-08-04T23:30:46.859762+08:00'
+  integration_test:
+    status: success
+    started_at: '2026-08-04T23:30:46.859890+08:00'
+    completed_at: '2026-08-04T23:30:52.587302+08:00'
+  gate_check:
+    status: success
+    started_at: '2026-08-04T23:30:52.587494+08:00'
+    completed_at: '2026-08-04T23:30:59.936027+08:00'
+  doc_engineer:
     status: running
-    started_at: '2026-08-04T22:28:20.661183+08:00'
+    started_at: '2026-08-04T23:30:59.936167+08:00'
 edge_trigger_counts:
   requirement->develop: 1
+  develop->review: 1
+  review->test_audit: 1
+  test_audit->integration_test: 1
+  integration_test->gate_check: 1
+  gate_check->doc_engineer: 1
 history:
 - requirement
+- develop
+- review
+- test_audit
+- integration_test
+- gate_check
