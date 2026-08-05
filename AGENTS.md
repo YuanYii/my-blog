@@ -11,6 +11,12 @@
 - **栈**：Spring Boot 2.7（多模块）+ Nuxt 3 前后端分离；**SQLite 3.45**（dev/prod 默认，MySQL 8.0 可选 profile）+ Redis 7.x；JWT 鉴权；API 前缀 `/api/v1`
 - **v2.7.0 前端全静态**：`nuxt generate` + nginx:alpine serve `.output/public/`，**省 150-250MB 内存**
 - **v4.0.0 三大件**：①日志体系（SLF4J/Logback + traceId + 文件滚动 30 天 + 3GB 上限，dev/prod 分离）②IP 限流封禁（10 次/秒 + 30 分钟封禁，Redis 计数 + DB 持久化 + admin 手动解封 + 应用重启回灌）③加密数据迁移（`sqlite-export.sh` AES-256-CBC + PBKDF2 100k → `sqlite-import.sh` 解密导入）
+- **v5.0.0 文章附件管理**：文章支持上传附件（图片/文件），前端拖拽上传 + 后端本地存储
+- **v5.0.0 数据备份与恢复**：`blog-backup.sh` 加密备份（db+uploads → GitHub Release）+ 恢复功能（按时间点恢复/回滚），见 `docs/design/博客数据备份方案设计.md` / `docs/design/博客数据恢复方案设计.md`
+- **v5.1.0 审计日志系统**：admin 操作全量审计（登录/CRUD/设备管理），`audit_log` 表持久化，支持按操作人/时间/类型检索
+- **v5.2.0 SEO 可搜索**：sitemap.xml + robots.txt + meta 标签优化，百度/Google 收录，见 `docs/design/搜索引擎可搜索实现方案.md`
+- **v5.3.0 系统升级模块**：`UpgradeController` 5 端点（升级/状态/版本/历史/回滚）+ `upgrade-agent.py` SSE 流式日志，支持 GitHub Release 一键升级，见 `docs/design/系统升级方案设计.md`
+- **v6.0.0+ 文章置顶/分类页/IP归属地/Prometheus/autodev v2**：文章置顶（`is_pinned`）+ 分类页优化 + IP 归属地查询 + Prometheus 指标暴露 `/actuator/prometheus` + autodev 工作流 v2
 - **2026-06-18 加密数据迁移**：`sqlite-export.sh` 加密导 db → `.sql.gz.enc`（AES-256-CBC + PBKDF2 100k）→ `sqlite-import.sh` 解密导入；publish-release.sh / deploy-server.sh 通过 `EXPORT_DB` / `IMPORT_DB` / `DEPLOY_MODE` 外置开关集成
 - **入口**：先看 §10 关键文件索引 + §8 用户偏好（强制遵守） + §9 安全红线
 
@@ -27,13 +33,16 @@
   - `composables/` — `useApi` / `useAuth` / `useAdminApi` / `usePublicApi` / `useDialog` / `useToast` / `useDevice` / `useAdminMeta`
   - `components/` / `plugins/` / `nuxt.config.ts` / `scripts/fetch-routes.js`（build 前拉公开页路由）
 - `scripts/` — 部署/验证/迁移/rebuild（2026-06-22 由 `scripts/` 迁移至根目录）
-  - `deploy-server.sh` — 服务器端一键部署（**v4.4.0：4 种 DEPLOY_MODE** = `init` / `full` / `docker-create` / `docker-init`，外置开关 `IMPORT_DB=1` 灌数据；**v5.3.1：下载脚本用 `releases/latest/download/`，执行时传版本号**）
+  - `deploy-server.sh` — 服务器端一键部署（**v6.0.2：4 种 DEPLOY_MODE** = `init` / `full` / `docker-create` / `docker-init`，外置开关 `IMPORT_DB=1` 灌数据；下载脚本用 `releases/latest/download/`，执行时传版本号）
   - `publish-release.sh` — 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子）
   - `sqlite-export.sh` — **加密导出** dev db（`AES-256-CBC + PBKDF2 100k`，交互式密码两次输入；产出 `.sql.gz.enc`）
   - `sqlite-import.sh` — **解密导入** 到目标 db（密码一次输入；支持本地 + `--remote user@host` 远端模式；错密码不碰目标 db）
   - `rebuild-static.sh` — 每日 cron 重建前端静态文件
   - `verify-sqlite.sh` — 端到点验证脚本（v2.6.0 29 端点；v4.0.0 已扩到 60 端点）
-- `docs/` — `requirements/`（含 `https配置文档.md`） / `design/`（`博客系统设计方案.md` + `IP限流封禁方案设计.md` + `服务日志体系设计.md`） / `接口契约审计报告.md` / `changelogs/`（v2.0.0 → v4.2.1）/ `sql/`（v2.6.0 整合后 2 个 schema）/ `deployment/`（`docker/` + `nginx/` 合并）/ `prompts/` + **`项目部署操作手册.md`** + **`项目部署解决方案.md`**
+  - `upgrade-agent.py` — Python 升级代理（v5.3.0，监听 127.0.0.1:28081，SSE 流式日志，接收升级请求并调用 deploy-server.sh）
+  - `upgrade-agent.service` — upgrade-agent systemd 服务文件
+  - `universal-script.sh` — 通用数据刷数脚本（v6.0.2+，支持 slug-migrate 等任务，`DRY_RUN=1` 预览模式，先备份再改）
+- `docs/` — `requirements/`（含 `https配置文档.md`） / `design/`（`博客系统设计方案.md` + `IP限流封禁方案设计.md` + `服务日志体系设计.md` + `系统升级方案设计.md` + `博客日志接入Loki方案设计.md`） / `接口契约审计报告.md` / `changelogs/`（v2.0.0 → v6.0.2）/ `sql/`（v2.6.0 整合后 2 个 schema + `upgrade.sql` 增量升级脚本）/ `deployment/`（`docker/` + `nginx/` 合并）/ `prompts/` + **`项目部署操作手册.md`** + **`项目部署解决方案.md`**
 - `README.md` / `AGENTS.md`（本文件）
 
 ---
@@ -114,6 +123,38 @@ dev/prod 默认 **SQLite**（一文件 0 内存占用）；MySQL 8.0 降级为�
 - **代码审查检查点**：在 log.info/warn/error 和 System.out.println 的参数中搜索上述字段名
 - **与 §4.8 的关系**：§4.8 日志体系包含禁打字段清单（基础设施层），本节的检查维度供代码质量审查员（Stage 1.5）和日常 code review 使用
 
+### 4.10 文章附件管理（v5.0.0，**已实现**）
+- 文章支持上传附件（图片/文件），后端本地存储，前端拖拽上传
+- 附件与文章关联，支持增删；编辑文章时可管理已有附件
+
+### 4.11 数据备份与恢复（v5.0.0，**已实现**）
+- **备份**：`blog-backup.sh` 加密打包 db + uploads → 推 GitHub Release（AES-256-CBC + PBKDF2 100k）
+- **恢复**：按时间点恢复，支持从 GitHub Release 下载备份 → 解密 → 替换目标 db + uploads
+- **设计文档**：`docs/design/博客数据备份方案设计.md` + `docs/design/博客数据恢复方案设计.md`
+
+### 4.12 审计日志系统（v5.1.0，**已实现**）
+- admin 操作全量审计（登录/登出/文章 CRUD/分类/标签/评论管理/设备管理/系统设置）
+- `audit_log` 表持久化，含操作人、操作类型、目标资源、IP、User-Agent、操作结果
+- 前端审计日志页：按操作人/时间/类型筛选检索
+
+### 4.13 SEO 可搜索（v5.2.0，**已实现**）
+- Nuxt 3 `nuxt.config.ts` 全局 meta + 页面级 `useHead`（title/description/og:image）
+- `sitemap.xml` + `robots.txt` 动态生成，提交百度/Google Search Console
+- 公开文章页预渲染（SSG）保证搜索引擎可抓取完整 HTML
+
+### 4.14 系统升级模块（v5.3.0，**已实现**）
+- `UpgradeController` 5 端点：`POST /api/v1/admin/upgrade/execute`（执行升级）/ `GET .../status`（升级状态）/ `GET .../versions`（版本列表）/ `GET .../history`（升级历史）/ `POST .../rollback`（回滚）
+- `upgrade-agent.py`：宿主机监听 127.0.0.1:28081，接收升级请求 → 调 `deploy-server.sh` → SSE 流式返回日志
+- 升级历史持久化到 `upgrade_history` 表
+- **设计文档**：`docs/design/系统升级方案设计.md`
+
+### 4.15 v6.0.0+ 文章置顶 / 分类页 / IP 归属地 / Prometheus / autodev v2
+- **文章置顶**：`article.is_pinned` TINYINT，列表/首页置顶排序，admin 编辑页开关
+- **分类页优化**：分类页显示文章数、支持分页
+- **IP 归属地**：评论/访问记录关联 IP 归属地（离线库），admin 面板可视化
+- **Prometheus 指标暴露**：`/actuator/prometheus` 端点，Micrometer 集成，JVM / HTTP / 业务指标
+- **autodev v2**：agentic coding 工作流 v2（skill-based + subagent 编排）
+
 
 ## 5. 常用命令
 
@@ -126,7 +167,7 @@ curl http://localhost:8080/api/v1/health
 bash scripts/verify-sqlite.sh
 
 # ============ Prod（v2.6.0/v2.7.0：无 docker）============
-sudo DEPLOY_MODE=full bash /opt/myblog/scripts/deploy-server.sh v5.3.10
+sudo DEPLOY_MODE=full bash /opt/myblog/scripts/deploy-server.sh v6.0.2
 0 3 * * * bash /opt/myblog/scripts/rebuild-static.sh
 sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%M%S).db"
 
@@ -134,7 +175,13 @@ sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%
 bash scripts/sqlite-export.sh --exclude page_view -o /tmp/migration.sql.gz.enc
 ssh myblog@<ecs-ip> "sudo bash /opt/myblog/scripts/sqlite-import.sh /opt/myblog/db/blog.db /tmp/migration.sql.gz.enc"
 EXPORT_DB=1 ./scripts/publish-release.sh
-IMPORT_DB=1 sudo DEPLOY_MODE=full ./scripts/deploy-server.sh v5.3.10
+IMPORT_DB=1 sudo DEPLOY_MODE=full ./scripts/deploy-server.sh v6.0.2
+
+# ============ 系统升级（v5.3.0+）============
+curl -X POST http://localhost:8080/api/v1/admin/upgrade/execute \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"version":"v6.0.2"}'
 ```
 
 ---
@@ -230,14 +277,17 @@ IMPORT_DB=1 sudo DEPLOY_MODE=full ./scripts/deploy-server.sh v5.3.10
 | `scripts/sudoers-myblog-restore.example` | sudoers 白名单（5 条精确命令，**无通配符**） | 🔴 必读 |
 | `docs/design/博客数据恢复方案设计.md` | 恢复功能设计稿（v5 设计稿，5 轮迭代） | 🟠 重要 |
 | `scripts/publish-release.sh` | 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子） | 🟠 重要 |
-| `scripts/deploy-server.sh` | 服务器端一键部署（v4.4.0：4 种 DEPLOY_MODE = `init` / `full` / `docker-create` / `docker-init`，外置开关 `IMPORT_DB=1` 灌数据；v5.3.1：下载用 `releases/latest/download/`，执行时传版本号） | 🟠 重要 |
-| `scripts/upgrade-agent.py` | Python 升级代理（v5.3.0，监听 127.0.0.1:28081，SSE 流式日志） | 🟠 重要 |
+| `scripts/deploy-server.sh` | 服务器端一键部署（v6.0.2：4 种 DEPLOY_MODE = `init` / `full` / `docker-create` / `docker-init`，外置开关 `IMPORT_DB=1` 灌数据；下载用 `releases/latest/download/`，执行时传版本号） | 🟠 重要 |
+| `scripts/upgrade-agent.py` | Python 升级代理（v5.3.0，监听 127.0.0.1:28081，SSE 流式日志，接收升级请求并调用 deploy-server.sh） | 🟠 重要 |
 | `scripts/upgrade-agent.service` | upgrade-agent systemd 服务文件 | 🟡 可选 |
+| `scripts/universal-script.sh` | 通用数据刷数脚本（v6.0.2+，支持 slug-migrate 等任务，`DRY_RUN=1` 预览，先备份再改） | 🟠 重要 |
 | `backend/blog-app/.../upgrade/UpgradeController.java` | 升级控制器（5 端点：升级/状态/版本/历史/回滚） | 🟠 重要 |
 | `docs/design/系统升级方案设计.md` | 系统升级方案设计文档 | 🟠 重要 |
 | `docs/生产升级问题记录.md` | 生产环境升级问题记录（9 个问题及解决方案） | 🟠 重要 |
-| `docs/changelogs/` | 版本变更记录（v2.0.0 → v2.7.0） | 🟠 重要 |
+| `docs/changelogs/` | 版本变更记录（v2.0.0 → v6.0.2） | 🟠 重要 |
 | `docs/接口契约审计报告.md` | API 100% 一致 | 🟠 重要 |
+| `docs/sql/upgrade.sql` | 通用增量升级脚本（幂等，deploy-server.sh full 模式自动执行，新增字段/表在此追加） | 🟠 重要 |
+| `docs/design/博客日志接入Loki方案设计.md` | 博客日志接入 Loki 方案设计（Phase 1：Promtail → Loki → Grafana） | 🟡 可选 |
 | `AGENTS.md` | **本文件** | 🔴 必读 |
 
 ---
@@ -245,8 +295,8 @@ IMPORT_DB=1 sudo DEPLOY_MODE=full ./scripts/deploy-server.sh v5.3.10
 ## 11. 备注
 
 - 之前版本的"常见任务 / 踩坑记录 / 调试技巧 / 维护记录"已删除（内容散落 `docs/changelogs/` + 各文件注释里）
-- agent 启动建议顺序：1) 读本文件 → 2) **`docs/changelogs/` 最新两版**（v4.0.0 + 上一版，理解当前架构） → 3) 关键文件索引中的 🔴 必读项 → 4) 接到任务时再按需 Read
-- v4.0.0 / v2.7.0 / v2.6.0 是**架构大变更**（日志体系 + IP 限流封禁 + 加密数据迁移 + 全静态化 + SQLite 改造），接到新任务前务必先读这几个 changelog
+- agent 启动建议顺序：1) 读本文件 → 2) **`docs/changelogs/` 最新两版**（v6.0.0 + v5.4.2，理解当前架构） → 3) 关键文件索引中的 🔴 必读项 → 4) 接到任务时再按需 Read
+- v6.0.0 / v5.4.2 / v5.0.0 / v4.0.0 / v2.7.0 / v2.6.0 是**架构大变更**（文章置顶/分类页/IP归属地/Prometheus + 通用刷数脚本 + 文章附件/备份恢复/审计/SEO/系统升级 + 日志体系/IP限流封禁/加密数据迁移 + 全静态化 + SQLite 改造），接到新任务前务必先读这几个 changelog
 
 ---
 
@@ -254,7 +304,7 @@ IMPORT_DB=1 sudo DEPLOY_MODE=full ./scripts/deploy-server.sh v5.3.10
 
 ### 12.1 权威源
 - **Maven `<revision>` 是项目唯一权威版本号**（`backend/pom.xml` line 32）
-- 当前 `<revision>` = **5.0.0**
+- 当前 `<revision>` = **6.0.2**
 - Git tag / 部署脚本 / 文档里的所有版本号必须与 `<revision>` **同步**（按 §12.3 工作流）
 
 ### 12.2 版本号引用分类（决定改 vs 不改）

@@ -170,7 +170,7 @@ npm run dev
 
 ```bash
 # 在 Linux 服务器上执行一键部署命令
-sudo DEPLOY_MODE=full bash /opt/myblog/scripts/deploy-server.sh v5.3.10
+sudo DEPLOY_MODE=full bash /opt/myblog/scripts/deploy-server.sh v6.0.2
 ```
 
 ### 4.2 每日 Cron 静态重构建

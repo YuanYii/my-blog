@@ -120,7 +120,6 @@ var/
 # 本地运维脚本草稿（按需）
 docs/auto_fix/
 docs/audits
-docs/changelogs
 
 # 2026-06-17 v2.6.0：本地 SQLite db（dev 用）
 backend/blog.db
