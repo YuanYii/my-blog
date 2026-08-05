@@ -26,8 +26,8 @@ const visitTrend7 = ref<any[]>([])
 const topArticles = ref<any[]>([])
 // 2026-07-15 DEV-001：访客 IP 来源（按 page_view.ip 真实公网 IP 分组）
 // 后端返回 [{ip, count, percentage}]，替换原 referer 维度
-const visitorIpSources = ref<Array<{ ip: string; count: number; percentage: number }>>([])
-const visitorIpSourcesHistory = ref<Array<{ ip: string; count: number; percentage: number }>>([])
+const visitorIpSources = ref<Array<{ ip: string; location?: string; displayIp?: string; count: number; percentage: number }>>([])
+const visitorIpSourcesHistory = ref<Array<{ ip: string; location?: string; displayIp?: string; count: number; percentage: number }>>([])
 // 2026-07-16：访客来源页签切换（今日 / 历史）
 const visitorTab = ref<'today' | 'history'>('today')
 
@@ -217,7 +217,7 @@ const activeVisitorSources = computed(() =>
 )
 const decoratedVisitorIpSources = computed(() =>
   activeVisitorSources.value.map((s, i) => ({
-    name: s.ip,
+    name: s.displayIp || (s.location ? `${s.ip}【${s.location}】` : s.ip),
     count: s.count,
     pct: s.percentage,
     color: trafficColors[i % trafficColors.length]

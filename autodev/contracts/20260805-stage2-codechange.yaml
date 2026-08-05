@@ -1,0 +1,15 @@
+version: "1.0"
+feature_id: "20260805-DEV-001"
+title: "代码修改契约 - 访客 IP 归属地展示"
+created_at: "2026-08-05"
+
+modified_files:
+  - path: "backend/blog-common/src/main/java/com/blog/common/util/IpLocationUtil.java"
+    action: "CREATED"
+    purpose: "新增轻量高效的 IP 归属地解析与格式化工具类"
+  - path: "backend/blog-article/src/main/java/com/blog/article/service/PageViewService.java"
+    action: "MODIFIED"
+    purpose: "topVisitorIpsToday 与 topVisitorIps 数据返回追加 location 和 displayIp"
+  - path: "frontend/pages/admin/dashboard.vue"
+    action: "MODIFIED"
+    purpose: "更新类型与 decoratedVisitorIpSources 计算属性展示 IP【归属地】"

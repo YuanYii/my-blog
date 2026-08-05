@@ -1,0 +1,27 @@
+version: "1.0"
+feature_id: "20260805-DEV-001"
+title: "访客 IP 来源新增 IP 归属地展示"
+description: "在管理后台仪表盘访客 IP 来源列表中，为 IP 添加归属地后缀，展示格式为 127.0.0.1【北京】"
+created_at: "2026-08-05"
+
+requirements:
+  - id: "REQ-01"
+    module: "blog-common"
+    summary: "提供轻量高效率的 IP 归属地解析工具类 IpLocationUtil"
+    detail: "能够准确识别内网/本地 IP (显示为 '内网IP' 或 '本地')，公网 IP 提取省份/城市信息 (如 '北京'、'广东深圳')"
+
+  - id: "REQ-02"
+    module: "blog-article"
+    summary: "PageViewService Top IP 统计结果补充 location 归属地字段"
+    detail: "topVisitorIpsToday / topVisitorIps 接口返回值 Map 中包含 location 和 displayIp"
+
+  - id: "REQ-03"
+    module: "frontend"
+    summary: "仪表盘访客 IP 来源列表渲染展示 IP【归属地】"
+    detail: "pages/admin/dashboard.vue 的访客 IP 来源模块列表项渲染 127.0.0.1【北京】"
+
+acceptance_criteria:
+  - "本地/内网 IP (如 127.0.0.1, 192.168.x.x) 显示为 127.0.0.1【内网IP】"
+  - "公网 IP (如 114.114.114.114) 正确显示 IP【省份/城市】"
+  - "仪表盘「今日访客」与「历史访客」两个 Tab 下均正常显示归属地"
+  - "接口响应时间无明显延迟（IP 解析缓存/高效内存查询）"

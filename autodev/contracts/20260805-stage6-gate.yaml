@@ -1,0 +1,8 @@
+version: "1.0"
+feature_id: "20260805-DEV-001"
+title: "Stage 6 质量门控契约"
+created_at: "2026-08-05"
+
+gate_decision: "PASS"
+blocker_cards: 0
+summary: "所有 6 个阶段完全符合质量要求，已具备提交与发布标准"

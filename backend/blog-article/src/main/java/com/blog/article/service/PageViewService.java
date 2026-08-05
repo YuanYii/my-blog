@@ -2,6 +2,7 @@ package com.blog.article.service;
 
 import com.blog.article.entity.PageView;
 import com.blog.article.mapper.PageViewMapper;
+import com.blog.common.util.IpLocationUtil;
 // PageView 写库改用 JdbcTemplate.update（见 recordVisitAsync），PageViewMapper/PageView 仍保留给 BaseMapper 兼容用
 
 import lombok.RequiredArgsConstructor;
@@ -287,6 +288,8 @@ public class PageViewService {
             long count = (r.get("cnt") instanceof Number) ? ((Number) r.get("cnt")).longValue() : 0L;
             Map<String, Object> row = new java.util.LinkedHashMap<>();
             row.put("ip", ip);
+            row.put("location", IpLocationUtil.getLocation(ip));
+            row.put("displayIp", IpLocationUtil.getDisplayIp(ip));
             row.put("count", count);
             row.put("percentage", Math.round((double) count / (double) total * 10000.0) / 100.0);
             result.add(row);
@@ -328,6 +331,8 @@ public class PageViewService {
             long count = (r.get("cnt") instanceof Number) ? ((Number) r.get("cnt")).longValue() : 0L;
             Map<String, Object> row = new java.util.LinkedHashMap<>();
             row.put("ip", ip);
+            row.put("location", IpLocationUtil.getLocation(ip));
+            row.put("displayIp", IpLocationUtil.getDisplayIp(ip));
             row.put("count", count);
             row.put("percentage", Math.round((double) count / (double) total * 10000.0) / 100.0);
             result.add(row);

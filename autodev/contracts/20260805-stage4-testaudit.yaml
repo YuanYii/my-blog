@@ -1,0 +1,11 @@
+version: "1.0"
+feature_id: "20260805-DEV-001"
+title: "Stage 4 测试审计契约"
+created_at: "2026-08-05"
+
+test_summary:
+  total: 2
+  passed: 2
+  failed: 0
+  errors: 0
+  status: "PASSED"
