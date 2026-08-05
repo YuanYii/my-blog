@@ -12,6 +12,7 @@
       <!-- 桌面端导航菜单（2026-06-27 DEV-002：i18n 化，由 useI18n 驱动） -->
       <div class="hidden md:flex items-center gap-1">
         <NuxtLink to="/" class="px-3 py-1.5 rounded-md text-sm transition-colors" style="color: var(--color-text-2);" active-class="active-link">{{ t('nav.home') }}</NuxtLink>
+        <NuxtLink to="/categories" class="px-3 py-1.5 rounded-md text-sm transition-colors" style="color: var(--color-text-2);" active-class="active-link">分类</NuxtLink>
         <NuxtLink to="/archives" class="px-3 py-1.5 rounded-md text-sm transition-colors" style="color: var(--color-text-2);" active-class="active-link">{{ t('nav.archives') }}</NuxtLink>
         <NuxtLink to="/tags" class="px-3 py-1.5 rounded-md text-sm transition-colors" style="color: var(--color-text-2);" active-class="active-link">{{ t('nav.tags') }}</NuxtLink>
         <NuxtLink to="/about" class="px-3 py-1.5 rounded-md text-sm transition-colors" style="color: var(--color-text-2);" active-class="active-link">{{ t('nav.about') }}</NuxtLink>
@@ -84,6 +85,7 @@
       >
         <div class="max-w-5xl mx-auto px-4 py-2 flex flex-col gap-1">
           <NuxtLink to="/" class="mobile-menu-item" @click="closeMenu">{{ t('nav.home') }}</NuxtLink>
+          <NuxtLink to="/categories" class="mobile-menu-item" @click="closeMenu">分类</NuxtLink>
           <NuxtLink to="/archives" class="mobile-menu-item" @click="closeMenu">{{ t('nav.archives') }}</NuxtLink>
           <NuxtLink to="/tags" class="mobile-menu-item" @click="closeMenu">{{ t('nav.tags') }}</NuxtLink>
           <NuxtLink to="/about" class="mobile-menu-item" @click="closeMenu">{{ t('nav.about') }}</NuxtLink>

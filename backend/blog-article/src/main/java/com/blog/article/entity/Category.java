@@ -29,4 +29,8 @@ public class Category {
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
+
+    /** 分类下关联的已发布文章数量（非 DB 列） */
+    @TableField(exist = false)
+    private Long articleCount;
 }

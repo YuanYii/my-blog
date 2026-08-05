@@ -711,13 +711,32 @@ public class ArticleService {
     public Result<List<Category>> categories() {
         QueryWrapper<Category> qw = new QueryWrapper<>();
         qw.eq("visible", 1).orderByAsc("sort");
-        return Result.success(categoryMapper.selectList(qw));
+        List<Category> list = categoryMapper.selectList(qw);
+        fillCategoryArticleCounts(list);
+        return Result.success(list);
     }
 
     public Result<List<Category>> categoriesAll() {
         QueryWrapper<Category> qw = new QueryWrapper<>();
         qw.orderByAsc("sort");
-        return Result.success(categoryMapper.selectList(qw));
+        List<Category> list = categoryMapper.selectList(qw);
+        fillCategoryArticleCounts(list);
+        return Result.success(list);
+    }
+
+    private void fillCategoryArticleCounts(List<Category> list) {
+        if (list == null || list.isEmpty()) return;
+        List<Map<String, Object>> rows = jdbc.queryForList(
+            "SELECT category_id AS cid, COUNT(*) AS cnt FROM article WHERE deleted = 0 AND status = 1 GROUP BY category_id");
+        Map<Long, Long> counts = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            Object cid = row.get("cid");
+            if (cid == null) continue;
+            counts.put(((Number) cid).longValue(), ((Number) row.get("cnt")).longValue());
+        }
+        for (Category c : list) {
+            c.setArticleCount(counts.getOrDefault(c.getId(), 0L));
+        }
     }
 
     public Result<Map<Long, Long>> categoryArticleCounts() {
@@ -787,10 +806,10 @@ public class ArticleService {
 
     public Result<List<Map<String, Object>>> tags() {
         List<Tag> tags = tagMapper.selectList(null);
-        // A3（2026-06-20）：消除 N+1
+        // 消除 N+1 且过滤仅已发布且未删除文章
         Map<Long, Long> countByTag = new HashMap<>();
         List<Map<String, Object>> countRows = jdbc.queryForList(
-            "SELECT tag_id AS tid, COUNT(*) AS cnt FROM article_tag GROUP BY tag_id");
+            "SELECT at.tag_id AS tid, COUNT(*) AS cnt FROM article_tag at JOIN article a ON at.article_id = a.id WHERE a.deleted = 0 AND a.status = 1 GROUP BY at.tag_id");
         for (Map<String, Object> row : countRows) {
             Object tid = row.get("tid");
             if (tid == null) continue;

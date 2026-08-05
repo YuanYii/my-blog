@@ -16,7 +16,7 @@ https://blog.coreyai.cn/
 
 | 模块 | 功能 |
 |------|------|
-| **前台公开** | 首页（Hero 个人介绍 + 文章列表）/ 文章详情（**SEO 渐进增强：搜索引擎读静态内容，用户看 Vue SPA**） / 归档 / 标签云 / 关于页（**SEO 预渲染**）/ 搜索 |
+| **前台公开** | 首页（Hero 个人介绍 + 文章列表）/ 文章详情（**SEO 渐进增强：搜索引擎读静态内容，用户看 Vue SPA**） / 归档 / 分类 / 标签云 / 关于页（**SEO 预渲染**）/ 搜索 |
 | **管理后台** | 仪表盘（KPI 聚合 + 30 天趋势）/ 文章增删改 / 评论审核 / 分类&标签管理 / **附件管理（一文一附件 5MB zip，后台列表 + 软删/恢复/硬删）** / **9 子路由站点设置（profile/password/blog/techstack/experience/theme/social/preferences/advanced，侧栏二级菜单 + 按需加载）** / **「上传 md 文档」批量更新 4 settings（profile/blog/techstack/experience，前端静态模版 + 整体原子事务 + 严格 schema 校验）** / **审计日志（21 模块名映射 + 操作类型标签配色 + 筛选 + 分页）** / 设备白名单管理 / **数据备份（加密上传 GitHub Release，含 attachments 独立打包）+ 数据恢复** |
 | **系统** | JWT 鉴权 / 设备白名单（X-Device-Id 绑定 token）/ API 路由白名单（DB 驱动，最长前缀匹配）/ 文件上传（本地存储 + 扩展名 + magic bytes 双重校验）/ **文章附件（一文一附件 5MB zip，流式响应，软删保留文件 + 硬删先文件后 DB）** / 站点设置 8 section（blog/social/preferences/theme/advanced/techstack/experience + admin profile）/ Swagger API 文档 / 全静态前端 / **SLF4J+Logback 日志体系（traceId 串联全链路，文件滚动 30 天，3GB 容量上限）** / **IP 限流（10 次/秒 + 30 分钟封禁，Redis 热路径 + DB 持久化 + admin 手动解封）** / **审计日志（AOP 全局拦截 admin 写端点 + 公开下载，@Async 异步写库，21 模块名映射）** |
 
