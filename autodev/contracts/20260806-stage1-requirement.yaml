@@ -1,16 +1,30 @@
-version: "1.0"
-feature_id: "20260806-BUG-001"
-title: "仪表盘访问趋势图隔天日期与访客数据错位修复"
-description: "修复跨天/凌晨在东八区打开后台仪表盘时，折线图 X 轴日期显示当天但数值为昨日数据的时区错位问题"
-created_at: "2026-08-06"
-
-requirements:
-  - id: "REQ-01"
-    module: "frontend"
-    summary: "useDashboardUtils.ts fillDays 函数改用本地日期格式化匹配 Key"
-    detail: "新增 toLocalDateString 函数（基于 getFullYear/getMonth+1/getDate），替代 toISOString().substring(0, 10)"
-
-acceptance_criteria:
-  - "折线图 X 轴当天日期标签下的 PV/UV 数据与后端返回的当天实际统计数据一致"
-  - "东八区凌晨（00:00 - 08:00）访问时数据无整体后移 1 天的错位现象"
-  - "仪表盘顶栏 sparkline 趋势图正常工作"
+version: "2.0"
+run_id: "20260806"
+created_at: "2026-08-06T16:58:30+08:00"
+requirement:
+  id: "20260806-DEV-001"
+  title: "数据备份界面增加备份仓库配置弹窗及后端落盘功能"
+  type: "FEATURE"
+  priority: "P1"
+  scope:
+    impacted_modules: ["backend", "frontend"]
+    target_files:
+      - "frontend/pages/admin/backup.vue"
+      - "backend/blog-settings/src/main/java/com/blog/settings/controller/BackupController.java"
+      - "backend/blog-settings/src/main/java/com/blog/settings/service/BackupService.java"
+      - "backend/blog-settings/src/main/java/com/blog/settings/dto/BackupConfigDTO.java"
+  user_stories:
+    - id: "US-01"
+      as_a: "系统管理员"
+      i_want: "在数据备份界面通过弹窗可视化配置 GitHub 备份仓库地址、Token 和自定义加密码，且可通过眼睛按钮显隐密文"
+      so_that: "无须登录服务器编辑文件即可便捷且安全地完成数据备份配置"
+  acceptance_criteria:
+    - id: "AC-01"
+      description: "备份同步左侧增加【配置仓库】按钮，弹出 3 个必填输入项的模态框"
+    - id: "AC-02"
+      description: "Token 和加密码默认密文显示，支持点击眼睛按钮明密文切换"
+    - id: "AC-03"
+      description: "提交配置后落盘环境变量配置文件，保持权限安全且同步更新服务内存配置"
+  constraints:
+    - "仅支持 GitHub 仓库"
+    - "敏感 Token/密码不能在日志中明文打印"

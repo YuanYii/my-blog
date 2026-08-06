@@ -1,6 +1,13 @@
 {
-  "run_id": "20260805",
+  "RUN": "20260806",
   "status": "SUCCESS",
-  "current_node": "doc_engineer",
-  "updated_at": "2026-08-05T16:48:20+08:00"
+  "stages": {
+    "Stage_1": { "status": "success", "last_update": "2026-08-06 16:58:48", "message": "需求拟定完成" },
+    "Stage_2": { "status": "success", "last_update": "2026-08-06 17:01:00", "message": "代码实现完成" },
+    "Stage_3": { "status": "success", "last_update": "2026-08-06 17:05:23", "message": "代码审查完成" },
+    "Stage_4": { "status": "success", "last_update": "2026-08-06 17:05:23", "message": "静态审计完成" },
+    "Stage_5": { "status": "success", "last_update": "2026-08-06 17:05:23", "message": "集成测试完成" },
+    "Stage_6": { "status": "success", "last_update": "2026-08-06 17:05:23", "message": "门控复核完成" },
+    "Stage_7": { "status": "success", "last_update": "2026-08-06 17:05:23", "message": "文档同步完成" }
+  }
 }

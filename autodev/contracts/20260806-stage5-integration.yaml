@@ -1,9 +1,14 @@
-version: "1.0"
-feature_id: "20260806-BUG-001"
-timestamp: "2026-08-06 08:07:00"
+version: "2.0"
+run_id: "20260806"
+stage: "Stage_5"
+evaluator: "IntegrationTester"
 overall_result: "PASSED"
-
-integration_check:
-  dashboard_charts: "VERIFIED"
-  sparklines: "VERIFIED"
-  timezone_consistency: "VERIFIED"
+metrics:
+  total_scenarios: 4
+  passed_scenarios: 4
+  failed_scenarios: 0
+system_health:
+  services_healthy: true
+  database_migrations_ok: true
+next_actions:
+  auto_reseed_tasks: []

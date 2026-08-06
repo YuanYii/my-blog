@@ -1,11 +1,13 @@
-version: "1.0"
-feature_id: "20260806-BUG-001"
-timestamp: "2026-08-06 08:06:30"
+version: "2.0"
+run_id: "20260806"
+stage: "Stage_3"
+evaluator: "CodeReviewer"
 overall_result: "PASSED"
-
-summary:
-  severe_issues: 0
-  warning_issues: 0
-  suggestion_issues: 0
-
+metrics:
+  total_issues: 0
+  critical: 0
+  major: 0
+  minor: 0
 issues: []
+next_actions:
+  auto_reseed_tasks: []

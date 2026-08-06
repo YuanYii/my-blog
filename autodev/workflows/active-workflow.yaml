@@ -13,70 +13,70 @@ nodes:
     instruction_file: "references/LLM-01-requirement-drafter.md"
     inputs: []
     outputs:
-      - "autodev/contracts/20260804-stage1-requirement.yaml"
+      - "autodev/contracts/20260806-stage1-requirement.yaml"
 
   - id: develop
     name: "代码实现"
     agent_role: "DEV"
     instruction_file: "references/LLM-02-developer.md"
     inputs:
-      - "autodev/contracts/20260804-stage1-requirement.yaml"
+      - "autodev/contracts/20260806-stage1-requirement.yaml"
     outputs:
-      - "autodev/contracts/20260804-stage2-codechange.yaml"
+      - "autodev/contracts/20260806-stage2-codechange.yaml"
 
   - id: review
     name: "代码审查"
     agent_role: "REVIEWER"
     instruction_file: "references/LLM-03-code-reviewer.md"
     inputs:
-      - "autodev/contracts/20260804-stage2-codechange.yaml"
+      - "autodev/contracts/20260806-stage2-codechange.yaml"
     outputs:
-      - "autodev/contracts/20260804-stage3-review.yaml"
+      - "autodev/contracts/20260806-stage3-review.yaml"
 
   - id: bug_fix
     name: "缺陷修补节点"
     agent_role: "DEV"
     instruction_file: "references/LLM-02-developer.md"
     inputs:
-      - "autodev/contracts/20260804-stage3-review.yaml"
+      - "autodev/contracts/20260806-stage3-review.yaml"
     outputs:
-      - "autodev/contracts/20260804-stage2-codechange.yaml"
+      - "autodev/contracts/20260806-stage2-codechange.yaml"
 
   - id: test_audit
     name: "需求验收审计"
     agent_role: "TESTER"
     instruction_file: "references/LLM-04-test-engineer.md"
     inputs:
-      - "autodev/contracts/20260804-stage3-review.yaml"
+      - "autodev/contracts/20260806-stage3-review.yaml"
     outputs:
-      - "autodev/contracts/20260804-stage4-testaudit.yaml"
+      - "autodev/contracts/20260806-stage4-testaudit.yaml"
 
   - id: integration_test
     name: "集成测试"
     agent_role: "INTEGRATION_TESTER"
     instruction_file: "references/LLM-05-integration-tester.md"
     inputs:
-      - "autodev/contracts/20260804-stage4-testaudit.yaml"
+      - "autodev/contracts/20260806-stage4-testaudit.yaml"
     outputs:
-      - "autodev/contracts/20260804-stage5-integration.yaml"
+      - "autodev/contracts/20260806-stage5-integration.yaml"
 
   - id: gate_check
     name: "门控复核"
     agent_role: "PM_GATE"
     instruction_file: "references/LLM-06-project-manager.md"
     inputs:
-      - "autodev/contracts/20260804-stage3-review.yaml"
-      - "autodev/contracts/20260804-stage4-testaudit.yaml"
-      - "autodev/contracts/20260804-stage5-integration.yaml"
+      - "autodev/contracts/20260806-stage3-review.yaml"
+      - "autodev/contracts/20260806-stage4-testaudit.yaml"
+      - "autodev/contracts/20260806-stage5-integration.yaml"
     outputs:
-      - "autodev/contracts/20260804-stage6-gate.yaml"
+      - "autodev/contracts/20260806-stage6-gate.yaml"
 
   - id: doc_engineer
     name: "文档同步"
     agent_role: "DOC_ENGINEER"
     instruction_file: "references/LLM-07-doc-engineer.md"
     inputs:
-      - "autodev/contracts/20260804-stage6-gate.yaml"
+      - "autodev/contracts/20260806-stage6-gate.yaml"
     outputs: []
 
 edges:
@@ -90,7 +90,7 @@ edges:
     to: bug_fix
     max_trigger_count: 3
     condition:
-      contract_ref: "autodev/contracts/20260804-stage3-review.yaml"
+      contract_ref: "autodev/contracts/20260806-stage3-review.yaml"
       field: "overall_result"
       operator: "=="
       value: "REJECTED"
@@ -101,7 +101,7 @@ edges:
   - from: review
     to: test_audit
     condition:
-      contract_ref: "autodev/contracts/20260804-stage3-review.yaml"
+      contract_ref: "autodev/contracts/20260806-stage3-review.yaml"
       field: "overall_result"
       operator: "=="
       value: "PASSED"
@@ -109,7 +109,7 @@ edges:
   - from: review
     to: test_audit
     condition:
-      contract_ref: "autodev/contracts/20260804-stage3-review.yaml"
+      contract_ref: "autodev/contracts/20260806-stage3-review.yaml"
       field: "overall_result"
       operator: "=="
       value: "BLOCK"
@@ -127,7 +127,7 @@ edges:
   - from: gate_check
     to: doc_engineer
     condition:
-      contract_ref: "autodev/contracts/20260804-stage6-gate.yaml"
+      contract_ref: "autodev/contracts/20260806-stage6-gate.yaml"
       field: "overall_result"
       operator: "=="
       value: "PASSED"
@@ -135,7 +135,7 @@ edges:
   - from: gate_check
     to: null
     condition:
-      contract_ref: "autodev/contracts/20260804-stage6-gate.yaml"
+      contract_ref: "autodev/contracts/20260806-stage6-gate.yaml"
       field: "overall_result"
       operator: "=="
       value: "BLOCKED"
