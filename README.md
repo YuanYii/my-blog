@@ -167,6 +167,22 @@ bash scripts/sqlite-import.sh /opt/myblog/db/blog.db /tmp/migration.sql.gz.enc #
 | **`CORS_ORIGINS`** | 跨域域名配置，编辑 `/etc/myblog/myblog.env` 设置您的真实域名 |
 | **`ENABLE_HTTPS`** | 设置 `ENABLE_HTTPS=1 HTTPS_DOMAIN=域名 HTTPS_EMAIL=邮箱` 可自动申请并配置 Let's Encrypt 证书 |
 
+### 4.3 私有数据备份仓库配置 (可选)
+
+系统支持将数据库及上传附件 AES-256 加密打包并全自动保存至您自己的 **GitHub 私有备份仓库**：
+
+1. **创建私有备份仓库**：在 GitHub 新建一个仓库（例如 `yourname/my-blog-backup`），设为 **Private**，并务必勾选 **[x] Add a README file**（初始化 `main` 分支）。
+2. **生成 Fine-grained PAT Token**：前往 GitHub **Settings -> Developer Settings -> Fine-grained tokens**：
+   - **Repository access**：选择 *Only select repositories* 并选中备份仓库。
+   - **Permissions**：在 *Repository permissions* 中将 **Contents** 设为 **Read and write**。
+3. **服务器配置生效**：编辑服务器配置文件 `/etc/myblog/myblog.env` 填入配置（保存后无需重启）：
+   ```env
+   BACKUP_ENCRYPTION_PASSWORD=您的自定义8位以上解密密码
+   GITHUB_BACKUP_REPO=yourname/my-blog-backup
+   BACKUP_GITHUB_TOKEN=github_pat_xxxxxx
+   ```
+4. **触发备份**：登录管理后台点击 **“数据备份”**，系统将全自动加密打包并上传发布至您的私有仓库中。
+
 ---
 
 ## 五、未来路线图 (Roadmap)
