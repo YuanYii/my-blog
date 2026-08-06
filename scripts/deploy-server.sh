@@ -69,11 +69,17 @@ if [ -f "$SCRIPT_DIR_DEPLOY/deploy.env" ]; then
 fi
 
 TAG="${1:-${RELEASE_TAG:-}}"
+TAG_WAS_AUTO=0
 GITHUB_REPO="${GITHUB_REPO:-}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/myblog}"
 
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
+err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+
 # 如果未指定版本号，自动获取 GitHub 最新 release
-if [ -z "$TAG" ] && [ -n "$GITHUB_REPO" ] && [ "$LOCAL_SIM" != "1" ]; then
+if [ -z "$TAG" ] && [ -n "$GITHUB_REPO" ] && [ "${LOCAL_SIM:-0}" != "1" ]; then
     info "未指定版本号，正在获取 GitHub 最新 release..."
     TAG=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
     if [ -z "$TAG" ]; then
@@ -82,12 +88,14 @@ if [ -z "$TAG" ] && [ -n "$GITHUB_REPO" ] && [ "$LOCAL_SIM" != "1" ]; then
         exit 1
     fi
     info "最新版本: $TAG"
+    TAG_WAS_AUTO=1
 fi
 SERVER_PORT="${SERVER_PORT:-8080}"
 PUBLIC_PORT="${PUBLIC_PORT:-80}"
 DB_FILE="${DB_FILE:-$INSTALL_DIR/db/blog.db}"
 SKIP_DEPS="${SKIP_DEPS:-0}"
 OPEN_FIREWALL="${OPEN_FIREWALL:-1}"
+_DEPLOY_MODE_FROM_ENV=${DEPLOY_MODE:+1}
 DEPLOY_MODE="${DEPLOY_MODE:-full}"      # init | full | docker-create | docker-init
 IMPORT_DB="${IMPORT_DB:-0}"             # 0/1
 LOCAL_SIM="${LOCAL_SIM:-0}"             # 0=生产模式  1=本地模拟容器模式
@@ -96,10 +104,22 @@ HTTPS_DOMAIN="${HTTPS_DOMAIN:-}"
 HTTPS_EMAIL="${HTTPS_EMAIL:-}"
 CDN_SSL="${CDN_SSL:-0}"                 # 0/1
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+# 交互式确认：提示风险，要求用户输入确认词
+# 用法: confirm_deploy "确认词" "风险描述"
+confirm_deploy() {
+    local word="$1" risk="$2" input
+    echo ""
+    warn "=========================================="
+    warn " $risk"
+    warn "=========================================="
+    echo ""
+    read -r -p "  输入 \"$word\" 确认操作: " input
+    if [ "$input" != "$word" ]; then
+        err "输入不匹配，操作已取消"
+        exit 1
+    fi
+    info "确认通过，继续执行..."
+}
 
 # 校验
 if [ -z "$TAG" ]; then
@@ -122,10 +142,47 @@ fi
 case "$DEPLOY_MODE" in
     init|full|docker-create|docker-init) ;;
     *) err "DEPLOY_MODE must be init / full / docker-create / docker-init, got: $DEPLOY_MODE"
-       err "  Note: code/frontend/backend/sql/data were removed in v4.4.0, use 'full' instead" ;;
+       err "  Note: code/frontend/backend/sql/data were removed in v4.4.0, use 'full' instead"
+       exit 1 ;;
 esac
 
 # (v4.4.0: 'data' 模式已删除,矛盾检测块随之移除——'full + IMPORT_DB=1' 是合法组合,不构成矛盾)
+
+# 无参数部署（TAG 自动获取 + DEPLOY_MODE 未显式指定）→ 默认 init，先检查是否已有部署
+# 注意: upgrade-agent 调用时会显式设 DEPLOY_MODE=full, _DEPLOY_MODE_FROM_ENV=1 → 此块跳过
+if [ "$TAG_WAS_AUTO" = "1" ] && [ "${_DEPLOY_MODE_FROM_ENV:-0}" = "0" ]; then
+    ALREADY_DEPLOYED=0
+    if [ -f "$DB_FILE" ]; then
+        ALREADY_DEPLOYED=1
+    fi
+    if [ "$LOCAL_SIM" != "1" ] && systemctl is-active --quiet myblog 2>/dev/null; then
+        ALREADY_DEPLOYED=1
+    fi
+    if [ "$ALREADY_DEPLOYED" = "1" ]; then
+        err "=========================================="
+        err " 检测到已有部署，拒绝覆盖初始化"
+        err "=========================================="
+        err ""
+        err "  $DB_FILE 已存在 或 myblog 服务正在运行"
+        err ""
+        err "  如需升级到最新版本:"
+        err "    export GITHUB_REPO=$GITHUB_REPO"
+        err "    sudo -E $0 $TAG"
+        err ""
+        err "  或显式指定升级模式:"
+        err "    export GITHUB_REPO=$GITHUB_REPO"
+        err "    export DEPLOY_MODE=full"
+        err "    sudo -E $0 $TAG"
+        err ""
+        err "  如需强制重新初始化（清空所有数据）:"
+        err "    export GITHUB_REPO=$GITHUB_REPO"
+        err "    export DEPLOY_MODE=init"
+        err "    sudo -E $0 $TAG"
+        exit 1
+    fi
+    DEPLOY_MODE="init"
+    info "未指定版本号 → 全新部署，默认 DEPLOY_MODE=init"
+fi
 
 # ENABLE_HTTPS=1 时必填 HTTPS_DOMAIN + HTTPS_EMAIL
 if [ "$ENABLE_HTTPS" = "1" ]; then
@@ -145,10 +202,16 @@ if [ "$ENABLE_HTTPS" = "1" ]; then
     fi
 fi
 
-# init 模式:DB 已存在时警告(可能误操作)
-if [ "$DEPLOY_MODE" = "init" ] && [ -f "$DB_FILE" ]; then
-    warn "DEPLOY_MODE=init but DB already exists at $DB_FILE"
-    warn "  If you want to upgrade, use DEPLOY_MODE=full instead"
+# 已有部署 + init 模式 → 交互式确认（防误操作）
+ALREADY_DEPLOYED=0
+[ -f "$DB_FILE" ] && ALREADY_DEPLOYED=1
+if [ "$LOCAL_SIM" != "1" ] && systemctl is-active --quiet myblog 2>/dev/null; then
+    ALREADY_DEPLOYED=1
+fi
+
+if [ "$ALREADY_DEPLOYED" = "1" ] && [ "$DEPLOY_MODE" = "init" ]; then
+    confirm_deploy "INIT" \
+        "⚠️  危险操作: DEPLOY_MODE=init 将清空 $DB_FILE 的全部数据（会自动备份旧 DB 到 $INSTALL_DIR/db/backups/）"
 fi
 
 # (v4.4.0: sql/code 模式已删除,这两个 if 块随之移除)
@@ -200,18 +263,41 @@ install_deps() {
                 sqlite \
                 redis \
                 nginx \
-                python3
+                python3 \
+                lsof \
+                perl
             ;;
         apt)
             export DEBIAN_FRONTEND=noninteractive
             apt-get update -y
+
+            # 核心依赖（不含 JDK，先装以确保 wget/gnupg 可用于 JDK 回退安装）
             apt-get install -y \
-                openjdk-8-jdk \
-                wget curl unzip \
+                wget curl unzip gnupg \
                 sqlite3 \
                 redis-server \
                 nginx \
-                python3
+                python3 \
+                lsof \
+                perl
+
+            # JDK 8：优先系统包 → Ubuntu 22.04+ / Debian 12+ 回退到 Adoptium Temurin
+            if apt-get install -y openjdk-8-jdk 2>/dev/null; then
+                info "Installed openjdk-8-jdk from system repos"
+            else
+                warn "openjdk-8-jdk not in system repos (Ubuntu 22.04+ / Debian 12+), falling back to Eclipse Temurin JDK 8"
+                wget -qO - https://packages.adoptium.net/artifactory/api/gpg/key/public \
+                    | gpg --dearmor --yes -o /usr/share/keyrings/adoptium.gpg 2>/dev/null \
+                    || { err "Failed to add Adoptium GPG key"; exit 1; }
+                local os_codename
+                os_codename=$(awk -F= '/^VERSION_CODENAME/{print $2}' /etc/os-release)
+                echo "deb [signed-by=/usr/share/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb $os_codename main" \
+                    > /etc/apt/sources.list.d/adoptium.list
+                apt-get update -y -qq
+                apt-get install -y temurin-8-jdk \
+                    || { err "temurin-8-jdk install failed"; exit 1; }
+                info "Installed Eclipse Temurin JDK 8"
+            fi
             ;;
     esac
 
@@ -235,7 +321,7 @@ install_deps() {
     fi
 
     # 验证
-    for bin in java sqlite3 redis-server nginx curl lsof; do
+    for bin in java sqlite3 redis-server nginx curl lsof python3; do
         if ! command -v $bin >/dev/null 2>&1; then
             err "Dependency $bin failed to install"
             exit 1
@@ -301,7 +387,11 @@ if curl -fsSL -o "$TMP_DIR/$BUNDLE" "$BASE_URL/$BUNDLE" 2>/dev/null; then
     if [ -f "$TMP_DIR/SHA256SUMS" ]; then
         if command -v sha256sum >/dev/null; then
             info "Verifying sha256..."
-            (cd "$TMP_DIR" && sha256sum -c SHA256SUMS) || err "sha256 verification failed (refusing to deploy corrupted bundle)"
+            if ! (cd "$TMP_DIR" && sha256sum -c SHA256SUMS); then
+                err "sha256 校验失败，部署包可能已损坏，拒绝部署"
+                exit 1
+            fi
+            info "sha256 校验通过"
         fi
     fi
 else
@@ -320,6 +410,9 @@ else
     download "upgrade-agent.service" || warn "upgrade-agent.service download failed (v5.3.0+ upgrade feature will not work)"
     # 通用数据刷数脚本
     download "universal-script.sh" || warn "universal-script.sh download failed"
+    download "migrate-logs.sh" || warn "migrate-logs.sh download failed"
+    download "nginx-http.conf" || warn "nginx-http.conf download failed (ENABLE_HTTPS=1 时需要)"
+    download "nginx-https.conf" || warn "nginx-https.conf download failed (ENABLE_HTTPS=1 时需要)"
     # v5.0: blog-restore.sh 已废弃,RestoreExecutor 在同 JVM 内执行恢复,不再需要此脚本
     # IMPORT_DB=1 才尝试下 .enc(可选,不存在说明纯代码发版)
     if [ "$IMPORT_DB" = "1" ]; then
@@ -460,12 +553,15 @@ SKIP_FRONTEND=false
 # docker-create / docker-init 是顶层命令,不进入下面的部署流程,直接走 docker 分支
 case "$DEPLOY_MODE" in
     docker-create)
-        info "=== DEPLOY_MODE=docker-create: 本地容器创建 ==="
-        DOCKER_DIR="$ROOT_DIR/docs/deployment/docker/local-sim"
+        info "=== DEPLOY_MODE=docker-create: 容器创建与镜像构建 ==="
+        DOCKER_DIR="$(dirname "$SCRIPT_DIR_DEPLOY")/docs/deployment/docker/local-sim"
         if [ ! -f "$DOCKER_DIR/Dockerfile" ]; then
-            err "未找到 Dockerfile: $DOCKER_DIR/Dockerfile"
-            err "  请确认 docs/deployment/docker/local-sim/ 目录完整"
-            exit 1
+            info "未在本地找到 Dockerfile，正在从 GitHub 自动下载构建所需物料..."
+            DOCKER_DIR="$(mktemp -d)"
+            curl -fsSL "https://raw.githubusercontent.com/YuanYii/my-blog/main/docs/deployment/docker/local-sim/Dockerfile" -o "$DOCKER_DIR/Dockerfile" || { err "下载 Dockerfile 失败"; exit 1; }
+            curl -fsSL "https://raw.githubusercontent.com/YuanYii/my-blog/main/docs/deployment/docker/local-sim/supervisord.conf" -o "$DOCKER_DIR/supervisord.conf" || { err "下载 supervisord.conf 失败"; exit 1; }
+            curl -fsSL "https://raw.githubusercontent.com/YuanYii/my-blog/main/docs/deployment/docker/local-sim/entrypoint-helper.sh" -o "$DOCKER_DIR/entrypoint-helper.sh" || { err "下载 entrypoint-helper.sh 失败"; exit 1; }
+            chmod +x "$DOCKER_DIR/entrypoint-helper.sh"
         fi
         info "构建镜像 myblog-local-sim:latest ..."
         docker build -t myblog-local-sim:latest "$DOCKER_DIR"
@@ -484,17 +580,21 @@ case "$DEPLOY_MODE" in
         fi
         info "✅ myblog-sim 容器已就绪"
         info "  端口映射: 28080→8080 (后端) / 28000→80 (nginx 前端)"
-        info "  下一步: ./deploy-server.sh docker-init $TAG"
+        info "  下一步: ./deploy-server.sh docker-init ${TAG:-}"
         exit 0
         ;;
     docker-init)
-        info "=== DEPLOY_MODE=docker-init: 本地容器业务初始化 ==="
+        info "=== DEPLOY_MODE=docker-init: 容器业务部署初始化 ==="
         if ! docker ps -a --format '{{.Names}}' | grep -q '^myblog-sim$'; then
             err "myblog-sim 容器不存在,请先跑: ./deploy-server.sh docker-create"
             exit 1
         fi
+        if [ -z "$TAG" ] && [ -n "$GITHUB_REPO" ]; then
+            info "docker-init 未指定版本号，正在获取最新 release..."
+            TAG=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
+        fi
         if [ -z "$TAG" ]; then
-            err "docker-init 需要指定 tag: ./deploy-server.sh docker-init <tag>"
+            err "docker-init 无法获取 tag，请指定版本号: ./deploy-server.sh docker-init <tag>"
             exit 1
         fi
         info "把 deploy-server.sh 拷进容器 ..."
@@ -833,6 +933,9 @@ UPGRADE_EOF
             if [ -n "$RUNNING_ID" ]; then
                 sqlite3 "$DB_FILE" "UPDATE upgrade_record SET status = 'SUCCESS', finished_at = datetime('now', 'localtime') WHERE id = $RUNNING_ID;" 2>/dev/null
                 info "[OK] 升级记录 #$RUNNING_ID 标记为 SUCCESS"
+            else
+                sqlite3 "$DB_FILE" "INSERT INTO upgrade_record (target_version, mode, import_db, status, started_at, finished_at, operator_name) VALUES ('$TAG', '$DEPLOY_MODE', $IMPORT_DB, 'SUCCESS', datetime('now', 'localtime'), datetime('now', 'localtime'), 'CLI');" 2>/dev/null
+                info "[OK] 新增 CLI 部署记录到 upgrade_record (target_version=$TAG, mode=$DEPLOY_MODE)"
             fi
         fi
 
@@ -884,6 +987,9 @@ EOF
         if [ -n "$RUNNING_ID" ]; then
             sqlite3 "$DB_FILE" "UPDATE upgrade_record SET status = 'SUCCESS', finished_at = datetime('now', 'localtime') WHERE id = $RUNNING_ID;" 2>/dev/null
             info "[OK] 升级记录 #$RUNNING_ID 标记为 SUCCESS"
+        else
+            sqlite3 "$DB_FILE" "INSERT INTO upgrade_record (target_version, mode, import_db, status, started_at, finished_at, operator_name) VALUES ('$TAG', '$DEPLOY_MODE', $IMPORT_DB, 'SUCCESS', datetime('now', 'localtime'), datetime('now', 'localtime'), 'CLI');" 2>/dev/null
+            info "[OK] 新增 CLI 部署记录到 upgrade_record (target_version=$TAG, mode=$DEPLOY_MODE)"
         fi
     fi
 
@@ -1214,7 +1320,7 @@ else
     if [ -f "$ENV_FILE" ]; then
         HTTPS_ORIGIN="https://$HTTPS_DOMAIN"
         if ! grep -qF "$HTTPS_ORIGIN" "$ENV_FILE"; then
-            sed -i.bak "s|^CORS_ORIGINS=.*|CORS_ORIGINS=$HTTPS_ORIGIN|" "$ENV_FILE"
+            sed -i.bak "s|^CORS_ORIGINS=.*|&,$HTTPS_ORIGIN|" "$ENV_FILE"
             if [ "$LOCAL_SIM" = "1" ]; then
                 supervisorctl restart myblog
             else
@@ -1305,29 +1411,33 @@ fi
 cd /root
 rm -rf "$TMP_DIR"
 
+# 自动获取外网 IP（超时 2 秒兜底）
+SERVER_IP=$(curl -s -m 2 ifconfig.me 2>/dev/null || curl -s -m 2 api.ipify.org 2>/dev/null || echo "<server-ip>")
+
 echo
 info "=========================================="
-info " [OK] Deployment complete"
+info " 🎉 [OK] 部署成功 / Deployment Complete"
 info "=========================================="
-info "  Access:        http://<server-ip>:$PUBLIC_PORT"
+info "  前台访问地址 (Web):     http://$SERVER_IP:$PUBLIC_PORT"
 if [ "$ENABLE_HTTPS" = "1" ]; then
-    info "  HTTPS:         https://$HTTPS_DOMAIN (HTTP→HTTPS 301 forced)"
-    info "  Cert renew:    certbot renew (auto cron, daily 03:30)"
+    info "  HTTPS 访问地址:         https://$HTTPS_DOMAIN (HTTP→HTTPS 301)"
+    info "  证书自动续期:           certbot renew (cron 03:30)"
 fi
-info "  Admin:        http://<server-ip>:$PUBLIC_PORT/admin/login"
-info "  Default account:    admin / 123456  (change password in production)"
+info "  后台管理地址 (Admin):   http://$SERVER_IP:$PUBLIC_PORT/admin/login"
+info "  初始管理员账号:         admin"
+info "  初始管理员密码:         123456 (⚠️ 请登录后立即修改密码)"
+info "------------------------------------------"
 if [ "$LOCAL_SIM" = "1" ]; then
-    info "  View logs:    supervisorctl tail -f myblog"
-    info "                  tail -f $INSTALL_DIR/logs/app.log"
-    info "  Restart service:    supervisorctl restart myblog"
+    info "  查看日志:               supervisorctl tail -f myblog"
+    info "                          tail -f $INSTALL_DIR/logs/app.log"
+    info "  重启服务:               supervisorctl restart myblog"
 else
-    info "  View logs:    journalctl -u myblog -f"
-    info "                  tail -f $INSTALL_DIR/logs/app.log"
-    info "  Restart service:    systemctl restart myblog"
+    info "  查看日志:               journalctl -u myblog -f"
+    info "                          tail -f $INSTALL_DIR/logs/app.log"
+    info "  重启服务:               systemctl restart myblog"
 fi
-info "  Version rollback:    $0 <old-tag>   (specify old tag, current: $TAG)"
+info "  版本回滚:               $0 <old-tag> (当前版本: $TAG)"
 if [ "$LOCAL_SIM" != "1" ] && ! command -v gh >/dev/null 2>&1; then
-    warn "  [WARN] gh CLI not found — backup script will fallback to curl+jq"
-    warn "  Install: curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg"
+    warn "  [WARN] 未检测到 gh CLI — 数据备份功能将自动回退到 curl+jq"
 fi
 info "=========================================="

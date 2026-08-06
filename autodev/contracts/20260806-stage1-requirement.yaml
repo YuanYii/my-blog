@@ -1,0 +1,16 @@
+version: "1.0"
+feature_id: "20260806-BUG-001"
+title: "仪表盘访问趋势图隔天日期与访客数据错位修复"
+description: "修复跨天/凌晨在东八区打开后台仪表盘时，折线图 X 轴日期显示当天但数值为昨日数据的时区错位问题"
+created_at: "2026-08-06"
+
+requirements:
+  - id: "REQ-01"
+    module: "frontend"
+    summary: "useDashboardUtils.ts fillDays 函数改用本地日期格式化匹配 Key"
+    detail: "新增 toLocalDateString 函数（基于 getFullYear/getMonth+1/getDate），替代 toISOString().substring(0, 10)"
+
+acceptance_criteria:
+  - "折线图 X 轴当天日期标签下的 PV/UV 数据与后端返回的当天实际统计数据一致"
+  - "东八区凌晨（00:00 - 08:00）访问时数据无整体后移 1 天的错位现象"
+  - "仪表盘顶栏 sparkline 趋势图正常工作"

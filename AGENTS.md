@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> my-blog 项目的 agent 上下文,轻量版（~200 行）。
+> my-blog 项目的 agent 上下文（~250 行精简版）。
 > 供 OpenCode / Codex / Cursor / Aider / Devin / Gemini CLI 等 agent 启动时自动加载。
 > 消费规范：https://agents.md
 
@@ -37,7 +37,6 @@
   - `publish-release.sh` — 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子）
   - `sqlite-export.sh` — **加密导出** dev db（`AES-256-CBC + PBKDF2 100k`，交互式密码两次输入；产出 `.sql.gz.enc`）
   - `sqlite-import.sh` — **解密导入** 到目标 db（密码一次输入；支持本地 + `--remote user@host` 远端模式；错密码不碰目标 db）
-  - `rebuild-static.sh` — 每日 cron 重建前端静态文件
   - `verify-sqlite.sh` — 端到点验证脚本（v2.6.0 29 端点；v4.0.0 已扩到 60 端点）
   - `upgrade-agent.py` — Python 升级代理（v5.3.0，监听 127.0.0.1:28081，SSE 流式日志，接收升级请求并调用 deploy-server.sh）
   - `upgrade-agent.service` — upgrade-agent systemd 服务文件
@@ -68,12 +67,7 @@
 MySQL 导入必须加 `--default-character-set=utf8mb4`，否则中文双重编码。**SQLite 无此问题**（v2.6.0 起默认）。
 
 ### 4.3 admin-auth SSR 修复（BUG-001，**不要回退**）
-**症状**：直接访问 `/admin/*`，已登录用户被踢回 `/admin/login`。
-**根因**：`admin-auth.ts` 在 SSR 阶段调 `localStorage.getItem('token')`——服务端无 localStorage。
-**修复**（v2.0.0）：
-1. `admin-auth.ts` 头部加 `if (import.meta.server) return`
-2. `layouts/admin.vue` 加 `onMounted` 兜底
-**v2.7.0 后续清理**：全静态化后 `import.meta.server` 恒为 `false`，第 1 条已删；兜底保留。
+`admin-auth.ts` SSR 阶段调 `localStorage` 会踢回登录页。修复：`layouts/admin.vue` 的 `onMounted` 兜底。v2.7.0 全静态化后 `import.meta.server` 恒为 `false`，原 SSR 守卫已删。**不要恢复 SSR 守卫逻辑。**
 
 ### 4.4 简化项（首版 MVP 决策）
 - Controller 直调 Mapper（无 Service 层）——**部分回退**：v2.0+ 已下沉 `DeviceService` / `ApiWhitelistService` / `SiteSettingsService` / `PageViewService`
@@ -83,101 +77,60 @@ MySQL 导入必须加 `--default-character-set=utf8mb4`，否则中文双重编�
 - 详细 changelog 见 `docs/changelogs/`（v2.0.0 → v2.7.0）
 
 ### 4.5 数据库双 profile（v2.6.0，**不要回退**）
-dev/prod 默认 **SQLite**（一文件 0 内存占用）；MySQL 8.0 降级为可选 profile。
-- 切回 MySQL：`spring.profiles.active=dev,mysql` 或 `prod,mysql`
-- **SQLite 写并发（2026-06-18 起开 WAL）**：prod 用 `journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL`，Hikari `maximum-pool-size` 已由 1 放开到 **8**（WAL 下「多读+单写」可并发，`busy_timeout` 让偶发写竞争等待而非立刻 `SQLITE_BUSY`）。**未开 WAL 时不要把 pool-size 设 >1**
-- 业务 SQL 跨方言已统一（38 处）——`PageViewService` / `ArticleController` / `DashboardController` 用 `LocalDate` / `LocalDateTime` 传参替代 MySQL 特有函数（`CURDATE()` / `DATE_SUB` / `NOW()` / `INSERT IGNORE` → 业务层去重）
-- MyBatis-Plus 3.4.3.4 `IdType.AUTO` 自动适配 MySQL / SQLite，9 个 `@TableName` 实体各有 1 处 `@TableId(type = IdType.AUTO)`，合计 **9 处注解**（不要把 Service 类注释里出现的 `IdType.AUTO` 字符串误算成第 10 处注解）**不动**
+dev/prod 默认 **SQLite**；MySQL 8.0 可选（`spring.profiles.active=dev,mysql`）。
+- **WAL 模式**：prod 用 `journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL`，pool-size = 8。**未开 WAL 不要把 pool-size 设 >1**
+- 业务 SQL 跨方言已统一（`LocalDate`/`LocalDateTime` 传参替代 `CURDATE()`/`DATE_SUB`/`NOW()`/`INSERT IGNORE`）
+- `IdType.AUTO` 9 处注解自动适配两种 DB，**不动**
 
 ### 4.6 前端全静态化（v2.7.0，**不要回退**）
-`nuxt generate` 产出 `.output/public/`，nginx:alpine 直接 serve。
-- 公开页 SEO 预渲染：`nitro.prerender.routes`（由 `scripts/fetch-routes.js` 拉后端所有公开页 slug 生成 `.routes.json`）+ `crawlLinks: true` + `failOnError: false`
-- admin 路由不预渲染（`ignore: '/admin/**'` + `'/api/**'`）
-- 新文章延迟：每日凌晨 3 点 cron `scripts/rebuild-static.sh` rebuild（构建 ~60s，吃 200-300MB 临时内存）
-- `import.meta.server` 永远是 `false`（全静态化后），不要回退 `useAuth.ts` 的 SSR cookie 读取代码（v2.7.0 已删）
-- 镜像：node 20-alpine build → nginx:alpine runtime（~50MB vs v2.6 之前的 ~200MB）
+`nuxt generate` → nginx:alpine serve `.output/public/`。公开页预渲染（`fetch-routes.js` + `crawlLinks: true`），admin 不预渲染。新文章凌晨 3 点 cron rebuild。`import.meta.server` 恒为 `false`，**不要恢复 SSR。**
 
 ### 4.7 业务层去重：page_view（v2.5.0+，**不要改回 INSERT IGNORE**）
-- `PageViewService` 用 `JdbcTemplate.update` + `selectCount` 做"先查后插"
-- 不要用 MyBatis-Plus `BaseMapper.insert` ——SQLite 下 `getGeneratedKeys()` 失败会返回 1 但数据未落库（**假象**）
-- `PageViewMapper` 没有 `@Insert` 注解，走通用 `JdbcTemplate.update` 路径
+用 `JdbcTemplate.update` + `selectCount` 先查后插。**不要用 `BaseMapper.insert`**（SQLite 下 `getGeneratedKeys()` 失败会返回 1 但数据未落库），`PageViewMapper` 没有 `@Insert`，**不动。**
 
 ### 4.8 日志体系（REQ-LOG-2026-06-18，**已实现**）
-- **门面**：SLF4J + Logback（Spring Boot 默认，无新依赖）；`@Slf4j` Lombok 注解
-- **配置**：`backend/blog-app/src/main/resources/logback-spring.xml`（dev 落 `/tmp/blog-dev-logs/`，prod 落 `/opt/myblog/logs/`，按天滚动 100MB/30 天，主 2GB + warn 1GB = 3GB 上限，异步 `neverBlock`）。日志级别/路径全在此文件，**dev/prod yml 的 `logging.*` 已清空**避免冲突
-- **文件名**：`blog.log` / `blog-YYYY-MM-DD.N.log`（全量）+ `blog-warn.log` / `blog-warn-YYYY-MM-DD.N.log`（WARN+），与 `deploy-server.sh` 的 logrotate glob 对齐
-- **traceId**：每个请求由 `TraceIdFilter`（`com.blog.common.web`，`@Order(Ordered.HIGHEST_PRECEDENCE)`）注入 MDC，长度 32 字符（UUID 去横线），响应头 `X-Trace-Id` 回写；`IpRateLimitFilter` 已让位下调到 `HIGHEST_PRECEDENCE+1`
-- **操作人传递**：`AdminAuthFilter` 放行时把 uid/deviceId 写入 request attribute（`com.blog.common.web.AuthContext`），admin 业务日志据此打"操作人"
-- **必须覆盖的 4 个 P0 安全类**：`AdminAuthFilter`、`AuthController.login`、`DeviceService`、`JwtUtil` —— 任一拒绝点必须打 WARN，含 IP / path / 拒绝原因
-- **禁打日志的字段**：明文 password、`passwordHash`、`token` 全文、JWT secret（合规硬线）
-- **降噪规则**：`PageViewFilter` / `PageViewService` / `view_count` 自增 等高频路径**禁止** INFO 级（会爆磁盘）
-- **prod console**：FR-6.5 强制 prod profile **必须关闭 CONSOLE appender**（避免 systemd 重定向的 app.log 与 Logback 文件双写，绕过 3GB 预算）
-- **systemd 重定向文件**：`/opt/myblog/logs/app.log` + `app-error.log` 由 logrotate 单独管（按天切，保留 7 天）
-- **完整需求**：见 `docs/design/服务日志体系设计.md`（原计划落 `docs/requirements/REQ-LOG-2026-06-18.md`，该路径未建文件，2026-06-18 复核确认统一收口到设计文档）
+- SLF4J + Logback，配置集中在 `logback-spring.xml`（**dev/prod yml 的 `logging.*` 已清空**）。按天滚动 100MB/30 天，主 2GB + warn 1GB = 3GB 上限，异步
+- traceId（`TraceIdFilter` @HIGHEST_PRECEDENCE，UUID 去横线，响应头 `X-Trace-Id`）+ 操作人传递（`AuthContext`）
+- 4 个 P0 安全类拒绝点必须 WARN：`AdminAuthFilter`、`AuthController.login`、`DeviceService`、`JwtUtil`
+- **禁打**：password、passwordHash、token 全文、JWT secret；**禁止提交**：.env、*.pem、*.key、keystore
+- **降噪**：`PageViewFilter` / `PageViewService` / `view_count` 禁止 INFO；prod 必须关闭 CONSOLE appender
+- 完整规范见 `docs/design/服务日志体系设计.md`
 
 ---
 
-### 4.9 安全红线：禁止打印/提交的敏感字段（代码审查硬线）
-- **日志禁打**：明文 password、passwordHash、token 全文、secret、key、private、apiKey、credential、JWT secret
-- **禁止提交**：.env（含真实密钥）、*.pem、*.key、*.jks、keystore、credentials.json
-- **代码审查检查点**：在 log.info/warn/error 和 System.out.println 的参数中搜索上述字段名
-- **与 §4.8 的关系**：§4.8 日志体系包含禁打字段清单（基础设施层），本节的检查维度供代码质量审查员（Stage 1.5）和日常 code review 使用
+### 4.9 安全红线补充
+- 代码审查：在 `log.info/warn/error` 和 `System.out.println` 中搜索 §4.8 禁打字段名
+- 禁止提交：.env（含真实密钥）、*.pem、*.key、*.jks、keystore、credentials.json
 
-### 4.10 文章附件管理（v5.0.0，**已实现**）
-- 文章支持上传附件（图片/文件），后端本地存储，前端拖拽上传
-- 附件与文章关联，支持增删；编辑文章时可管理已有附件
-
-### 4.11 数据备份与恢复（v5.0.0，**已实现**）
-- **备份**：`blog-backup.sh` 加密打包 db + uploads → 推 GitHub Release（AES-256-CBC + PBKDF2 100k）
-- **恢复**：按时间点恢复，支持从 GitHub Release 下载备份 → 解密 → 替换目标 db + uploads
-- **设计文档**：`docs/design/博客数据备份方案设计.md` + `docs/design/博客数据恢复方案设计.md`
-
-### 4.12 审计日志系统（v5.1.0，**已实现**）
-- admin 操作全量审计（登录/登出/文章 CRUD/分类/标签/评论管理/设备管理/系统设置）
-- `audit_log` 表持久化，含操作人、操作类型、目标资源、IP、User-Agent、操作结果
-- 前端审计日志页：按操作人/时间/类型筛选检索
-
-### 4.13 SEO 可搜索（v5.2.0，**已实现**）
-- Nuxt 3 `nuxt.config.ts` 全局 meta + 页面级 `useHead`（title/description/og:image）
-- `sitemap.xml` + `robots.txt` 动态生成，提交百度/Google Search Console
-- 公开文章页预渲染（SSG）保证搜索引擎可抓取完整 HTML
-
-### 4.14 系统升级模块（v5.3.0，**已实现**）
-- `UpgradeController` 5 端点：`POST /api/v1/admin/upgrade/execute`（执行升级）/ `GET .../status`（升级状态）/ `GET .../versions`（版本列表）/ `GET .../history`（升级历史）/ `POST .../rollback`（回滚）
-- `upgrade-agent.py`：宿主机监听 127.0.0.1:28081，接收升级请求 → 调 `deploy-server.sh` → SSE 流式返回日志
-- 升级历史持久化到 `upgrade_history` 表
-- **设计文档**：`docs/design/系统升级方案设计.md`
-
-### 4.15 v6.0.0+ 文章置顶 / 分类页 / IP 归属地 / Prometheus / autodev v2
-- **文章置顶**：`article.is_pinned` TINYINT，列表/首页置顶排序，admin 编辑页开关
-- **分类页优化**：分类页显示文章数、支持分页
-- **IP 归属地**：评论/访问记录关联 IP 归属地（离线库），admin 面板可视化
-- **Prometheus 指标暴露**：`/actuator/prometheus` 端点，Micrometer 集成，JVM / HTTP / 业务指标
-- **autodev v2**：agentic coding 工作流 v2（skill-based + subagent 编排）
+### 4.10 v5.0.0+ 已实现功能（**不要回退**）
+- **文章附件**（v5.0.0）：拖拽上传，后端本地存储
+- **数据备份恢复**（v5.0.0）：`blog-backup.sh` AES-256-CBC 加密 → GitHub Release，按时间点恢复
+- **审计日志**（v5.1.0）：`audit_log` 表全量审计 admin 操作，支持检索
+- **SEO**（v5.2.0）：sitemap.xml + robots.txt + SSG 预渲染
+- **系统升级**（v5.3.0）：`UpgradeController` 5 端点 + `upgrade-agent.py` SSE 流式
+- **v6.0.0+**：文章置顶（`is_pinned`）、分类页分页、IP 归属地、Prometheus `/actuator/prometheus`、autodev v2
+- 详细规范见 `docs/changelogs/` 和 `docs/design/`
 
 
 ## 5. 常用命令
 
 ```bash
-# ============ Dev 默认（v2.6.0 起：SQLite）============
+# Dev（SQLite）
 docker run -d --name blog-redis -p 6379:6379 redis:7-alpine
 cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev
 cd frontend && npm run dev
 curl http://localhost:8080/api/v1/health
 bash scripts/verify-sqlite.sh
 
-# ============ Prod（v2.6.0/v2.7.0：无 docker）============
+# Prod 部署
 sudo DEPLOY_MODE=full bash /opt/myblog/scripts/deploy-server.sh v6.0.2
-0 3 * * * bash /opt/myblog/scripts/rebuild-static.sh
-sqlite3 /opt/myblog/blog.db ".backup /opt/myblog/backups/blog-$(date +%Y%m%d-%H%M%S).db"
 
-# ============ Dev → Prod 加密数据迁移(2026-06-18 起)============
+# 加密数据迁移
 bash scripts/sqlite-export.sh --exclude page_view -o /tmp/migration.sql.gz.enc
-ssh myblog@<ecs-ip> "sudo bash /opt/myblog/scripts/sqlite-import.sh /opt/myblog/db/blog.db /tmp/migration.sql.gz.enc"
 EXPORT_DB=1 ./scripts/publish-release.sh
 IMPORT_DB=1 sudo DEPLOY_MODE=full ./scripts/deploy-server.sh v6.0.2
 
-# ============ 系统升级（v5.3.0+）============
+# 系统升级
 curl -X POST http://localhost:8080/api/v1/admin/upgrade/execute \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
@@ -268,7 +221,6 @@ curl -X POST http://localhost:8080/api/v1/admin/upgrade/execute \
 | `frontend/layouts/admin.vue` | admin 布局 + 鉴权兜底 + 全局 Toast/Dialog 容器 | 🔴 必读 |
 | `frontend/nuxt.config.ts` | v2.7.0 全静态 prerender 配置（routes / crawlLinks / failOnError / ignore） | 🔴 必读 |
 | `backend/blog-app/src/main/resources/application-{dev,prod,mysql}.yml` | v2.6.0 拆 4 profile 矩阵（dev / dev,mysql / prod / prod,mysql） | 🔴 必读 |
-| `scripts/rebuild-static.sh` | 每日 cron 重建前端静态文件 | 🔴 必读 |
 | `scripts/verify-sqlite.sh` | 端到端 29 端点验证脚本 | 🟠 重要 |
 | `scripts/sqlite-export.sh` | dev 加密导出 db（**只支持加密**，无明文兜底） | 🟠 重要 |
 | `scripts/sqlite-import.sh` | prod 解密导入 db（**只支持 .enc**，错密码不碰目标 db） | 🟠 重要 |

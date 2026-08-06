@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>my-blog 部署升级全链路</title>
+<style>
+  :root{--bg:#0f172a;--c1:#1e293b;--tx:#e2e8f0;--mu:#94a3b8;--bo:#334155;
+    --ini:#a78bfa;--svr:#34d399;--brw:#fbbf24;--wrn:#f87171;--inf:#38bdf8;--dev:#818cf8}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,monospace;padding:16px}
+  h1{text-align:center;font-size:20px;margin-bottom:4px}
+  .sub{text-align:center;color:var(--mu);font-size:12px;margin-bottom:16px}
+  .legend{display:flex;justify-content:center;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+  .legend span{font-size:11px;display:flex;align-items:center;gap:5px}
+  .legend .dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+  .scroll-wrap{border:1px solid var(--bo);border-radius:8px;overflow-x:auto}
+  .scroll-wrap::-webkit-scrollbar{height:6px}
+  .scroll-wrap::-webkit-scrollbar-track{background:var(--c1);border-radius:3px}
+  .scroll-wrap::-webkit-scrollbar-thumb{background:var(--bo);border-radius:3px}
+  .table{display:table;border-collapse:collapse;min-width:100%;zoom:1.3}
+  .row{display:table-row}
+  .cell{display:table-cell;vertical-align:middle;padding:0 12px}
+  .cell.sticky{position:sticky;left:0;z-index:2;background:var(--bg);width:230px;min-width:230px;max-width:230px}
+  .cell.branch{width:192px;min-width:192px;max-width:192px}
+  .hdr{padding:6px 8px;font-size:10px;font-weight:700;text-align:center;border-bottom:2px solid;border-radius:3px 3px 0 0}
+  .hdr.m{color:var(--ini);border-color:var(--ini)} .hdr.b1{color:var(--svr);border-color:var(--svr)}
+  .hdr.b2{color:var(--wrn);border-color:var(--wrn)} .hdr.b3{color:var(--inf);border-color:var(--inf)}
+  .hdr.b4{color:var(--brw);border-color:var(--brw)} .hdr.b5{color:var(--dev);border-color:var(--dev)}
+  .node{border-left:3px solid;background:var(--c1);border-radius:0 6px 6px 0;padding:8px 10px;font-size:10px;line-height:1.4}
+  .node .t{font-weight:700;font-size:11px} .node .d{color:var(--mu);font-size:9px;margin-top:2px}
+  .node.main{border-left-color:var(--ini)} .node.b1{border-left-color:var(--svr)} .node.b2{border-left-color:var(--wrn)}
+  .node.b3{border-left-color:var(--inf)} .node.b4{border-left-color:var(--brw)} .node.b5{border-left-color:var(--dev)}
+  .node.end{background:rgba(167,139,250,0.10)}
+  .node.decision{border-left-style:dashed;border-left-color:var(--wrn);background:rgba(248,113,113,0.05)}
+  .node.reject{border-left-color:var(--wrn);background:rgba(248,113,113,0.10)}
+  .node.ghost{opacity:0.2}
+  /* Arrow row: short arrow centered between nodes */
+  .ar-row{display:table-row;height:18px}
+  .ar-cell{display:table-cell;text-align:center;vertical-align:middle;height:18px;position:relative}
+  .ar-cell.sticky{position:sticky;left:0;z-index:2;background:var(--bg)}
+  .ar-cell .v{display:inline-block;position:relative;width:2px;height:14px;background:var(--bo)}
+  .ar-cell .v::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--bo)}
+  /* 主干/分支纵向箭头分色（sticky=主干，branch 按列序 2..6 = b1..b5） */
+  .ar-cell.sticky .v{background:var(--ini)} .ar-cell.sticky .v::after{border-top-color:var(--ini)}
+  .ar-cell.branch:nth-child(2) .v{background:var(--svr)} .ar-cell.branch:nth-child(2) .v::after{border-top-color:var(--svr)}
+  .ar-cell.branch:nth-child(3) .v{background:var(--wrn)} .ar-cell.branch:nth-child(3) .v::after{border-top-color:var(--wrn)}
+  .ar-cell.branch:nth-child(4) .v{background:var(--inf)} .ar-cell.branch:nth-child(4) .v::after{border-top-color:var(--inf)}
+  .ar-cell.branch:nth-child(5) .v{background:var(--brw)} .ar-cell.branch:nth-child(5) .v::after{border-top-color:var(--brw)}
+  .ar-cell.branch:nth-child(6) .v{background:var(--dev)} .ar-cell.branch:nth-child(6) .v::after{border-top-color:var(--dev)}
+  /* Fork arrow: horizontal connector (absolute svg spans whole row) */
+  .fk-row{display:table-row;height:26px;position:relative}
+  .fk-cell{display:table-cell;height:26px;position:relative;vertical-align:middle}
+  .fk-cell.sticky{position:sticky;left:0;z-index:2;background:var(--bg)}
+  .fk-stub{position:absolute;left:0;top:0;width:270px;height:26px;display:block;pointer-events:none}
+  .fk-stub line{stroke:currentColor}
+  .fk-svg{position:absolute;left:0;top:0;height:26px;width:1190px;display:block;pointer-events:none}
+  .fk-label{font-size:9px;font-weight:600;position:absolute;top:1px;transform:translateX(-50%);white-space:nowrap;line-height:1}
+  .gap-row{display:table-row;height:8px}
+</style>
+</head>
+<body>
+<h1>my-blog 部署升级全链路</h1>
+<p class="sub">主干左列固定 · 箭头在节点之间垂直居中 · 分支 Fork 横向箭头拉出 · 横向滚动 · v6.0.2</p>
+
+<div class="legend">
+  <span><span class="dot" style="background:var(--ini)"></span> 主干</span>
+  <span><span class="dot" style="background:var(--svr)"></span> 代码升级</span>
+  <span><span class="dot" style="background:var(--wrn)"></span> 部署处理</span>
+  <span><span class="dot" style="background:var(--inf)"></span> HTTPS</span>
+  <span><span class="dot" style="background:var(--brw)"></span> Web UI</span>
+  <span><span class="dot" style="background:var(--dev)"></span> Docker</span>
+</div>
+
+<div class="scroll-wrap">
+<div class="table">
+
+<!-- HEADER -->
+<div class="row">
+  <div class="cell sticky"><div class="hdr m">🏗️ 主干 · 初始化部署</div></div>
+  <div class="cell branch"><div class="hdr b1">🔄 代码升级</div></div>
+  <div class="cell branch"><div class="hdr b2">⚠️ 已有部署</div></div>
+  <div class="cell branch"><div class="hdr b3">🔐 HTTPS</div></div>
+  <div class="cell branch"><div class="hdr b4">🖥️ Web UI 升级</div></div>
+  <div class="cell branch"><div class="hdr b5">🐳 Docker</div></div>
+</div>
+
+<!-- R1: publish -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">📦 publish-release.sh</div><div class="d">Maven 编译 + Nuxt 构建 → GitHub Release</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R2: download -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">⬇️ curl 下载 deploy-server.sh</div><div class="d">chmod +x · 放入服务器</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R3: parse args -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">⚙️ 参数解析</div><div class="d">GITHUB_REPO · TAG 自动获取 latest<br>TAG_WAS_AUTO=1</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R4: decision TAG explicit -->
+<div class="row">
+  <div class="cell sticky"><div class="node decision"><div class="t">🔀 决策: TAG 显式指定？</div><div class="d">TAG_WAS_AUTO=0<br>DEPLOY_MODE=full (default)</div></div></div>
+  <div class="cell branch"><div class="node b1"><div class="t">🔄 显式 TAG v6.0.2</div><div class="d">DEPLOY_MODE=full<br>TAG_WAS_AUTO=0</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<!-- Fork: R4 决策 → b1 代码升级 -->
+<div class="fk-row">
+  <div class="fk-cell sticky" style="color:var(--svr)"><svg class="fk-stub" viewBox="0 0 270 26" preserveAspectRatio="none"><line x1="226" y1="20" x2="268" y2="20"/></svg></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div>
+  <svg class="fk-svg" viewBox="0 0 1190 26" preserveAspectRatio="none">
+    <line x1="0" y1="20" x2="230" y2="20" stroke="var(--ini)" stroke-width="2"/>
+    <line x1="230" y1="20" x2="326" y2="20" stroke="var(--svr)" stroke-width="2" marker-end="url(#as)"/>
+  </svg>
+  <div class="fk-label" style="left:calc(230px + 96px);color:var(--svr)">TAG 显式指定 →</div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R5: stop + ghost main -->
+<div class="row">
+  <div class="cell sticky"><div class="node main ghost"><div class="t">（继续主干检测）</div></div></div>
+  <div class="cell branch"><div class="node b1"><div class="t">🛑 停旧服务</div><div class="d">systemctl stop myblog</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R6: deployed check + flush redis + reject branch -->
+<div class="row">
+  <div class="cell sticky"><div class="node decision"><div class="t">🔀 已有部署检测</div><div class="d">DB 存在？myblog 运行中？</div></div></div>
+  <div class="cell branch"><div class="node b1"><div class="t">🧹 清 Redis 缓存</div><div class="d">redis-cli FLUSHDB<br>FLUSH_REDIS=0 可跳过</div></div></div>
+  <div class="cell branch"><div class="node reject"><div class="t">🔴 拒绝覆盖初始化</div><div class="d">auto 无参数 + 已有部署 → exit 1<br>提示：sudo -E $0 $TAG 或 DEPLOY_MODE=full</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<!-- Fork: R6 决策 → b2 拒绝（auto 检测到已有部署） -->
+<div class="fk-row">
+  <div class="fk-cell sticky" style="color:var(--wrn)"><svg class="fk-stub" viewBox="0 0 270 26" preserveAspectRatio="none"><line x1="226" y1="20" x2="268" y2="20"/></svg></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div>
+  <svg class="fk-svg" viewBox="0 0 1190 26" preserveAspectRatio="none">
+    <line x1="0" y1="20" x2="230" y2="20" stroke="var(--ini)" stroke-width="2"/>
+    <line x1="230" y1="20" x2="518" y2="20" stroke="var(--wrn)" stroke-width="2" marker-end="url(#aw)"/>
+  </svg>
+  <div class="fk-label" style="left:calc(230px + 288px);color:var(--wrn)">已有部署(auto) →</div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R7: new server + upgrade jar -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">✅ 全新服务器</div><div class="d">DEPLOY_MODE 自动 → init</div></div></div>
+  <div class="cell branch"><div class="node b1"><div class="t">📦 部署新 jar + 前端</div><div class="d">cp 新 jar · tar xf 新前端<br>保留 business DB</div></div></div>
+  <div class="cell branch"><div class="node b2"><div class="t">🔴 已有部署 + init</div><div class="d">ALREADY_DEPLOYED=1<br>DEPLOY_MODE=init</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<!-- Fork: R7 显式 init → b2 交互确认 -->
+<div class="fk-row">
+  <div class="fk-cell sticky" style="color:var(--wrn)"><svg class="fk-stub" viewBox="0 0 270 26" preserveAspectRatio="none"><line x1="226" y1="20" x2="268" y2="20"/></svg></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div>
+  <svg class="fk-svg" viewBox="0 0 1190 26" preserveAspectRatio="none">
+    <line x1="0" y1="20" x2="230" y2="20" stroke="var(--ini)" stroke-width="2"/>
+    <line x1="230" y1="20" x2="518" y2="20" stroke="var(--wrn)" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#aw)"/>
+  </svg>
+  <div class="fk-label" style="left:calc(230px + 288px);color:var(--wrn)">显式 DEPLOY_MODE=init →</div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R8: deps + upgrade.sql + confirm -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">📦 系统依赖安装</div><div class="d">JDK 8 (Adoptium 回退)<br>redis / nginx / sqlite3<br>python3 / lsof / perl</div></div></div>
+  <div class="cell branch"><div class="node b1"><div class="t">🗄️ 跑 upgrade.sql</div><div class="d">CREATE TABLE IF NOT EXISTS<br>PRAGMA 检查 ALTER TABLE</div></div></div>
+  <div class="cell branch"><div class="node b2"><div class="t">⌨️ 输入 INIT 确认</div><div class="d">不匹配 → exit 1</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R9: download + keep env + backup -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">⬇️ 下载 + 校验 Release</div><div class="d">deploy-bundle.zip 优先<br>SHA256 校验阻断</div></div></div>
+  <div class="cell branch"><div class="node b1"><div class="t">💾 保留 env + DB</div><div class="d">JWT_SECRET 不覆盖<br>业务数据完整</div></div></div>
+  <div class="cell branch"><div class="node b2"><div class="t">💾 备份旧 DB</div><div class="d">cp 到 db/backups/</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R10: dir + restart + rebuild -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">🗂️ 目录 + 用户 + Redis</div><div class="d">mkdir /opt/myblog/...<br>useradd myblog</div></div></div>
+  <div class="cell branch"><div class="node b1"><div class="t">▶️ 重启 + 健康检查</div><div class="d">systemctl restart myblog<br>curl /api/v1/health</div></div></div>
+  <div class="cell branch"><div class="node b2"><div class="t">💥 清空 DB → 重建</div><div class="d">rm DB → schema 重建<br>19 张表 + 种子数据</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R11: jar+db + done + back -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">📦 部署 jar + 初始化 DB</div><div class="d">cp blog-app.jar<br>sqlite3 < schema-sqlite.sql</div></div></div>
+  <div class="cell branch"><div class="node b1 end"><div class="t">✅ 升级完成</div><div class="d">upgrade_record: SUCCESS</div></div></div>
+  <div class="cell branch"><div class="node b2"><div class="t">🔄 回到主干</div><div class="d">继续 "部署前端"</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R12: frontend -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">🌐 部署前端 + 写配置</div><div class="d">tar xf frontend-static<br>application.yml + env</div></div></div>
+  <div class="cell branch"><div class="node b1 ghost"><div class="t">📥 IMPORT_DB=1（full）</div><div class="d">下载 .enc → 解密覆盖 DB<br>数据迁移可选</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R13: systemd -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">⚡ systemd + upgrade-agent</div><div class="d">myblog.service<br>upgrade-agent.service<br>logrotate 双轨</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R14: decision HTTPS -->
+<div class="row">
+  <div class="cell sticky"><div class="node decision"><div class="t">🔀 决策: ENABLE_HTTPS=1？</div><div class="d">HTTPS_DOMAIN + EMAIL 必填</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"><div class="node b3"><div class="t">🔐 ENABLE_HTTPS=1</div><div class="d">HTTPS_DOMAIN + EMAIL</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<!-- Fork: R14 决策 → b3 HTTPS -->
+<div class="fk-row">
+  <div class="fk-cell sticky" style="color:var(--inf)"><svg class="fk-stub" viewBox="0 0 270 26" preserveAspectRatio="none"><line x1="226" y1="20" x2="268" y2="20"/></svg></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div>
+  <svg class="fk-svg" viewBox="0 0 1190 26" preserveAspectRatio="none">
+    <line x1="0" y1="20" x2="230" y2="20" stroke="var(--ini)" stroke-width="2"/>
+    <line x1="230" y1="20" x2="710" y2="20" stroke="var(--inf)" stroke-width="2" marker-end="url(#ai)"/>
+  </svg>
+  <div class="fk-label" style="left:calc(230px + 480px);color:var(--inf)">ENABLE_HTTPS=1 →</div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R15: nginx + certbot -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">🌍 nginx + 防火墙放行</div><div class="d">反代 /api/ → :8080<br>静态 serve frontend/<br>firewalld/ufw 80</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"><div class="node b3"><div class="t">📦 certbot 安装</div><div class="d">apt/yum install certbot</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R16: health + http-nginx -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">✅ 健康检查</div><div class="d">curl /api/v1/health<br>最多 60s 轮询</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"><div class="node b3"><div class="t">📝 HTTP nginx 配置</div><div class="d">webroot 校验路径</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R17: done + letsencrypt -->
+<div class="row">
+  <div class="cell sticky"><div class="node main end"><div class="t">🏁 部署完成</div><div class="d">http://server-ip/admin/login</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"><div class="node b3"><div class="t">🔑 Let's Encrypt</div><div class="d">certbot certonly<br>--webroot 模式</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- R18: ghost + https-nginx + web-ui -->
+<div class="row">
+  <div class="cell sticky"><div class="node main ghost"><div class="t">（后续场景入口）</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"><div class="node b3"><div class="t">🔒 HTTPS nginx</div><div class="d">443 ssl · 301 redirect</div></div></div>
+  <div class="cell branch"><div class="node b4"><div class="t">🖥️ 管理后台触发</div><div class="d">/admin/upgrade<br>选择版本 → 一键升级</div></div></div>
+  <div class="cell branch"></div>
+</div>
+<!-- Fork: R18 部署完成后 → b4 Web UI 升级 -->
+<div class="fk-row">
+  <div class="fk-cell sticky" style="color:var(--brw)"><svg class="fk-stub" viewBox="0 0 270 26" preserveAspectRatio="none"><line x1="226" y1="20" x2="268" y2="20"/></svg></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div>
+  <svg class="fk-svg" viewBox="0 0 1190 26" preserveAspectRatio="none">
+    <line x1="0" y1="20" x2="230" y2="20" stroke="var(--ini)" stroke-width="2"/>
+    <line x1="230" y1="20" x2="902" y2="20" stroke="var(--brw)" stroke-width="2" marker-end="url(#ab)"/>
+  </svg>
+  <div class="fk-label" style="left:calc(230px + 672px);color:var(--brw)">部署完成后（管理后台）→</div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div></div>
+
+<!-- R19-22: Web UI + HTTPS tail -->
+<div class="row">
+  <div class="cell sticky"></div><div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"><div class="node b3"><div class="t">🌐 CORS + 重启</div><div class="d">追加 https 域名</div></div></div>
+  <div class="cell branch"><div class="node b4"><div class="t">📤 UpgradeController</div><div class="d">POST :28081/upgrade<br>{version,mode,importDb}</div></div></div>
+  <div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div></div>
+
+<div class="row">
+  <div class="cell sticky"></div><div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"><div class="node b3"><div class="t">⏰ cron 自动续期</div><div class="d">每日 03:30<br>certbot renew → reload</div></div></div>
+  <div class="cell branch"><div class="node b4"><div class="t">🔒 upgrade-agent</div><div class="d">fcntl 文件锁<br>env DEPLOY_MODE=full</div></div></div>
+  <div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div></div>
+
+<div class="row">
+  <div class="cell sticky"></div><div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"></div>
+  <div class="cell branch"><div class="node b4"><div class="t">⚙️ subprocess.Popen</div><div class="d">bash deploy-server.sh<br>跳过所有交互确认</div></div></div>
+  <div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div></div>
+
+<div class="row">
+  <div class="cell sticky"></div><div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"></div>
+  <div class="cell branch"><div class="node b4"><div class="t">📡 SSE 流式日志</div><div class="d">event: log<br>实时推送到浏览器</div></div></div>
+  <div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div></div>
+
+<div class="row">
+  <div class="cell sticky"></div><div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"></div>
+  <div class="cell branch"><div class="node b4"><div class="t">🗄️ upgrade_record</div><div class="d">SUCCESS / FAILED<br>失败 → error_message</div></div></div>
+  <div class="cell branch"></div>
+</div>
+
+<!-- Docker independent branch -->
+<div class="gap-row"></div>
+<div class="row">
+  <div class="cell sticky"><div class="node main ghost"><div class="t">（独立入口 · Docker 模拟）</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"><div class="node b5"><div class="t">🐳 DEPLOY_MODE=docker-create</div><div class="d">docker build myblog-local-sim</div></div></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div></div>
+<div class="row">
+  <div class="cell sticky"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"><div class="node b5"><div class="t">▶️ docker run</div><div class="d">-p 28080:8080 -p 28000:80<br>-v volume</div></div></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div></div>
+<div class="row">
+  <div class="cell sticky"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"><div class="node b5"><div class="t">📋 docker-init</div><div class="d">docker cp + docker exec</div></div></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div></div>
+<div class="row">
+  <div class="cell sticky"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"><div class="node b5"><div class="t">🔍 LOCAL_SIM=1</div><div class="d">检测 /.dockerenv<br>切 supervisord</div></div></div>
+</div>
+
+</div><!-- table -->
+</div>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <marker id="as" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="var(--svr)"/></marker>
+    <marker id="aw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="var(--wrn)"/></marker>
+    <marker id="ai" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="var(--inf)"/></marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="var(--brw)"/></marker>
+  </defs>
+</svg>
+
+</body>
+</html>

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>my-blog 用户操作入口链路图</title>
+<style>
+  :root{--bg:#0f172a;--c1:#1e293b;--tx:#e2e8f0;--mu:#94a3b8;--bo:#334155;
+    --ini:#a78bfa;--svr:#34d399;--brw:#fbbf24;--wrn:#f87171;--inf:#38bdf8;--dev:#818cf8}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,monospace;padding:16px}
+  h1{text-align:center;font-size:20px;margin-bottom:4px}
+  .sub{text-align:center;color:var(--mu);font-size:12px;margin-bottom:16px}
+  .legend{display:flex;justify-content:center;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+  .legend span{font-size:11px;display:flex;align-items:center;gap:5px}
+  .legend .dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+  .scroll-wrap{border:1px solid var(--bo);border-radius:8px;overflow-x:auto}
+  .scroll-wrap::-webkit-scrollbar{height:6px}
+  .scroll-wrap::-webkit-scrollbar-track{background:var(--c1);border-radius:3px}
+  .scroll-wrap::-webkit-scrollbar-thumb{background:var(--bo);border-radius:3px}
+  .table{display:table;border-collapse:collapse;min-width:100%}
+  .row{display:table-row}
+  .cell{display:table-cell;vertical-align:middle;padding:0 12px}
+  .cell.sticky{position:sticky;left:0;z-index:2;background:var(--bg);width:230px;min-width:230px;max-width:230px}
+  .cell.branch{width:192px;min-width:192px;max-width:192px}
+  .hdr{padding:6px 8px;font-size:10px;font-weight:700;text-align:center;border-bottom:2px solid;border-radius:3px 3px 0 0}
+  .hdr.m{color:var(--ini);border-color:var(--ini)} .hdr.b1{color:var(--inf);border-color:var(--inf)}
+  .hdr.b2{color:var(--svr);border-color:var(--svr)} .hdr.b3{color:var(--brw);border-color:var(--brw)}
+  .hdr.b4{color:var(--dev);border-color:var(--dev)} .hdr.b5{color:var(--wrn);border-color:var(--wrn)}
+  .node{border-left:3px solid;background:var(--c1);border-radius:0 6px 6px 0;padding:8px 10px;font-size:10px;line-height:1.4}
+  .node .t{font-weight:700;font-size:11px} .node .d{color:var(--mu);font-size:9px;margin-top:2px}
+  .node.main{border-left-color:var(--ini)} .node.b1{border-left-color:var(--inf)} .node.b2{border-left-color:var(--svr)}
+  .node.b3{border-left-color:var(--brw)} .node.b4{border-left-color:var(--dev)} .node.b5{border-left-color:var(--wrn)}
+  .node.end{background:rgba(167,139,250,0.10)}
+  .node.decision{border-left-style:dashed;border-left-color:var(--wrn);background:rgba(248,113,113,0.05)}
+  .node.merge{border-left-color:var(--ini);background:rgba(167,139,250,0.08)}
+  .node.ghost{opacity:0.2}
+  /* Arrow row: short arrow centered between nodes */
+  .ar-row{display:table-row;height:18px}
+  .ar-cell{display:table-cell;text-align:center;vertical-align:middle;height:18px;position:relative}
+  .ar-cell.sticky{position:sticky;left:0;z-index:2;background:var(--bg)}
+  .ar-cell .v{display:inline-block;position:relative;width:2px;height:14px;background:var(--bo)}
+  .ar-cell .v::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--bo)}
+  /* 主干/分支纵向箭头分色（sticky=主干，branch 按列序 2..6 = b1..b5） */
+  .ar-cell.sticky .v{background:var(--ini)} .ar-cell.sticky .v::after{border-top-color:var(--ini)}
+  .ar-cell.branch:nth-child(2) .v{background:var(--inf)} .ar-cell.branch:nth-child(2) .v::after{border-top-color:var(--inf)}
+  .ar-cell.branch:nth-child(3) .v{background:var(--svr)} .ar-cell.branch:nth-child(3) .v::after{border-top-color:var(--svr)}
+  .ar-cell.branch:nth-child(4) .v{background:var(--brw)} .ar-cell.branch:nth-child(4) .v::after{border-top-color:var(--brw)}
+  .ar-cell.branch:nth-child(5) .v{background:var(--dev)} .ar-cell.branch:nth-child(5) .v::after{border-top-color:var(--dev)}
+  .ar-cell.branch:nth-child(6) .v{background:var(--wrn)} .ar-cell.branch:nth-child(6) .v::after{border-top-color:var(--wrn)}
+  /* Fork arrow: horizontal connector (absolute svg spans whole row) */
+  .fk-row{display:table-row;height:26px;position:relative}
+  .fk-cell{display:table-cell;height:26px;position:relative;vertical-align:middle}
+  .fk-cell.sticky{position:sticky;left:0;z-index:2;background:var(--bg)}
+  .fk-stub{position:absolute;left:0;top:0;width:270px;height:26px;display:block;pointer-events:none}
+  .fk-stub line{stroke:currentColor}
+  .fk-svg{position:absolute;left:0;top:0;height:26px;width:1190px;display:block;pointer-events:none}
+  .fk-label{font-size:9px;font-weight:600;position:absolute;top:1px;transform:translateX(-50%);white-space:nowrap;line-height:1}
+  .gap-row{display:table-row;height:8px}
+</style>
+</head>
+<body>
+<h1>my-blog 用户操作入口链路图</h1>
+<p class="sub">主干 = deploy-server.sh 执行引擎（3 入口汇聚）· 分支 = 用户操作入口链路 · ⚙️ = 调用引擎汇聚点 · 三层粒度（操作 → 动作 → 结果）</p>
+
+<div class="legend">
+  <span><span class="dot" style="background:var(--ini)"></span> 主干·执行引擎</span>
+  <span><span class="dot" style="background:var(--inf)"></span> ① 本地打包发布</span>
+  <span><span class="dot" style="background:var(--svr)"></span> ② 终端部署</span>
+  <span><span class="dot" style="background:var(--brw)"></span> ③ Web 一键升级</span>
+  <span><span class="dot" style="background:var(--dev)"></span> ④ Docker 模拟</span>
+  <span><span class="dot" style="background:var(--wrn)"></span> ⑤ 备份·恢复·日志</span>
+</div>
+
+<div class="scroll-wrap">
+<div class="table">
+
+<!-- HEADER -->
+<div class="row">
+  <div class="cell sticky"><div class="hdr m">⚙️ 主干 · deploy-server.sh 执行引擎</div></div>
+  <div class="cell branch"><div class="hdr b1">① 本地打包发布</div></div>
+  <div class="cell branch"><div class="hdr b2">② 终端部署</div></div>
+  <div class="cell branch"><div class="hdr b3">③ Web 一键升级</div></div>
+  <div class="cell branch"><div class="hdr b4">④ Docker 模拟</div></div>
+  <div class="cell branch"><div class="hdr b5">⑤ 备份·恢复·日志</div></div>
+</div>
+
+<!-- 行1：R1 引擎接收 + b1 入口 -->
+<div class="row">
+  <div class="cell sticky"><div class="node main merge"><div class="t">⚙️ 接收调用</div><div class="d">deploy-server.sh &lt;TAG&gt;<br>◀ 汇聚：终端 / Web / 容器</div></div></div>
+  <div class="cell branch"><div class="node b1"><div class="t">执行 publish-release.sh</div><div class="d">本地终端 · 开发机</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- Fork1：R1 → 终端/Web/容器 三入口（同起点） -->
+<div class="fk-row">
+  <div class="fk-cell sticky" style="color:var(--ini)"><svg class="fk-stub" viewBox="0 0 270 26" preserveAspectRatio="none"><line x1="226" y1="20" x2="268" y2="20"/></svg></div>
+  <div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div><div class="fk-cell branch"></div>
+  <svg class="fk-svg" viewBox="0 0 1190 26" preserveAspectRatio="none">
+    <line x1="0" y1="20" x2="230" y2="20" stroke="var(--ini)" stroke-width="2"/>
+    <line x1="230" y1="20" x2="326" y2="20" stroke="var(--svr)" stroke-width="2" marker-end="url(#as)"/>
+    <line x1="230" y1="20" x2="518" y2="20" stroke="var(--brw)" stroke-width="2" marker-end="url(#ab)"/>
+    <line x1="230" y1="20" x2="710" y2="20" stroke="var(--dev)" stroke-width="2" marker-end="url(#ad)"/>
+  </svg>
+  <div class="fk-label" style="left:calc(230px + 96px);color:var(--svr)">终端直调 →</div>
+  <div class="fk-label" style="left:calc(230px + 288px);color:var(--brw)">Web 代理 →</div>
+  <div class="fk-label" style="left:calc(230px + 480px);color:var(--dev)">容器内 →</div>
+</div>
+
+<!-- 行2：R2 + b1.2 + b2.1 + b3.1 + b4.1 -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">参数解析</div><div class="d">TAG · DEPLOY_MODE<br>IMPORT_DB · ENABLE_HTTPS<br>LOCAL_SIM · SKIP_DEPS</div></div></div>
+  <div class="cell branch"><div class="node b1"><div class="t">Maven + Nuxt 构建</div><div class="d">编译 → 产物打包</div></div></div>
+  <div class="cell branch"><div class="node b2"><div class="t">登录服务器</div><div class="d">ssh root@server</div></div></div>
+  <div class="cell branch"><div class="node b3"><div class="t">打开 /admin/upgrade</div><div class="d">浏览器 · 管理后台</div></div></div>
+  <div class="cell branch"><div class="node b4"><div class="t">docker-create / init</div><div class="d">本地模拟入口</div></div></div>
+  <div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div></div>
+
+<!-- 行3：R3 + b1.3 + b2.2 + b3.2 + b4.2 + b5.1 -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">模式分发</div><div class="d">init | full |<br>docker-create | docker-init</div></div></div>
+  <div class="cell branch"><div class="node b1"><div class="t">GitHub Release + TAG</div><div class="d">输出 vX.Y.Z<br>→ 供给引擎参数解析</div></div></div>
+  <div class="cell branch"><div class="node b2"><div class="t">获取脚本 + TAG</div><div class="d">curl deploy-server.sh<br>拷贝 Release TAG</div></div></div>
+  <div class="cell branch"><div class="node b3"><div class="t">配置升级参数</div><div class="d">拉取版本 / 手动输入<br>模式 full|init · 覆盖数据<br>确认码「确认」</div></div></div>
+  <div class="cell branch"><div class="node b4"><div class="t">容器启动 · LOCAL_SIM</div><div class="d">/.dockerenv 自动检测</div></div></div>
+  <div class="cell branch"><div class="node b5"><div class="t">备份 / 恢复入口</div><div class="d">blog-backup.sh 或<br>/admin/backup·restore</div></div></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div></div>
+
+<!-- 行4：R4 + b2.3(merge) + b3.3 + b4.3(merge) + b5.2 -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">前置校验</div><div class="d">root 检查 · 已有部署检测<br>/.dockerenv 检测</div></div></div>
+  <div class="cell branch"></div>
+  <div class="cell branch"><div class="node b2 merge"><div class="t">⚙️ 执行 deploy-server.sh</div><div class="d">交互式 · root 权限<br>TAG 显式 / 自动获取</div></div></div>
+  <div class="cell branch"><div class="node b3"><div class="t">开始升级</div><div class="d">POST /admin/upgrade<br>SSE 连接建立</div></div></div>
+  <div class="cell branch"><div class="node b4 merge"><div class="t">⚙️ 容器内执行引擎</div><div class="d">supervisord 托管<br>跳过 systemd/apt/防火墙</div></div></div>
+  <div class="cell branch"><div class="node b5"><div class="t">SQLite dump + 加密</div><div class="d">生成备份文件</div></div></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div></div>
+
+<!-- 行5：R5 + b2.4(decision) + b3.4(merge) + b5.3 -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">依赖安装</div><div class="d">JDK / redis / nginx / sqlite3<br>SKIP_DEPS=1 可跳过</div></div></div>
+  <div class="cell branch"></div>
+  <div class="cell branch"><div class="node b2 decision"><div class="t">🔀 已有部署确认</div><div class="d">输入 INIT 强制重装<br>auto 拒绝并提示升级命令</div></div></div>
+  <div class="cell branch"><div class="node b3 merge"><div class="t">⚙️ agent 代理执行</div><div class="d">UpgradeController →<br>upgrade-agent(28081)<br>fcntl 锁 · _DEPLOY_MODE_FROM_ENV=1<br>跳过交互确认</div></div></div>
+  <div class="cell branch"></div>
+  <div class="cell branch"><div class="node b5"><div class="t">存储 / 删除 / 恢复</div><div class="d">轮询进度 · 解密导入</div></div></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"><div class="v"></div></div></div>
+
+<!-- 行6：R6 + b5.4 -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">下载 Release</div><div class="d">deploy-bundle.zip 优先<br>SHA256 校验阻断</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"><div class="node b5"><div class="t">日志维护</div><div class="d">migrate-logs.sh 归档<br>upgrade-logs.sh 查看</div></div></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- 行7：R7 -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">部署执行</div><div class="d">jar + 前端 + 配置<br>systemd · nginx · HTTPS</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- 行8：R8 -->
+<div class="row">
+  <div class="cell sticky"><div class="node main"><div class="t">健康检查</div><div class="d">curl /api/v1/health<br>最多 60s 轮询</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div><div class="cell branch"></div>
+</div>
+<div class="ar-row"><div class="ar-cell sticky"><div class="v"></div></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div><div class="ar-cell branch"></div></div>
+
+<!-- 行9：R9 终点 + b3.5 结果 -->
+<div class="row">
+  <div class="cell sticky"><div class="node main end"><div class="t">🏁 完成 · 结果回写</div><div class="d">exit code / SSE done<br>upgrade_record 落库</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div>
+  <div class="cell branch"><div class="node b3 end"><div class="t">✅ SSE 日志回显</div><div class="d">页面实时日志<br>成功 / 失败提示</div></div></div>
+  <div class="cell branch"></div><div class="cell branch"></div>
+</div>
+
+</div>
+</div>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <marker id="as" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--svr)"/>
+    </marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--brw)"/>
+    </marker>
+    <marker id="ad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--dev)"/>
+    </marker>
+  </defs>
+</svg>
+</body>
+</html>

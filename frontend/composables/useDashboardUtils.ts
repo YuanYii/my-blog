@@ -8,10 +8,17 @@
  * 报"重复导入"警告，参考上次 prepare 的输出）。
  */
 
+function toLocalDateString(d: Date): string {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export function fillDays(data: any[], days: number, key = 'pv'): number[] {
   const map = new Map<string, number>()
   for (const d of data) {
-    const ds = typeof d.date === 'string' ? d.date.substring(0, 10) : new Date(d.date).toISOString().substring(0, 10)
+    const ds = typeof d.date === 'string' ? d.date.substring(0, 10) : toLocalDateString(new Date(d.date))
     map.set(ds, Number(d[key]) || 0)
   }
   const out: number[] = []
@@ -19,7 +26,7 @@ export function fillDays(data: any[], days: number, key = 'pv'): number[] {
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(today)
     d.setDate(today.getDate() - i)
-    out.push(map.get(d.toISOString().substring(0, 10)) || 0)
+    out.push(map.get(toLocalDateString(d)) || 0)
   }
   return out
 }

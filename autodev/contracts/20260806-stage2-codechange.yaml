@@ -1,0 +1,12 @@
+version: "1.0"
+feature_id: "20260806-BUG-001"
+timestamp: "2026-08-06 08:06:00"
+
+modified_artifacts:
+  - path: "frontend/composables/useDashboardUtils.ts"
+    type: "code"
+    description: "新增 toLocalDateString，使用本地年月日格式化 YYYY-MM-DD 代替 toISOString 导致的 UTC 错位"
+
+verification:
+  syntax_check: "PASSED"
+  build_status: "SUCCESS"

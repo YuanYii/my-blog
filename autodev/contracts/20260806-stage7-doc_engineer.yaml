@@ -1,0 +1,7 @@
+version: "1.0"
+feature_id: "20260806-BUG-001"
+timestamp: "2026-08-06 08:07:30"
+
+changelog_updated: true
+changelog_file: "docs/changelogs/2026-08-06-dashboard-trend-timezone-fix.md"
+status: "COMPLETED"

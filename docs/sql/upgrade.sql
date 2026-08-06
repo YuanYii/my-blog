@@ -1,3 +1,12 @@
+-- ⚠️  警告：ALTER TABLE 语句的特殊处理 ⚠️
+-- deploy-server.sh §5.1 用 sed '/ALTER TABLE/d' 过滤了本文件中所有 ALTER TABLE，
+-- 改为 if-block 逐条 PRAGMA 检查后执行（防止重复执行报错）。
+-- 因此：
+--   1. 向本文件新增 ALTER TABLE 时，必须同步更新 deploy-server.sh §5.1 中
+--      对应的 if-block（搜索 "Patching" 关键字找到已有模式）
+--   2. 本文件中的 ALTER TABLE 仅作为文档参考（实际不会被执行）
+--   3. CREATE TABLE/INDEX IF NOT EXISTS 部分会正常执行（不受过滤影响）
+--
 -- ============================================================
 -- 通用增量升级脚本（幂等，可重复执行）
 -- deploy-server.sh full 模式在 DB 已存在时执行此脚本
