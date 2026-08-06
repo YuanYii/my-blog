@@ -30,10 +30,17 @@ class BackupControllerTest extends BaseIntegrationTest {
     @Autowired
     private MockMvc mvc;
 
+    @Autowired
+    private com.blog.settings.service.BackupService backupService;
+
     @BeforeEach
     void clean() {
         jdbc.update("DELETE FROM backup_record");
+        org.springframework.test.util.ReflectionTestUtils.setField(backupService, "backupPassword", "");
+        org.springframework.test.util.ReflectionTestUtils.setField(backupService, "githubToken", "");
+        org.springframework.test.util.ReflectionTestUtils.setField(backupService, "githubBackupRepo", "");
     }
+
 
     @Test
     @DisplayName("GET /admin/backup/list - 空表")
@@ -116,4 +123,38 @@ class BackupControllerTest extends BaseIntegrationTest {
             throw new AssertionError("POST /run 耗时 " + elapsed + "ms,疑似 @Async 自调用失效(同步阻塞)");
         }
     }
+
+    @Test
+    @DisplayName("GET /admin/backup/config - 查询配置")
+    void getConfig() throws Exception {
+        mvc.perform(get("/admin/backup/config")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("X-Device-Id", TEST_DEVICE_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.repo").exists());
+    }
+
+    @Test
+    @DisplayName("POST /admin/backup/config - 保存配置与落盘")
+    void saveConfig() throws Exception {
+        String json = "{\"repo\":\"test/my-backup\",\"token\":\"ghp_testtoken123456\",\"encryptionPassword\":\"secretpassword123\"}";
+        mvc.perform(post("/admin/backup/config")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("X-Device-Id", TEST_DEVICE_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        // 再次获取应校验 repo 已更新
+        mvc.perform(get("/admin/backup/config")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("X-Device-Id", TEST_DEVICE_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.repo").value("test/my-backup"))
+                .andExpect(jsonPath("$.data.isTokenSet").value(true))
+                .andExpect(jsonPath("$.data.isPasswordSet").value(true));
+    }
 }
+

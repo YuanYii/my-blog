@@ -7,6 +7,7 @@ import com.blog.common.ResultCode;
 import com.blog.common.BusinessException;
 import com.blog.common.web.AuthContext;
 import com.blog.common.web.TraceIdUtil;
+import com.blog.settings.dto.BackupConfigDTO;
 import com.blog.settings.dto.BackupResponse;
 import com.blog.settings.entity.BackupRecord;
 import com.blog.settings.mapper.BackupRecordMapper;
@@ -14,6 +15,7 @@ import com.blog.settings.mapper.RestoreRecordMapper;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,11 +33,17 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.PosixFilePermission;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -103,6 +111,7 @@ public class BackupService {
     private String backupStageDir;
 
     /** 备份密码（从 env 读，绝不打日志） */
+    @Getter
     @Value("${BACKUP_ENCRYPTION_PASSWORD:}")
     private String backupPassword;
 
@@ -112,10 +121,12 @@ public class BackupService {
      * 理由：发布链路的 GITHUB_TOKEN 指向 my-blog-prov，备份指向 my-blog-backup
      *       命名分开后两个 token 可以独立轮换、用 Fine-grained PAT 精确授权
      */
+    @Getter
     @Value("${BACKUP_GITHUB_TOKEN:}")
     private String githubToken;
 
     /** 备份仓库 */
+    @Getter
     @Value("${GITHUB_BACKUP_REPO:}")
     private String githubBackupRepo;
 
@@ -487,7 +498,7 @@ public class BackupService {
             String apiBase = "https://api.github.com/repos/" + githubBackupRepo;
             // 先 GET 拿 release id
             ProcessBuilder getPb = new ProcessBuilder("bash", "-c",
-                "curl -fsS -H @<(printf '%s' \"Authorization: token ${BACKUP_GITHUB_TOKEN}\") " +
+                "curl -fsS -H @<(printf '%s' \"Authorization: Bearer ${BACKUP_GITHUB_TOKEN}\") " +
                 "'" + apiBase + "/releases/tags/" + tag + "' " +
                 "| python3 -c \"import json,sys;print(json.load(sys.stdin)['id'])\"");
             getPb.environment().put("BACKUP_GITHUB_TOKEN", githubToken);
@@ -504,7 +515,7 @@ public class BackupService {
             }
             // DELETE release
             ProcessBuilder delPb = new ProcessBuilder("bash", "-c",
-                "curl -fsS -X DELETE -H @<(printf '%s' \"Authorization: token ${BACKUP_GITHUB_TOKEN}\") " +
+                "curl -fsS -X DELETE -H @<(printf '%s' \"Authorization: Bearer ${BACKUP_GITHUB_TOKEN}\") " +
                 "'" + apiBase + "/releases/" + idStr + "'");
             delPb.environment().put("BACKUP_GITHUB_TOKEN", githubToken);
             Process del = delPb.start();
@@ -713,7 +724,7 @@ public class BackupService {
         ProcessBuilder pb = new ProcessBuilder("bash", "-c",
             "curl -fsSL "
             + "-H 'Accept: application/vnd.github+json' "
-            + "-H \"Authorization: token ${BACKUP_GITHUB_TOKEN}\" "
+            + "-H \"Authorization: Bearer ${BACKUP_GITHUB_TOKEN}\" "
             + "'" + apiUrl + "'");
         pb.environment().put("BACKUP_GITHUB_TOKEN", githubToken);
         pb.redirectErrorStream(true);
@@ -762,7 +773,7 @@ public class BackupService {
             ProcessBuilder pb = new ProcessBuilder("bash", "-c",
                 "curl -fsSL "
                 + "-H 'Accept: application/octet-stream' "
-                + "-H \"Authorization: token ${BACKUP_GITHUB_TOKEN}\" "
+                + "-H \"Authorization: Bearer ${BACKUP_GITHUB_TOKEN}\" "
                 + "'" + manifestAsset.url + "'");
             pb.environment().put("BACKUP_GITHUB_TOKEN", githubToken);
             Process p = pb.start();
@@ -933,6 +944,153 @@ public class BackupService {
         } catch (Exception e) {
             log.warn("Java 侧清理 stage 目录失败(不阻塞流程): {}", e.getMessage());
         }
+    }
+
+    /**
+     * 获取备份仓库配置（脱敏，20260806-DEV-001）
+     */
+    public BackupConfigDTO getBackupConfig() {
+        boolean tokenSet = githubToken != null && !githubToken.trim().isEmpty();
+        boolean passSet = backupPassword != null && !backupPassword.trim().isEmpty();
+        return BackupConfigDTO.builder()
+                .repo(githubBackupRepo != null ? githubBackupRepo : "")
+                .token(tokenSet ? maskSecret(githubToken) : "")
+                .encryptionPassword(passSet ? maskSecret(backupPassword) : "")
+                .isTokenSet(tokenSet)
+                .isPasswordSet(passSet)
+                .maskedToken(tokenSet ? maskSecret(githubToken) : "")
+                .maskedPassword(passSet ? maskSecret(backupPassword) : "")
+                .build();
+    }
+
+    /**
+     * 更新备份仓库配置并落盘 env 文件（20260806-DEV-001）
+     */
+    public synchronized void updateBackupConfig(BackupConfigDTO dto, HttpServletRequest request) {
+        if (dto == null || dto.getRepo() == null || dto.getRepo().trim().isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "备份仓库地址不能为空");
+        }
+        String repo = dto.getRepo().trim();
+
+        String newToken = githubToken;
+        if (dto.getToken() != null && !dto.getToken().trim().isEmpty()
+                && !dto.getToken().contains("*") && !dto.getToken().equals(maskSecret(githubToken))) {
+            newToken = dto.getToken().trim();
+        }
+
+        String newPassword = backupPassword;
+        if (dto.getEncryptionPassword() != null && !dto.getEncryptionPassword().trim().isEmpty()
+                && !dto.getEncryptionPassword().contains("*") && !dto.getEncryptionPassword().equals(maskSecret(backupPassword))) {
+            if (dto.getEncryptionPassword().trim().length() < 8) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "自定义加密码长度不能少于 8 位");
+            }
+            newPassword = dto.getEncryptionPassword().trim();
+        }
+
+        if (repo.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "备份仓库地址不能为空");
+        }
+        if (newToken == null || newToken.trim().isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "备份仓库 Token 不能为空");
+        }
+        if (newPassword == null || newPassword.trim().length() < 8) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "自定义加密码不能为空且至少 8 位");
+        }
+
+        this.githubBackupRepo = repo;
+        this.githubToken = newToken;
+        this.backupPassword = newPassword;
+
+        persistEnvConfig(repo, newToken, newPassword);
+
+        log.info("备份仓库配置已保存并落盘: repo={} operator={}", repo, AuthContext.username(request));
+    }
+
+    private String maskSecret(String secret) {
+        if (secret == null || secret.isEmpty()) return "";
+        if (secret.length() <= 8) return "********";
+        return secret.substring(0, 4) + "****" + secret.substring(secret.length() - 4);
+    }
+
+    private void persistEnvConfig(String repo, String token, String password) {
+        File targetFile = resolveEnvFile();
+        try {
+            List<String> lines = new ArrayList<>();
+            if (targetFile.exists()) {
+                lines = Files.readAllLines(targetFile.toPath(), StandardCharsets.UTF_8);
+            } else {
+                File parent = targetFile.getParentFile();
+                if (parent != null && !parent.exists()) {
+                    parent.mkdirs();
+                }
+            }
+
+            Map<String, String> keyValues = new LinkedHashMap<>();
+            for (String line : lines) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("#") || !trimmed.contains("=")) continue;
+                int idx = trimmed.indexOf('=');
+                String k = trimmed.substring(0, idx).trim();
+                String v = trimmed.substring(idx + 1).trim();
+                keyValues.put(k, v);
+            }
+
+            keyValues.put("GITHUB_BACKUP_REPO", repo);
+            keyValues.put("BACKUP_GITHUB_TOKEN", token);
+            keyValues.put("BACKUP_ENCRYPTION_PASSWORD", password);
+
+            List<String> newLines = new ArrayList<>();
+            Set<String> updatedKeys = new HashSet<>(Arrays.asList("GITHUB_BACKUP_REPO", "BACKUP_GITHUB_TOKEN", "BACKUP_ENCRYPTION_PASSWORD"));
+            for (String line : lines) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("#") || !trimmed.contains("=")) {
+                    newLines.add(line);
+                    continue;
+                }
+                int idx = trimmed.indexOf('=');
+                String k = trimmed.substring(0, idx).trim();
+                if (updatedKeys.contains(k)) {
+                    newLines.add(k + "=" + keyValues.get(k));
+                    updatedKeys.remove(k);
+                } else {
+                    newLines.add(line);
+                }
+            }
+            for (String remainingKey : updatedKeys) {
+                newLines.add(remainingKey + "=" + keyValues.get(remainingKey));
+            }
+
+            Files.write(targetFile.toPath(), newLines, StandardCharsets.UTF_8);
+
+            try {
+                Set<PosixFilePermission> perms = new HashSet<>(Arrays.asList(
+                        PosixFilePermission.OWNER_READ,
+                        PosixFilePermission.OWNER_WRITE
+                ));
+                Files.setPosixFilePermissions(targetFile.toPath(), perms);
+            } catch (UnsupportedOperationException ignored) {
+            }
+            log.info("已写回环境配置文件: {}", targetFile.getAbsolutePath());
+        } catch (Exception e) {
+            log.error("写回环境配置文件失败: path={} err={}", targetFile.getAbsolutePath(), e.getMessage(), e);
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "写入配置文件失败: " + e.getMessage());
+        }
+    }
+
+    private File resolveEnvFile() {
+        String envPathFromSys = System.getenv("MYBLOG_ENV_FILE");
+        if (envPathFromSys != null && !envPathFromSys.trim().isEmpty()) {
+            return new File(envPathFromSys.trim());
+        }
+        File defaultProd = new File("/etc/myblog/myblog.env");
+        if (defaultProd.exists() || defaultProd.getParentFile().canWrite()) {
+            return defaultProd;
+        }
+        File installEnv = new File(installDir, "myblog.env");
+        if (installEnv.exists() || installEnv.getParentFile().canWrite()) {
+            return installEnv;
+        }
+        return new File("myblog.env");
     }
 
     /**

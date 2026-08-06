@@ -1,6 +1,7 @@
 package com.blog.settings.service.restore;
 
 import com.blog.settings.entity.RestoreRecord;
+import com.blog.settings.service.BackupService;
 import com.blog.settings.service.SiteSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -56,6 +57,7 @@ public class RestoreExecutor {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final SiteSettingsService siteSettingsService;
+    private final BackupService backupService;
 
     @Value("${BACKUP_ENCRYPTION_PASSWORD:}")
     private String backupPassword;
@@ -65,6 +67,21 @@ public class RestoreExecutor {
 
     @Value("${GITHUB_BACKUP_REPO:}")
     private String githubBackupRepo;
+
+    private String getGithubToken() {
+        String token = backupService != null ? backupService.getGithubToken() : null;
+        return (token != null && !token.trim().isEmpty()) ? token : this.githubToken;
+    }
+
+    private String getGithubBackupRepo() {
+        String repo = backupService != null ? backupService.getGithubBackupRepo() : null;
+        return (repo != null && !repo.trim().isEmpty()) ? repo : this.githubBackupRepo;
+    }
+
+    private String getBackupPassword() {
+        String pass = backupService != null ? backupService.getBackupPassword() : null;
+        return (pass != null && !pass.trim().isEmpty()) ? pass : this.backupPassword;
+    }
 
     @Value("${SQLITE_PATH:/opt/myblog/blog.db}")
     private String sqlitePath;
@@ -111,7 +128,7 @@ public class RestoreExecutor {
             Path dbEncFile = stageDir.resolve(dbEncName);
             Path dumpSql = stageDir.resolve("dump.sql");
             try {
-                codec.decryptAndDecompress(dbEncFile, backupPassword, dumpSql);
+                codec.decryptAndDecompress(dbEncFile, getBackupPassword(), dumpSql);
             } catch (Exception e) {
                 throw new RestoreException("DECRYPT",
                     "解密 / gunzip 失败: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
@@ -154,7 +171,7 @@ public class RestoreExecutor {
                 Path upEncFile = stageDir.resolve(upEncName);
                 Path tarGz = stageDir.resolve("uploads.tar.gz");
                 try {
-                    codec.decrypt(upEncFile, backupPassword, tarGz);
+                    codec.decrypt(upEncFile, getBackupPassword(), tarGz);
                 } catch (Exception e) {
                     throw new RestoreException("UPLOADS",
                         "uploads 解密失败: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
@@ -170,7 +187,7 @@ public class RestoreExecutor {
                     if (Files.exists(attEncFile)) {
                         Path attTarGz = stageDir.resolve("attachments.tar.gz");
                         try {
-                            codec.decrypt(attEncFile, backupPassword, attTarGz);
+                            codec.decrypt(attEncFile, getBackupPassword(), attTarGz);
                         } catch (Exception e) {
                             throw new RestoreException("ATTACHMENTS",
                                 "attachments 解密失败: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
@@ -207,7 +224,7 @@ public class RestoreExecutor {
     private List<Path> step1Download(RestoreRecord record, Path stageDir) throws RestoreException {
         try {
             return githubClient.downloadAssets(
-                githubToken, githubBackupRepo, record.getSourceTag(), stageDir);
+                getGithubToken(), getGithubBackupRepo(), record.getSourceTag(), stageDir);
         } catch (IOException e) {
             throw new RestoreException("DOWNLOAD",
                 "拉取 release assets 失败: " + e.getMessage(), e);

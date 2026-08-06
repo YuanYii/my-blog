@@ -568,7 +568,7 @@ else
     CREATE_RESP=$(mktemp)
     HTTP_CODE=$(curl -s --tls-max 1.2 -o "$CREATE_RESP" -w "%{http_code}" \
         -X POST "https://api.github.com/repos/$GITHUB_BACKUP_REPO/releases" \
-        -H "Authorization: token $BACKUP_GITHUB_TOKEN" \
+        -H "Authorization: Bearer $BACKUP_GITHUB_TOKEN" \
         -H "Accept: application/vnd.github+json" \
         -d "$(jq -n --arg tag "$TAG" --arg notes "$RELEASE_NOTE" \
             '{tag_name:$tag,name:("Data Backup "+$tag),body:$notes,target_commitish:"main"}')")
@@ -588,7 +588,7 @@ else
         info "  upload $bn"
         UP_CODE=$(curl -s --tls-max 1.2 -o "$STAGE_DIR/upload-$bn.json" -w "%{http_code}" \
             -X POST "${UPLOAD_URL}?name=$bn" \
-            -H "Authorization: token $BACKUP_GITHUB_TOKEN" \
+            -H "Authorization: Bearer $BACKUP_GITHUB_TOKEN" \
             -H "Content-Type: application/octet-stream" \
             --data-binary "@$asset")
         if [[ "$UP_CODE" != "201" ]]; then

@@ -235,7 +235,7 @@ public class GithubReleaseClient {
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
         conn.setReadTimeout(READ_TIMEOUT_MS);
-        conn.setRequestProperty("Authorization", "token " + token);
+        conn.setRequestProperty("Authorization", "Bearer " + token);
         conn.setRequestProperty("Accept", accept);
         conn.setRequestProperty("User-Agent", "myblog-restore/5.0");
         conn.setInstanceFollowRedirects(false);  // 手动处理 302（GitHub 跨 host 重定向到 CDN）

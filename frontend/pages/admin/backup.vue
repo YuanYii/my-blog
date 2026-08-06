@@ -91,8 +91,84 @@ const handleSync = async () => {
   }
 }
 
+// 仓库配置弹窗 (20260806-DEV-001)
+const configModal = ref(false)
+const configLoading = ref(false)
+const configSaving = ref(false)
+const showTokenText = ref(false)
+const showPasswordText = ref(false)
+const configConfirmButtonRef = ref<HTMLButtonElement | null>(null)
+
+const configForm = ref({
+  repo: '',
+  token: '',
+  encryptionPassword: ''
+})
+
+useModalKeyboard({
+  open: configModal,
+  onCancel: () => { configModal.value = false },
+  confirmButtonRef: configConfirmButtonRef
+})
+
+const openConfigModal = async () => {
+  configModal.value = true
+  configLoading.value = true
+  showTokenText.value = false
+  showPasswordText.value = false
+  try {
+    const res = await get<any>('/admin/backup/config')
+    if (res?.data) {
+      configForm.value = {
+        repo: res.data.repo || '',
+        token: res.data.maskedToken || res.data.token || '',
+        encryptionPassword: res.data.maskedPassword || res.data.encryptionPassword || ''
+      }
+    }
+  } catch (e: any) {
+    $toast.error(formatError(e, '获取配置失败'))
+  } finally {
+    configLoading.value = false
+  }
+}
+
+const saveConfig = async () => {
+  if (!configForm.value.repo.trim()) {
+    $toast.warning('请输入备份仓库地址')
+    return
+  }
+  if (!configForm.value.token.trim()) {
+    $toast.warning('请输入备份仓库 Token')
+    return
+  }
+  if (!configForm.value.encryptionPassword.trim()) {
+    $toast.warning('请输入自定义加密码')
+    return
+  }
+  if (configForm.value.encryptionPassword.trim().length < 8) {
+    $toast.warning('自定义加密码至少为 8 位')
+    return
+  }
+
+  configSaving.value = true
+  try {
+    await post('/admin/backup/config', {
+      repo: configForm.value.repo.trim(),
+      token: configForm.value.token.trim(),
+      encryptionPassword: configForm.value.encryptionPassword.trim()
+    })
+    $toast.success('备份仓库配置已保存并落盘')
+    configModal.value = false
+  } catch (e: any) {
+    $toast.error(formatError(e, '保存配置失败'))
+  } finally {
+    configSaving.value = false
+  }
+}
+
 // 触发备份
 const triggering = ref(false)
+
 // 2026-06-21 v4.2.1 polish: 改用 $dialog.confirm(代替 window.confirm),与全站风格一致
 const handleTrigger = async () => {
   if (triggering.value) return
@@ -409,7 +485,16 @@ onBeforeUnmount(() => {
       </div>
       <div style="display: flex; align-items: center; gap: 12px;">
         <button
+          @click="openConfigModal"
+          class="btn btn-ghost btn-sm"
+          title="配置 GitHub 备份仓库地址、Token 及解密密码"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          配置仓库
+        </button>
+        <button
           @click="handleSync"
+
           :disabled="syncing"
           class="btn btn-ghost btn-sm"
           title="从 GitHub 备份仓库同步最近 3 条 release"
@@ -623,8 +708,113 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <!-- 仓库配置弹窗 (20260806-DEV-001) -->
+
+    <div v-if="configModal" class="modal-backdrop" @click.self="configModal = false">
+      <div class="modal" style="max-width: 520px; width: 90%;">
+        <div class="modal-header">
+          <div class="modal-title">配置备份仓库</div>
+          <button @click="configModal = false" class="modal-close" aria-label="关闭">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+
+        <div v-if="configLoading" style="padding: 30px; text-align: center; color: var(--muted);">加载配置中…</div>
+        <form v-else @submit.prevent="saveConfig">
+          <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="font-size: 12px; color: var(--text-soft); background: var(--bg-soft); border-radius: 6px; padding: 10px 12px; line-height: 1.5; border-left: 3px solid var(--accent);">
+              💡 仅支持 GitHub 仓库。仓库 Token 需包含 <code style="font-family: monospace;">repo</code> 访问权限（详见 README 文档）。自定义加密码用于备份数据的加密，在后续「数据恢复」或导入时解密使用，请妥善保管。
+            </div>
+
+            <!-- 1. 备份仓库地址 -->
+            <div class="form-group">
+              <label class="form-label" style="display: block; margin-bottom: 6px;">
+                备份仓库地址 <span style="color: var(--danger);">*</span>
+              </label>
+              <input
+                v-model="configForm.repo"
+                type="text"
+                class="form-control"
+                placeholder="例: username/my-blog-backup"
+                required
+                style="width: 100%; box-sizing: border-box;"
+              />
+            </div>
+
+            <!-- 2. 备份仓库 Token -->
+            <div class="form-group">
+              <label class="form-label" style="display: block; margin-bottom: 6px;">
+                备份仓库 Token <span style="color: var(--danger);">*</span>
+              </label>
+              <div style="position: relative; display: flex; align-items: center;">
+                <input
+                  v-model="configForm.token"
+                  :type="showTokenText ? 'text' : 'password'"
+                  class="form-control"
+                  placeholder="GitHub Personal Access Token (PAT)"
+                  required
+                  style="width: 100%; padding-right: 40px; box-sizing: border-box;"
+                />
+                <button
+                  type="button"
+                  @click="showTokenText = !showTokenText"
+                  style="position: absolute; right: 8px; background: none; border: none; cursor: pointer; color: var(--muted); padding: 4px; display: flex; align-items: center;"
+                  :title="showTokenText ? '隐藏明文' : '显示明文'"
+                  aria-label="切换显示 Token"
+                >
+                  <svg v-if="!showTokenText" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- 3. 自定义加密码 -->
+            <div class="form-group">
+              <label class="form-label" style="display: block; margin-bottom: 6px;">
+                自定义加密码 <span style="color: var(--danger);">*</span>
+              </label>
+              <div style="position: relative; display: flex; align-items: center;">
+                <input
+                  v-model="configForm.encryptionPassword"
+                  :type="showPasswordText ? 'text' : 'password'"
+                  class="form-control"
+                  placeholder="备份数据的加密密码，至少 8 位，数据恢复时使用"
+                  required
+                  minlength="8"
+                  style="width: 100%; padding-right: 40px; box-sizing: border-box;"
+                />
+                <button
+                  type="button"
+                  @click="showPasswordText = !showPasswordText"
+                  style="position: absolute; right: 8px; background: none; border: none; cursor: pointer; color: var(--muted); padding: 4px; display: flex; align-items: center;"
+                  :title="showPasswordText ? '隐藏明文' : '显示明文'"
+                  aria-label="切换显示加密码"
+                >
+                  <svg v-if="!showPasswordText" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                </button>
+              </div>
+              <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
+                🔒 用于备份数据包的 AES-256-CBC 加密，在「数据恢复」或备份导入时解密使用
+              </div>
+            </div>
+
+          </div>
+
+          <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" @click="configModal = false" class="btn btn-ghost btn-sm">取消</button>
+            <button type="submit" ref="configConfirmButtonRef" :disabled="configSaving" class="btn-new btn-sm">
+              {{ configSaving ? '保存中…' : '保存配置' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
   </div>
 </template>
+
 
 <style scoped>
 /* 2026-06-21 v4.2.1 polish: scoped style 只保留页面独有交互(轮询行高亮/旋转/失败 badge 可点击)

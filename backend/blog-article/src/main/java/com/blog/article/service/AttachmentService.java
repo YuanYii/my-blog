@@ -52,7 +52,7 @@ public class AttachmentService {
     /** 业务上限 5MB，multipart 10MB（基础设施）在 application.yml 配 */
     private static final long MAX_SIZE = 5L * 1024 * 1024;
 
-    @Value("${blog.attachment.local.dir}")
+    @Value("${blog.attachment.local.dir:${ATTACHMENT_DIR:/opt/myblog/attachments}}")
     private String attachmentDir;
 
     // ==================== Upload ====================

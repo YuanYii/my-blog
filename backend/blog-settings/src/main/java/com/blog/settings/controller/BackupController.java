@@ -3,6 +3,7 @@ package com.blog.settings.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.blog.common.Result;
 import com.blog.common.web.AuthContext;
+import com.blog.settings.dto.BackupConfigDTO;
 import com.blog.settings.dto.BackupResponse;
 import com.blog.settings.service.BackupService;
 import lombok.RequiredArgsConstructor;
@@ -94,4 +95,23 @@ public class BackupController {
         int inserted = backupService.syncFromGithub(request);
         return Result.success(inserted);
     }
+
+    /**
+     * 2026-08-06 20260806-DEV-001：查询备份仓库配置（脱敏）
+     */
+    @GetMapping("/config")
+    public Result<BackupConfigDTO> getConfig() {
+        return Result.success(backupService.getBackupConfig());
+    }
+
+    /**
+     * 2026-08-06 20260806-DEV-001：保存备份仓库配置并写回 env 文件
+     */
+    @PostMapping("/config")
+    public Result<Void> saveConfig(@RequestBody BackupConfigDTO configDTO, HttpServletRequest request) {
+        log.info("备份配置更新触发: repo={} operator={}", configDTO.getRepo(), AuthContext.username(request));
+        backupService.updateBackupConfig(configDTO, request);
+        return Result.success();
+    }
 }
+
