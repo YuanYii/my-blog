@@ -307,6 +307,17 @@ cp "$ROOT_DIR/docs/nginx/nginx-http.conf"   "$STAGE_DIR/assets/nginx-http.conf"
 cp "$ROOT_DIR/docs/nginx/nginx-https.conf"  "$STAGE_DIR/assets/nginx-https.conf"
 info "  nginx-http.conf + nginx-https.conf added"
 
+# ============= 4.8 打包 Docker 部署物料 =============
+info "=== 4.8 Packing Docker templates ==="
+DOCKER_SRC="$ROOT_DIR/docs/deployment/docker/local-sim"
+if [ -f "$DOCKER_SRC/Dockerfile" ]; then
+    cp "$DOCKER_SRC/Dockerfile"           "$STAGE_DIR/assets/Dockerfile"
+    cp "$DOCKER_SRC/supervisord.conf"     "$STAGE_DIR/assets/supervisord.conf"
+    cp "$DOCKER_SRC/entrypoint-helper.sh" "$STAGE_DIR/assets/entrypoint-helper.sh"
+    chmod +x "$STAGE_DIR/assets/entrypoint-helper.sh"
+    info "  Dockerfile + supervisord.conf + entrypoint-helper.sh added"
+fi
+
 # ============= 4.6 数据导出(可选,EXPORT_DB=1 触发)=============
 # 把 dev blog.db 加密导出到 staging(随 release 发布)
 # 默认关闭,避免每次发版都要敲密码
@@ -341,7 +352,7 @@ fi
 # 计算每个 asset 的 sha256(包含可选的 .enc)
 info "生成 SHA256SUMS..."
 cd "$STAGE_DIR/assets"
-SUM_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql upgrade.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh universal-script.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service"
+SUM_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql upgrade.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh universal-script.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service Dockerfile supervisord.conf entrypoint-helper.sh"
 [ -f dev-blog-dump.sql.gz.enc ] && SUM_FILES="$SUM_FILES dev-blog-dump.sql.gz.enc"
 shasum -a 256 $SUM_FILES > SHA256SUMS 2>/dev/null || \
     sha256sum $SUM_FILES > SHA256SUMS
@@ -350,7 +361,7 @@ cd "$ROOT_DIR"
 # 打 zip 冷部署包
 BUNDLE="deploy-bundle-${TAG}.zip"
 cd "$STAGE_DIR/assets"
-ZIP_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql upgrade.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh universal-script.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service SHA256SUMS"
+ZIP_FILES="blog-app.jar frontend-static.tar.gz schema-sqlite.sql upgrade.sql deploy-server.sh sqlite-import.sh sqlite-export.sh blog-backup.sh migrate-logs.sh universal-script.sh nginx-http.conf nginx-https.conf upgrade-agent.py upgrade-agent.service Dockerfile supervisord.conf entrypoint-helper.sh SHA256SUMS"
 [ -f dev-blog-dump.sql.gz.enc ] && ZIP_FILES="$ZIP_FILES dev-blog-dump.sql.gz.enc"
 zip -q "$BUNDLE" $ZIP_FILES
 cd "$ROOT_DIR"
@@ -456,6 +467,9 @@ upload_one "$STAGE_DIR/assets/upgrade-agent.py"        "upgrade-agent.py"
 upload_one "$STAGE_DIR/assets/upgrade-agent.service"   "upgrade-agent.service"
 upload_one "$STAGE_DIR/assets/nginx-http.conf"         "nginx-http.conf"
 upload_one "$STAGE_DIR/assets/nginx-https.conf"        "nginx-https.conf"
+upload_one "$STAGE_DIR/assets/Dockerfile"                "Dockerfile"
+upload_one "$STAGE_DIR/assets/supervisord.conf"          "supervisord.conf"
+upload_one "$STAGE_DIR/assets/entrypoint-helper.sh"      "entrypoint-helper.sh"
 # 可选:加密的 db dump(EXPORT_DB=1 时存在)
 [ -f "$STAGE_DIR/assets/dev-blog-dump.sql.gz.enc" ] && \
     upload_one "$STAGE_DIR/assets/dev-blog-dump.sql.gz.enc" "dev-blog-dump.sql.gz.enc"

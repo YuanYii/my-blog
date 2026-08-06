@@ -109,14 +109,52 @@ upgrade_lock = UpgradeLock(LOCK_FILE)
 
 # ============ 升级执行 ============
 
+def update_deploy_script(version, repo):
+    """在执行 deploy-server.sh 之前，尝试从 GitHub Release 拉取最新版 deploy-server.sh 覆盖本地，确保使用最新升级逻辑"""
+    import urllib.request
+    import shutil
+
+    if version and version.startswith("v"):
+        url = f"https://github.com/{repo}/releases/download/{version}/deploy-server.sh"
+    else:
+        url = f"https://github.com/{repo}/releases/latest/download/deploy-server.sh"
+
+    state.append_log(f"[upgrade-agent] 尝试更新部署脚本: {url}")
+    tmp_path = "/tmp/deploy-server-latest.sh"
+
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "myblog-upgrade-agent/1.0"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp, open(tmp_path, "wb") as f:
+            shutil.copyfileobj(resp, f)
+
+        if os.path.getsize(tmp_path) > 1000:
+            target_dir = os.path.dirname(DEPLOY_SCRIPT)
+            if target_dir:
+                os.makedirs(target_dir, exist_ok=True)
+            shutil.copy2(tmp_path, DEPLOY_SCRIPT)
+            os.chmod(DEPLOY_SCRIPT, 0o755)
+            state.append_log(f"[upgrade-agent] 部署脚本更新成功: {DEPLOY_SCRIPT}")
+        else:
+            state.append_log("[upgrade-agent] 警告: 下载的部署脚本大小异常，保留本地原脚本")
+    except Exception as e:
+        state.append_log(f"[upgrade-agent] 提示: 无法在线拉取最新部署脚本 ({e})，将回退使用本地现有脚本")
+
+
 def run_deploy(version, mode, import_db):
     """在后台线程中执行 deploy-server.sh"""
     try:
         env = os.environ.copy()
         env["DEPLOY_MODE"] = mode
-        env["GITHUB_REPO"] = env.get("GITHUB_REPO", "YuanYii/my-blog-prov")
+        repo = env.get("GITHUB_REPO", "YuanYii/my-blog-prov")
+        env["GITHUB_REPO"] = repo
         if import_db:
             env["IMPORT_DB"] = "1"
+
+        # 执行升级前自动更新 deploy-server.sh 自身
+        update_deploy_script(version, repo)
 
         # 统一方案：version 为空时不传版本号，让 deploy-server.sh 自动获取最新 release
         if version:
@@ -124,6 +162,7 @@ def run_deploy(version, mode, import_db):
         else:
             cmd = ["bash", DEPLOY_SCRIPT]
         state.append_log(f"[upgrade-agent] 开始执行: {' '.join(cmd)}")
+
 
         process = subprocess.Popen(
             cmd,

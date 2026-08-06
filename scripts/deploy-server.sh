@@ -556,11 +556,12 @@ case "$DEPLOY_MODE" in
         info "=== DEPLOY_MODE=docker-create: 容器创建与镜像构建 ==="
         DOCKER_DIR="$(dirname "$SCRIPT_DIR_DEPLOY")/docs/deployment/docker/local-sim"
         if [ ! -f "$DOCKER_DIR/Dockerfile" ]; then
-            info "未在本地找到 Dockerfile，正在从 GitHub 自动下载构建所需物料..."
+            info "未在本地找到 Dockerfile，正在从 Release 自动下载构建所需物料..."
             DOCKER_DIR="$(mktemp -d)"
-            curl -fsSL "https://raw.githubusercontent.com/YuanYii/my-blog/main/docs/deployment/docker/local-sim/Dockerfile" -o "$DOCKER_DIR/Dockerfile" || { err "下载 Dockerfile 失败"; exit 1; }
-            curl -fsSL "https://raw.githubusercontent.com/YuanYii/my-blog/main/docs/deployment/docker/local-sim/supervisord.conf" -o "$DOCKER_DIR/supervisord.conf" || { err "下载 supervisord.conf 失败"; exit 1; }
-            curl -fsSL "https://raw.githubusercontent.com/YuanYii/my-blog/main/docs/deployment/docker/local-sim/entrypoint-helper.sh" -o "$DOCKER_DIR/entrypoint-helper.sh" || { err "下载 entrypoint-helper.sh 失败"; exit 1; }
+            curl -fsSL "$BASE_URL/Dockerfile" -o "$DOCKER_DIR/Dockerfile" 2>/dev/null || download "Dockerfile"
+            curl -fsSL "$BASE_URL/supervisord.conf" -o "$DOCKER_DIR/supervisord.conf" 2>/dev/null || download "supervisord.conf"
+            curl -fsSL "$BASE_URL/entrypoint-helper.sh" -o "$DOCKER_DIR/entrypoint-helper.sh" 2>/dev/null || download "entrypoint-helper.sh"
+            mv Dockerfile supervisord.conf entrypoint-helper.sh "$DOCKER_DIR/" 2>/dev/null || true
             chmod +x "$DOCKER_DIR/entrypoint-helper.sh"
         fi
         info "构建镜像 myblog-local-sim:latest ..."
