@@ -5,7 +5,7 @@
 
 ---
 
-[在线 Demo](https://blog.coreyai.cn/) · [快速部署](#二快速部署) · [技术架构](#三技术架构) · [运维指南](#四生产部署与运维) · [变更日志](docs/changelogs/)
+[在线 Demo](https://blog.coreyai.cn/) · [快速部署](#二快速部署) · [界面展示](#三界面展示) · [技术架构](#四技术架构) · [运维指南](#五生产部署与运维) · [变更日志](docs/changelogs/)
 
 ---
 
@@ -72,7 +72,23 @@ curl -s http://127.0.0.1:28080/api/v1/health
 
 ---
 
-## 三、技术架构
+## 三、界面展示
+
+### 3.1 管理后台 - 聚合仪表盘
+![管理后台仪表盘](docs/images/admin-dashboard.png)
+
+### 3.2 博客前台 - 首页
+![博客前台首页](docs/images/home-page.png)
+
+### 3.3 博客前台 - 文章详情页
+![文章详情页](docs/images/post-detail.png)
+
+### 3.4 博客前台 - 关于我页面
+![关于我页面](docs/images/about-page.png)
+
+---
+
+## 四、技术架构
 
 ### 3.1 技术栈总览
 
@@ -138,11 +154,11 @@ my-blog/
 
 ---
 
-## 四、生产部署与运维
+## 五、生产部署与运维
 
 > 详细部署手册与更多复杂场景说明请查阅：[`docs/项目部署操作手册.md`](docs/项目部署操作手册.md)。
 
-### 4.1 核心运维命令速查
+### 5.1 核心运维命令速查
 
 ```bash
 # ============ 1. 服务器代码/版本升级 ============
@@ -159,7 +175,7 @@ bash scripts/sqlite-export.sh -o /tmp/migration.sql.gz.enc  # 加密导出 SQLit
 bash scripts/sqlite-import.sh /opt/myblog/db/blog.db /tmp/migration.sql.gz.enc # 解密导入 SQLite
 ```
 
-### 4.2 部署注意事项与环境变量
+### 5.2 部署注意事项与环境变量
 
 | 环境变量 / 配置 | 说明 |
 |-----------------|------|
@@ -168,7 +184,7 @@ bash scripts/sqlite-import.sh /opt/myblog/db/blog.db /tmp/migration.sql.gz.enc #
 | **`CORS_ORIGINS`** | 跨域域名配置，编辑 `/etc/myblog/myblog.env` 设置您的真实域名 |
 | **`ENABLE_HTTPS`** | 设置 `ENABLE_HTTPS=1 HTTPS_DOMAIN=域名 HTTPS_EMAIL=邮箱` 可自动申请并配置 Let's Encrypt 证书 |
 
-### 4.3 私有数据备份仓库配置 (可选)
+### 5.3 私有数据备份仓库配置 (可选)
 
 系统支持将数据库及上传附件 AES-256 加密打包并全自动保存至您自己的 **GitHub 私有备份仓库**：
 
@@ -186,7 +202,7 @@ bash scripts/sqlite-import.sh /opt/myblog/db/blog.db /tmp/migration.sql.gz.enc #
 
 ---
 
-## 五、未来路线图 (Roadmap)
+## 六、未来路线图 (Roadmap)
 
 - [ ] **数据清理**：提供按月归档与 `page_view` 历史日志清理工具
 - [ ] **评论体验优化**：支持二级评论回复与树状结构展现
@@ -195,6 +211,6 @@ bash scripts/sqlite-import.sh /opt/myblog/db/blog.db /tmp/migration.sql.gz.enc #
 
 ---
 
-## 六、开源协议
+## 七、开源协议
 
 本项目基于 MIT License 协议开源。欢迎提交 Issue 与 Pull Request！
