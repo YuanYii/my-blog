@@ -12,7 +12,7 @@ duty:
   not_do:
     - 修改代码
     - 不重新审计
-    - 不动 auto_audit/ 下的报告原文
+    - 不动 autodev/auto_audit/ 下的报告原文
     - 不自行分析技术问题
   boundary:
     rule: 审计报告已给出的结论直接引用
@@ -26,18 +26,18 @@ date_vars:
     merge_target: 按 RUN 命名
 
 input_check_must_first:
-  input1_audit_report:
-    path: auto_audit/{RUN}/{RUN}-stage4.md
+  input1_test_audit:
+    path: autodev/auto_audit/{RUN}/{RUN}-stage4.md
     exists: 读取并提取异常项
     not_exists: 继续处理（不生成卡片，但仍需产出门控文件，异常计数全 0），门控文件注明"审计报告不存在"
   input2_code_quality:
-    path: auto_audit/{RUN}/{RUN}-stage3.md
+    path: autodev/auto_audit/{RUN}/{RUN}-stage3.md
     exists: 读取，若有 🔴 严重问题，必须生成对应 BUG 卡片
     not_exists: 跳过，不影响其他处理
   input3_integration_test:
-    path: auto_audit/{RUN}/{RUN}-stage5.md
-    exists: 读取，若有 ❌ 项，优先处理
-    not_exists: 跳过，不影响其他处理
+    path: autodev/auto_audit/{RUN}/{RUN}-stage5.md
+    must_read: true
+    usage: "提取所有 ⚠️/❌/🔍 问题列表及遗留项"
   source_task_doc:
     path: autodev/auto_iteration/{RUN}.md
     exists: 读取用于提取原始任务上下文
@@ -45,19 +45,19 @@ input_check_must_first:
   early_exit_condition: 只有审计报告不存在且无任何卡片需生成时，才提前结束并回复"无审计数据，跳过本次复核"；否则必须产出门控文件（即使无卡片）
 
 io:
-  input1_audit: auto_audit/{RUN}/{RUN}-stage4.md（取版本号 N 最大的一份）
-  input2_code_quality: auto_audit/{RUN}/{RUN}-stage3.md（若有，取版本号最大；🔴 严重项必须生成 BUG 卡片）
-  input3_integration: auto_audit/{RUN}/{RUN}-stage5.md（若有；❌ 项优先处理，生成修复卡片）
+  input1_audit: autodev/auto_audit/{RUN}/{RUN}-stage4.md（取版本号 N 最大的一份）
+  input2_code_quality: autodev/auto_audit/{RUN}/{RUN}-stage3.md（若有，取版本号最大；🔴 严重项必须生成 BUG 卡片）
+  input3_integration: autodev/auto_audit/{RUN}/{RUN}-stage5.md（若有；❌ 项优先处理，生成修复卡片）
   source_task: autodev/auto_iteration/{RUN}.md（用于提取原始任务上下文）
   template: autodev/auto_iteration/20260000tmp.md
   v2_contract:
     protocol: "autodev-flow v2.0 Contract Protocol"
     input_contract:
-      path: "autodev/contracts/{RUN}-stage3-review.yaml"
+      path: "autodev/contracts/stage3-review.yaml"
       schema: "template/contracts/review.schema.yaml"
-      usage: "可选读取，若存在则从中获取审查结论，辅助门控决策"
+      usage: "可选读取，获取上游代码审查总体结论与遗留问题"
     output_contract:
-      path: "autodev/contracts/{RUN}-stage6-gate.yaml"
+      path: "autodev/contracts/stage6-gate.yaml"
       schema: "template/contracts/gate.schema.yaml"
       action: "完成门控复核后写入，记录门控结论供后续追溯"
 
@@ -65,7 +65,7 @@ process_flow:
 
   step1_load_reports:
     v2_contract_read:
-      action: "读取 autodev/contracts/{RUN}-stage3-review.yaml（若存在），获取 review 阶段的 overall_result 作为门控参考"
+      action: "读取 autodev/contracts/stage3-review.yaml（若存在），获取 review 阶段的 overall_result 作为门控参考"
       impact: "若 overall_result=REJECTED，重点关注需修复项；若=PASSED，仅做例行复核"
     audit_report_focus:
       only: 整体结论为以下两种状态的任务
@@ -119,14 +119,14 @@ output:
   scheme_A: 门控文件 + 卡片合并，两份分离
 
   output1_gate_file:
-    path: auto_audit/{RUN}/{RUN}-stage6.md
-    content: 仅写「审计结论」一段，供 Stage 7（文档同步）门控读取
-    rule: 即使本次零异常也必须产出此文件（计数全 0）
-    multi_audit: 多次审计在文档后追加
-    template: |
-      ## 审计结论
-      - 源文档：autodev/auto_iteration/{RUN}.md
-      - 审计报告：auto_audit/{RUN}/{RUN}-stage4.md
+    path: autodev/auto_audit/{RUN}/{RUN}-stage6.md
+    schema: template/contracts/gate.schema.yaml
+    rules:
+      - 聚合 stage3/4/5 的阻塞状态写出整体 overall_result (PASSED/REJECTED)
+      - 若有 REJECTED/BLOCK，填充 next_action 的 trigger_stage="DEV"
+  merge_report_header:
+    comment: |
+      - 审计报告：autodev/auto_audit/{RUN}/{RUN}-stage4.md
       - 卡片已合并至：autodev/auto_iteration/{RUN}.md
       - 本次复核提取异常项：N 条（BUG: x, DEV: y, OPT: z）
       - 审计时间：实际时间, 年月日时分秒（北京时区 UTC+8)
@@ -148,15 +148,15 @@ card_template: |
 
   - **原任务编号**: 
   - **<描述 / 优化描述 / 开发内容>**：<原始需求要点 + 审计发现的问题概述>
-  - **修复建议**：
+  - **修复建议**:
   - **涉及文件列表**：<审计报告里引用的 文件:行号>（**最终版**，与产品经理的预估文件列表可能不同，以本项为准）
-  - **人工验证结果**：
+  - **人工验证结果**:
 
 reply_to_user:
   lang: 简洁中文
   content:
     - 审计报告命中异常 N 条（BUG: x, DEV: y, OPT: z）
-    - 门控文件：auto_audit/{RUN}/{RUN}-stage6.md
+    - 门控文件：autodev/auto_audit/{RUN}/{RUN}-stage6.md
     - 卡片已合并至：autodev/auto_iteration/{RUN}.md（将于下一轮由 Stage 2 自动接手处理）
 
 status_json_update:
@@ -173,10 +173,11 @@ v2_contract:
   protocol: "autodev-flow v2.0 Contract Protocol"
   stage_role: "Stage 6 (PM_GATE) — Graph 节点，消费上游 Stage 3 的 review 契约，产出 gate 契约供状态持久化"
   input_contract:
-    path: "autodev/contracts/{RUN}-stage3-review.yaml"
+    path: "autodev/contracts/stage3-review.yaml"
     schema: "template/contracts/review.schema.yaml"
-    usage: "可选读取，辅助门控复核决策"
+    usage: "可选读取，获取审查结论辅助门控决策"
   output_contract:
-    path: "autodev/contracts/{RUN}-stage6-gate.yaml"
+    path: "autodev/contracts/stage6-gate.yaml"
+    mode: "单文件全量覆盖（固定文件名，不带日期前缀）"
     schema: "template/contracts/gate.schema.yaml"
     requirement: "应产出，供 Stage 7（文档同步）门控判断读取"

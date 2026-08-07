@@ -14,70 +14,70 @@ nodes:
     instruction_file: "references/LLM-01-requirement-drafter.md"
     inputs: []
     outputs:
-      - "autodev/contracts/{RUN}-stage1-requirement.yaml"
+      - "autodev/contracts/stage1-requirement.yaml"
 
   - id: develop
     name: "代码实现"
     agent_role: "DEV"
     instruction_file: "references/LLM-02-developer.md"
     inputs:
-      - "autodev/contracts/{RUN}-stage1-requirement.yaml"
+      - "autodev/contracts/stage1-requirement.yaml"
     outputs:
-      - "autodev/contracts/{RUN}-stage2-codechange.yaml"
+      - "autodev/contracts/stage2-codechange.yaml"
 
   - id: review
     name: "代码审查"
     agent_role: "REVIEWER"
     instruction_file: "references/LLM-03-code-reviewer.md"
     inputs:
-      - "autodev/contracts/{RUN}-stage2-codechange.yaml"
+      - "autodev/contracts/stage2-codechange.yaml"
     outputs:
-      - "autodev/contracts/{RUN}-stage3-review.yaml"
+      - "autodev/contracts/stage3-review.yaml"
 
   - id: bug_fix
     name: "缺陷修补"
     agent_role: "DEV"
     instruction_file: "references/LLM-02-developer.md"
     inputs:
-      - "autodev/contracts/{RUN}-stage3-review.yaml"
+      - "autodev/contracts/stage3-review.yaml"
     outputs:
-      - "autodev/contracts/{RUN}-stage2-codechange.yaml"
+      - "autodev/contracts/stage2-codechange.yaml"
 
   - id: test_audit
     name: "需求验收审计"
     agent_role: "TESTER"
     instruction_file: "references/LLM-04-test-engineer.md"
     inputs:
-      - "autodev/contracts/{RUN}-stage3-review.yaml"
+      - "autodev/contracts/stage3-review.yaml"
     outputs:
-      - "autodev/contracts/{RUN}-stage4-testaudit.yaml"
+      - "autodev/contracts/stage4-testaudit.yaml"
 
   - id: integration_test
     name: "集成测试"
     agent_role: "INTEGRATION_TESTER"
     instruction_file: "references/LLM-05-integration-tester.md"
     inputs:
-      - "autodev/contracts/{RUN}-stage4-testaudit.yaml"
+      - "autodev/contracts/stage4-testaudit.yaml"
     outputs:
-      - "autodev/contracts/{RUN}-stage5-integration.yaml"
+      - "autodev/contracts/stage5-integration.yaml"
 
   - id: gate_check
     name: "门控复核"
     agent_role: "PM_GATE"
     instruction_file: "references/LLM-06-project-manager.md"
     inputs:
-      - "autodev/contracts/{RUN}-stage3-review.yaml"
-      - "autodev/contracts/{RUN}-stage4-testaudit.yaml"
-      - "autodev/contracts/{RUN}-stage5-integration.yaml"
+      - "autodev/contracts/stage3-review.yaml"
+      - "autodev/contracts/stage4-testaudit.yaml"
+      - "autodev/contracts/stage5-integration.yaml"
     outputs:
-      - "autodev/contracts/{RUN}-stage6-gate.yaml"
+      - "autodev/contracts/stage6-gate.yaml"
 
   - id: doc_engineer
     name: "文档同步"
     agent_role: "DOC_ENGINEER"
     instruction_file: "references/LLM-07-doc-engineer.md"
     inputs:
-      - "autodev/contracts/{RUN}-stage6-gate.yaml"
+      - "autodev/contracts/stage6-gate.yaml"
     outputs: []
 
 edges:
@@ -91,7 +91,7 @@ edges:
     to: bug_fix
     max_trigger_count: 3
     condition:
-      contract_ref: "autodev/contracts/{RUN}-stage3-review.yaml"
+      contract_ref: "autodev/contracts/stage3-review.yaml"
       field: "overall_result"
       operator: "=="
       value: "REJECTED"
@@ -102,7 +102,7 @@ edges:
   - from: review
     to: test_audit
     condition:
-      contract_ref: "autodev/contracts/{RUN}-stage3-review.yaml"
+      contract_ref: "autodev/contracts/stage3-review.yaml"
       field: "overall_result"
       operator: "=="
       value: "PASSED"
@@ -110,7 +110,7 @@ edges:
   - from: review
     to: test_audit
     condition:
-      contract_ref: "autodev/contracts/{RUN}-stage3-review.yaml"
+      contract_ref: "autodev/contracts/stage3-review.yaml"
       field: "overall_result"
       operator: "=="
       value: "BLOCK"
@@ -128,7 +128,7 @@ edges:
   - from: gate_check
     to: doc_engineer
     condition:
-      contract_ref: "autodev/contracts/{RUN}-stage6-gate.yaml"
+      contract_ref: "autodev/contracts/stage6-gate.yaml"
       field: "overall_result"
       operator: "=="
       value: "PASSED"
@@ -157,12 +157,12 @@ edges:
 
 | 契约文件 | 生产者 | 消费者 |
 |----------|--------|--------|
-| `autodev/contracts/{RUN}-stage1-requirement.yaml` | Stage 1 (PM) | Stage 2 (DEV) |
-| `autodev/contracts/{RUN}-stage2-codechange.yaml` | Stage 2 (DEV) | Stage 3 (REVIEWER) |
-| `autodev/contracts/{RUN}-stage3-review.yaml` | Stage 3 (REVIEWER) | Graph 引擎（条件分支）+ Stage 4/6 |
-| `autodev/contracts/{RUN}-stage4-testaudit.yaml` | Stage 4 (TESTER) | Stage 5 (INTEGRATION) |
-| `autodev/contracts/{RUN}-stage5-integration.yaml` | Stage 5 (INTEGRATION) | Stage 6 (GATE) |
-| `autodev/contracts/{RUN}-stage6-gate.yaml` | Stage 6 (GATE) | Stage 7 (文档同步) 门控判断 |
+| `autodev/contracts/stage1-requirement.yaml` | Stage 1 (PM) | Stage 2 (DEV) |
+| `autodev/contracts/stage2-codechange.yaml` | Stage 2 (DEV) | Stage 3 (REVIEWER) |
+| `autodev/contracts/stage3-review.yaml` | Stage 3 (REVIEWER) | Graph 引擎（条件分支）+ Stage 4/6 |
+| `autodev/contracts/stage4-testaudit.yaml` | Stage 4 (TESTER) | Stage 5 (INTEGRATION) |
+| `autodev/contracts/stage5-integration.yaml` | Stage 5 (INTEGRATION) | Stage 6 (GATE) |
+| `autodev/contracts/stage6-gate.yaml` | Stage 6 (GATE) | Stage 7 (文档同步) 门控判断 |
 
 契约模板文件位于 `template/contracts/`：
 - `requirement.schema.yaml` — 需求拟定契约

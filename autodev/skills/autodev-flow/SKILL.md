@@ -70,7 +70,7 @@ bash autodev/status.sh
 - `python3 <skill-dir>/scripts/graph_runner.py check-update` — 检查 Skill 是否有最新版本
 - `python3 <skill-dir>/scripts/graph_runner.py upgrade` — 执行 Skill 平滑升级（遵循产物隔离原则，不触碰 contracts 契约数据）
 - `python3 <skill-dir>/scripts/graph_runner.py rollback` — 升级异常时从快照备份回滚 Skill
-- 每个 Agent 完成后写入对应契约文件（`autodev/contracts/{RUN}-stage*.yaml`）
+- 每个 Agent 完成后写入对应契约文件（`autodev/contracts/stage*.yaml`）
 - review 契约的 `overall_result` 驱动分支：PASSED→test_audit, REJECTED→bug_fix
 - 无契约或值不匹配时走 `is_default` 降级边
 
@@ -100,13 +100,13 @@ autodev/
 ├── state.yaml                 # v2.0 全局状态机（记录 overall_status、run_id、edge_trigger_counts 等）
 ├── status.sh                  # 状态查看脚本（Stage 0 自动拷贝）
 ├── contracts/                 # v2.0 阶段产物契约（Agent 按阶段写入）
-│   ├── {RUN}-stage1-requirement.yaml
-│   ├── {RUN}-stage2-codechange.yaml
-│   ├── {RUN}-stage3-review.yaml
-│   ├── {RUN}-stage4-testaudit.yaml
-│   ├── {RUN}-stage5-integration.yaml
-│   ├── {RUN}-stage6-gate.yaml
-│   └── {RUN}-stage7-doc_engineer.yaml
+│   ├── stage1-requirement.yaml
+│   ├── stage2-codechange.yaml
+│   ├── stage3-review.yaml
+│   ├── stage4-testaudit.yaml
+│   ├── stage5-integration.yaml
+│   ├── stage6-gate.yaml
+│   └── stage7-doc_engineer.yaml
 ├── workflows/                 # v2.0 工作流图实例（由 graph_runner.py init 生成）
 │   └── active-workflow.yaml
 ├── auto_iteration/            # 任务跟踪文档

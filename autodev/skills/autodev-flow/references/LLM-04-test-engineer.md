@@ -18,7 +18,7 @@ duty:
 core_iron_rule:
   principle: 判断依据 = 源文档当前状态，永远不是历史报告的判断
   scope_source: 由 autodev/auto_iteration/{RUN}.md 当前的 ### 任务编号 标题里 | ✅ 已完成 | 决定
-  history_role: 历史报告（auto_audit/{RUN}/{RUN}-stage4.md）只用于提取遗留项，不用于决定哪些任务该审
+  history_role: 历史报告（autodev/auto_audit/{RUN}/{RUN}-stage4.md）只用于提取遗留项，不用于决定哪些任务该审
   transitions_must_audit:
     - 源文档某项 🟡 → ✅ → 本次必须纳入审计
     - 源文档某项 ✅ → 🟡/❌ → 本次必须审计变更
@@ -42,12 +42,12 @@ exec_modes:
   decide_before_each_run: 每次启动前先判断
 
   mode_A_first:
-    when: auto_audit/{RUN}/{RUN}-stage4.md 不存在
+    when: autodev/auto_audit/{RUN}/{RUN}-stage4.md 不存在
     action: 走原有"审计流程"全量审计源文档中所有 ✅ 已完成 任务
-    output: auto_audit/{RUN}/{RUN}-stage4.md
+    output: autodev/auto_audit/{RUN}/{RUN}-stage4.md
 
   mode_B_repeat:
-    when: auto_audit/{RUN}/{RUN}-stage4.md 存在
+    when: autodev/auto_audit/{RUN}/{RUN}-stage4.md 存在
     strict_4_steps:
 
       step1_scan_source_current:
@@ -68,7 +68,7 @@ exec_modes:
         b: 源文档当前 ✅ 但历史报告从未审计过的任务 → 视为新增范围，必须审计
         c: 源文档状态相对历史报告有变化的任务（🟡→✅、✅→🟡/❌）→ 必须审计
         calc_steps_explicit:
-          1: 提取历史报告审计过的任务编号集合（含 autopush 前缀卡片）grep -hE "^### (autopush-)?20[0-9]{6}-(BUG|OPT|DEV)-[0-9]+" auto_audit/{RUN}/{RUN}-stage4.md | sed 's/### //' | cut -d'|' -f1 | tr -d ' ' | sort -u
+          1: 提取历史报告审计过的任务编号集合（含 autopush 前缀卡片）grep -hE "^### (autopush-)?20[0-9]{6}-(BUG|OPT|DEV)-[0-9]+" autodev/auto_audit/{RUN}/{RUN}-stage4.md | sed 's/### //' | cut -d'|' -f1 | tr -d ' ' | sort -u
           2: 提取源文档当前 ✅ 任务编号集合（含 autopush 前缀卡片）grep -nE "^### (autopush-)?20[0-9]{6}-(BUG|OPT|DEV)-[0-9]+" autodev/auto_iteration/{RUN}.md | grep "✅ 已完成" | sed 's/^[0-9]*://' | sed 's/### //' | cut -d'|' -f1 | tr -d ' ' | sort -u
           3: 差集 (b) = 步骤2结果 - 步骤1结果
           4: 状态变化检测 (c) = 提取源文档所有任务编号及其当前状态；对每个也在历史报告中出现过的任务编号，对比历史报告中该任务的状态（从历史报告该任务的 ### 标题行提取状态标记）；若状态不一致（如源文档 ✅ 但历史报告 ⚠️），纳入变化集合
@@ -81,11 +81,11 @@ exec_modes:
         - 仍存在/未修复：保留 ⚠️/❌ 状态，注明"本次复核仍存在"
         - 新发现的问题：作为新增项加入报告
         - 对所有本次审过的 ✅ 任务，检查"人工验证结果"字段：含"存在bug"/"不通过"等关键词的，写入报告
-        - output: auto_audit/{RUN}/{RUN}-stage4.md
+        - output: autodev/auto_audit/{RUN}/{RUN}-stage4.md
 
 code_quality_report_ref:
   when: 审计前必须先读
-  read: auto_audit/{RUN}/{RUN}-stage3.md（代码质量审查报告）
+  read: autodev/auto_audit/{RUN}/{RUN}-stage3.md（代码质量审查报告）
   has_severe:
     action: 在审计结论中标注"⚠️ 代码质量审查发现严重问题，建议复核：{问题描述}（{文件:行号}）"
     file_overlap: 严重问题涉及当前审计任务（文件重叠）→ 该任务标记 ⚠️ 或 🔍，注明"代码质量审查发现严重问题，需开发工程师修复后再审计"
@@ -156,7 +156,8 @@ status_json_update:
     - 用 Write 写回（覆盖写入，保留其他 Stage 状态）
 
 v2_contract_output:
-  action: "编写 autodev/contracts/{RUN}-stage4-testaudit.yaml"
+  action: "编写 autodev/contracts/stage4-testaudit.yaml"
+  mode: "单文件全量覆盖（固定文件名，不带日期前缀）"
   schema_ref: "template/contracts/test-audit.schema.yaml"
   field_rules:
     overall_result: "PASSED（所有审计任务通过）/ REJECTED（有关键审计项失败）/ BLOCK（审计处理异常阻断）"

@@ -287,29 +287,29 @@ fi
 cp "$ROOT_DIR/scripts/upgrade-agent.py"     "$STAGE_DIR/assets/upgrade-agent.py"
 chmod +x "$STAGE_DIR/assets/upgrade-agent.py"
 
-if [ ! -f "$ROOT_DIR/scripts/upgrade-agent.service" ]; then
-    err "$ROOT_DIR/scripts/upgrade-agent.service 不存在，无法发布"
+if [ ! -f "$ROOT_DIR/config/systemd/upgrade-agent.service" ]; then
+    err "$ROOT_DIR/config/systemd/upgrade-agent.service 不存在，无法发布"
     exit 1
 fi
-cp "$ROOT_DIR/scripts/upgrade-agent.service" "$STAGE_DIR/assets/upgrade-agent.service"
+cp "$ROOT_DIR/config/systemd/upgrade-agent.service" "$STAGE_DIR/assets/upgrade-agent.service"
 info "  upgrade-agent.py + upgrade-agent.service added"
 
 # ============= 4.7 打包 nginx 配置模板 =============
 # HTTPS 流程(deploy-server.sh step 9.5)需要这两个模板
-# 配置文件来源: docs/nginx/ 是设计文档, 这里是部署物料
+# 配置文件来源: config/nginx/ 部署物料模板
 info "=== 4.7 Packing nginx templates ==="
-if [ ! -f "$ROOT_DIR/docs/nginx/nginx-http.conf" ] || [ ! -f "$ROOT_DIR/docs/nginx/nginx-https.conf" ]; then
-    err "docs/nginx/nginx-http.conf or nginx-https.conf not found"
+if [ ! -f "$ROOT_DIR/config/nginx/nginx-http.conf" ] || [ ! -f "$ROOT_DIR/config/nginx/nginx-https.conf" ]; then
+    err "config/nginx/nginx-http.conf or nginx-https.conf not found"
     err "  (HTTPS flow requires these templates)"
     exit 1
 fi
-cp "$ROOT_DIR/docs/nginx/nginx-http.conf"   "$STAGE_DIR/assets/nginx-http.conf"
-cp "$ROOT_DIR/docs/nginx/nginx-https.conf"  "$STAGE_DIR/assets/nginx-https.conf"
+cp "$ROOT_DIR/config/nginx/nginx-http.conf"   "$STAGE_DIR/assets/nginx-http.conf"
+cp "$ROOT_DIR/config/nginx/nginx-https.conf"  "$STAGE_DIR/assets/nginx-https.conf"
 info "  nginx-http.conf + nginx-https.conf added"
 
 # ============= 4.8 打包 Docker 部署物料 =============
 info "=== 4.8 Packing Docker templates ==="
-DOCKER_SRC="$ROOT_DIR/docs/deployment/docker/local-sim"
+DOCKER_SRC="$ROOT_DIR/config/docker"
 if [ -f "$DOCKER_SRC/Dockerfile" ]; then
     cp "$DOCKER_SRC/Dockerfile"           "$STAGE_DIR/assets/Dockerfile"
     cp "$DOCKER_SRC/supervisord.conf"     "$STAGE_DIR/assets/supervisord.conf"

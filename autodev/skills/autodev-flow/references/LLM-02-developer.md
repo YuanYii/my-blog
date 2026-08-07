@@ -28,7 +28,7 @@ process_order:
   run_context_detection:
     purpose: LLM-02-developer.md 被两个 Graph 节点复用——develop（首次开发）和 bug_fix（审查打回修复）。Agent 必须在开始任务处理前检测当前是哪个节点触发的，以正确过滤任务范围
     method:
-      check: 读取 autodev/contracts/{RUN}-stage3-review.yaml
+      check: 读取 autodev/contracts/stage3-review.yaml
       bug_fix_mode: 文件存在 且 overall_result == "REJECTED" → 当前是 bug_fix 节点（审查打回修复）
       develop_mode: 文件不存在 或 overall_result != "REJECTED" → 当前是 develop 节点（首次开发）
     bug_fix_mode.only_scope: |
@@ -44,8 +44,8 @@ process_order:
       2. LLM06 上轮回种的 autopush-* 卡片（上轮闭环遗留）
       不处理 LLM03 severe_replant 标记为 🟡 的卡片（那是 bug_fix 节点的事，本次跑 review→bug_fix 闭环时由 bug_fix 节点处理）
   pre_read_contract:
-    bug_fix_mode: 读取 autodev/contracts/{RUN}-stage3-review.yaml，获取 overall_result 和 issues 列表作为修复依据
-    develop_mode: 读取 autodev/contracts/{RUN}-stage1-requirement.yaml（若存在），获取需求范围、验收标准、约束条件作为开发依据；若不存在则仅依据 auto_iteration/{RUN}.md 中的任务卡片
+    bug_fix_mode: 读取 autodev/contracts/stage3-review.yaml，获取 overall_result 和 issues 列表作为修复依据
+    develop_mode: 读取 autodev/contracts/stage1-requirement.yaml（若存在），获取需求范围、验收标准、约束条件作为开发依据；若不存在则仅依据 auto_iteration/{RUN}.md 中的任务卡片
   sequence: BUG → OPT → DEV
   same_level: 按优先级(高→中→低) → 上报时间
   skip_dev_if: 当日存在执行失败的高优先级 BUG → 跳过所有 DEV 任务
@@ -111,7 +111,7 @@ output:
     - 未完成任务：{任务ID 及原因}（无则省略）
 
   v2_contract_output:
-    action: "完成所有任务处理、编译验证、写入处理报告后，编写 autodev/contracts/{RUN}-stage2-codechange.yaml，格式参考 autodev-flow/template/contracts/code-change.schema.yaml，如实填写 modified_artifacts 和 verification"
+    action: "完成所有任务处理、编译验证、写入处理报告后，编写 autodev/contracts/stage2-codechange.yaml，格式参考 autodev-flow/template/contracts/code-change.schema.yaml，如实填写 modified_artifacts 和 verification"
 cross_day_reminder:
   scan: autodev/auto_iteration/ 下所有日期的 md
   collect: 🔴 未完成任务
@@ -143,10 +143,11 @@ v2_contract:
   protocol: "autodev-flow v2.0 Contract Protocol"
   stage_role: "Stage 2 (DEV) — Graph 节点，消费上游 Stage 1 的 requirement 契约，产出 code-change 契约供下游 Stage 3 (REVIEWER) 消费"
   input_contract:
-    path: "autodev/contracts/{RUN}-stage1-requirement.yaml"
+    path: "autodev/contracts/stage1-requirement.yaml"
     schema: "template/contracts/requirement.schema.yaml"
-    usage: "可选读取，若存在则从中获取需求范围与验收标准辅助开发"
+    usage: "可选读取，获取上游需求卡片内容、验收标准与约束"
   output_contract:
-    path: "autodev/contracts/{RUN}-stage2-codechange.yaml"
+    path: "autodev/contracts/stage2-codechange.yaml"
+    mode: "单文件全量覆盖（固定文件名，不带日期前缀）"
     schema: "template/contracts/code-change.schema.yaml"
     requirement: "必须产出，供 graph_runner.py 的条件求值和下游节点使用"

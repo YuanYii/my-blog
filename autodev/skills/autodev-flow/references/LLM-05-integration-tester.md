@@ -31,7 +31,7 @@ date_vars:
 
 input_check_must_first:
   step1:
-    check: 审计报告 auto_audit/{RUN}/{RUN}-stage4.md 是否存在
+    check: 审计报告 autodev/auto_audit/{RUN}/{RUN}-stage4.md 是否存在
     exists: 读取所有 🔍 项，正常执行
     not_exists: 结束，回复"审计报告不存在，跳过集成测试"，不生成集成测试报告
   step2:
@@ -89,8 +89,8 @@ auto_start_logic:
   write_to: 前置检查结果写入报告「环境说明」章节
 
 io:
-  input1: auto_audit/{RUN}/{RUN}-stage4.md（取当天的审计报告，读取其中所有 🔍 项）
-  output: auto_audit/{RUN}/{RUN}-stage5.md（单文件覆盖，重跑直接覆盖）
+  input1: autodev/auto_audit/{RUN}/{RUN}-stage4.md（取当天的审计报告，读取其中所有 🔍 项）
+  output: autodev/auto_audit/{RUN}/{RUN}-stage5.md（单文件覆盖，重跑直接覆盖）
 
 verify_types:
 
@@ -137,7 +137,7 @@ verify_types:
 
 process_flow:
   step1_load:
-    read: auto_audit/{RUN}/{RUN}-stage4.md
+    read: autodev/auto_audit/{RUN}/{RUN}-stage4.md
     extract: 所有状态为 🔍 的任务项
     no_search: 输出空报告（汇总 0 项），回复"无 🔍 项，无需集成测试"
   step2_record_ports:
@@ -148,17 +148,20 @@ process_flow:
       REDIS_PORT: 实际 {{TECH_CACHE}} 端口（默认 {{PORT_REDIS}}，若被占用则为替代端口）
     rule: 后续所有验证步骤必须使用这些实际端口，不能硬编码默认端口
   step3_verify_per_item:
-    per_item:
-      - 读取「建议验证方式」字段，确定验证类型（A/B/C/D）
-      - 按「操作指引」执行验证
-      - 记录结论（✅/❌）和证据
+    read: autodev/auto_audit/{RUN}/{RUN}-stage4.md
+    extract: 所有 🔍 类型的任务
+    execute: 依次按照 校验维度 逻辑进行动态验证/抓包/数据库比对等动作
+    summarize: 汇总验证结果（✅ 机制验证通过 / ❌ 失败 / ⚠️ 异常）
+    mkdir_before_write: mkdir -p autodev/auto_audit/{RUN}/
+    note: 输出格式说明中代码块包裹只为提示词区分，实际写入文件时不要加代码块包裹
+    write: autodev/auto_audit/{RUN}/{RUN}-stage5.md
   step4_output:
-    mkdir_before_write: mkdir -p auto_audit/{RUN}/
-    write: auto_audit/{RUN}/{RUN}-stage5.md
+    mkdir_before_write: mkdir -p autodev/auto_audit/{RUN}/
+    write: autodev/auto_audit/{RUN}/{RUN}-stage5.md
 
 output_template: |
-  # 集成测试报告 · {RUN}
-  **基于审计报告**：`auto_audit/{RUN}/{RUN}-stage4.md`
+  # 深度抓包与机制验证报告 · {RUN}
+  **基于审计报告**：`autodev/auto_audit/{RUN}/{RUN}-stage4.md`
   **生成时间**：{实际操作时间，北京时区 UTC+8}
   ---
   ## 环境说明
@@ -218,7 +221,8 @@ status_json_update:
     - 用 Write 写回（覆盖写入，保留其他 Stage 状态）
 
 v2_contract_output:
-  action: "编写 autodev/contracts/{RUN}-stage5-integration.yaml"
+  action: "编写 autodev/contracts/stage5-integration.yaml"
+  mode: "单文件全量覆盖（固定文件名，不带日期前缀）"
   schema_ref: "template/contracts/integration-test.schema.yaml"
   field_rules:
     overall_result: "PASSED（所有集成测试项通过）/ FAILED（存在集成测试用例失败）/ BLOCK（环境异常阻断）"

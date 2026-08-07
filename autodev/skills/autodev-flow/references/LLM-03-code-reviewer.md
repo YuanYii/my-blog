@@ -36,15 +36,15 @@ io:
   input1: autodev/auto_iteration/{RUN}.md（提取 ✅ 已完成任务的涉及文件列表）
   input2: 各涉及文件的实际代码（读取文件内容）
   input3: AGENTS.md（项目规范，作为审查依据之一）
-  output: auto_audit/{RUN}/{RUN}-stage3.md（单文件覆盖，重跑直接覆盖）
+  output: autodev/auto_audit/{RUN}/{RUN}-stage3.md（单文件覆盖，重跑直接覆盖）
   v2_contract:
     protocol: "autodev-flow v2.0 Contract Protocol"
     input_contract:
-      path: "autodev/contracts/{RUN}-stage2-codechange.yaml"
+      path: "autodev/contracts/stage2-codechange.yaml"
       schema: "template/contracts/code-change.schema.yaml"
       usage: "可选读取，若存在则从中获取变更摘要与设计决策作为审查参考"
     output_contract:
-      path: "autodev/contracts/{RUN}-stage3-review.yaml"
+      path: "autodev/contracts/stage3-review.yaml"
       schema: "template/contracts/review.schema.yaml"
       action: "完成审查后写入，其 overall_result 字段驱动 Graph 分支流转 (PASSED→gate_check, REJECTED→bug_fix)"
 
@@ -97,11 +97,11 @@ process_flow:
       - 按三个维度逐项检查
       - 记录问题（文件:行号 + 问题描述 + 严重级别）
   step3_output:
-    mkdir_before_write: mkdir -p auto_audit/{RUN}/
+    mkdir_before_write: mkdir -p autodev/auto_audit/{RUN}/
     note: 输出格式说明中代码块包裹只为提示词区分，实际写入文件时不要加代码块包裹
-    write: auto_audit/{RUN}/{RUN}-stage3.md
+    write: autodev/auto_audit/{RUN}/{RUN}-stage3.md
     v2_contract_output:
-      action: "编写 autodev/contracts/{RUN}-stage3-review.yaml"
+      action: "编写 autodev/contracts/stage3-review.yaml"
       schema_ref: "template/contracts/review.schema.yaml"
       field_rules:
         overall_result: "PASSED（无🔴严重问题）/ REJECTED（有🔴严重问题）/ BLOCK（解析异常）"
@@ -146,7 +146,7 @@ output_template: |
   ## 说明
   - 本报告仅反映代码质量维度，不影响需求符合性审计（由测试工程师独立判断）
   - 🔴 严重问题建议在下一次开发迭代中优先修复
-  - 本报告会保存在 `auto_audit/{RUN}/` 目录，供后续追溯
+  - 本报告会保存在 `autodev/auto_audit/{RUN}/` 目录，供后续追溯
 
 exception_handling:
   table:
@@ -175,17 +175,18 @@ forbidden:
   - 不独立生成任务卡片（🔴 严重问题通过"严重问题回种"机制写入追踪文档 BUG 区段，由项目经理在下轮合并时统一处理）
   - 不对 🟡/🟢 问题强制要求修复（只报告，不阻塞）
   - 🟡/🟢 问题的审查结论不写入 autodev/auto_iteration/ 下的追踪文档
-    location: 报告独立存放 auto_audit/{RUN}/
+    location: 报告独立存放 autodev/auto_audit/{RUN}/
     severe_replant: 🔴 严重问题摘要按"严重问题回种"机制写入追踪文档 BUG 区段
 
 v2_contract:
   protocol: "autodev-flow v2.0 Contract Protocol"
   stage_role: "Stage 3 (REVIEWER) — Graph 节点，消费上游 Stage 2 的 code-change 契约，产出 review 契约驱动分支流转"
   input_contract:
-    path: "autodev/contracts/{RUN}-stage2-codechange.yaml"
+    path: "autodev/contracts/stage2-codechange.yaml"
     schema: "template/contracts/code-change.schema.yaml"
     usage: "可选读取，若存在则从中获取变更摘要，辅助审查决策"
   output_contract:
-    path: "autodev/contracts/{RUN}-stage3-review.yaml"
+    path: "autodev/contracts/stage3-review.yaml"
+    mode: "单文件全量覆盖（固定文件名，不带日期前缀）"
     schema: "template/contracts/review.schema.yaml"
     requirement: "必须产出，graph_runner.py 依赖 overall_result 字段进行条件分支判定"

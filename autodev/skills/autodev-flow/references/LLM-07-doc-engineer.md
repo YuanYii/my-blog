@@ -12,8 +12,8 @@ date_vars:
   RUN: 本脚本运行日 (北京时区 UTC+8)，例 20260707
 
 gate_enhanced:
-  read_first: autodev/contracts/{RUN}-stage6-gate.yaml（v2.0 门控契约结构化数据源）
-  fallback_read: auto_audit/{RUN}/{RUN}-stage6.md（v1.0 Markdown 文本报告兜底）
+  read_first: autodev/contracts/stage6-gate.yaml（v2.0 门控契约结构化数据源）
+  fallback_read: autodev/auto_audit/{RUN}/{RUN}-stage6.md（v1.0 Markdown 文本报告兜底）
   not_exists:
     fallback:
       a: 检查 autodev/auto_iteration/{RUN}.md 是否存在
@@ -33,7 +33,7 @@ watcher_logic:
   type: 增量同步
   steps:
     1: 完成 {RUN}-stage6.md 的处理后（或发现它不存在后）
-    2: 扫描 auto_audit/ 下所有 {D}-stage6.md
+    2: 扫描 autodev/auto_audit/ 下所有 {D}-stage6.md
     3: 提取文件名中的日期 D（格式 YYYYMMDD）
     4: 若 D < RUN 且 autodev/auto_iteration/{D}.md 中无文档工程师产出的「文档同步状态：完成」标记（即该追踪文档尚未被同步过）
        action: 对 {D}-stage6.md 重复执行门控检查 + 同步流程
@@ -134,7 +134,7 @@ pipeline_status_render:
   must_do: 必做，与流程状态更新一并执行
   principle: status.json 是流水线状态的唯一真相源
   action: 更新 status.json 后，从 JSON 渲染出 markdown 表格，整段覆盖到追踪文档 autodev/auto_iteration/{RUN}.md 末尾的「## 工作流状态｜{RUN}」段
-  purpose: 读者打开追踪文档时一眼看完 7 个 stage 状态，不必去翻 auto_audit/ 下的多份报告
+  purpose: 读者打开追踪文档时一眼看完 7 个 stage 状态，不必去翻 autodev/auto_audit/ 下的多份报告
 
   render_rules:
     status_emoji_map:

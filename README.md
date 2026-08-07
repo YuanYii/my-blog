@@ -17,7 +17,7 @@
   - **系统运维**：仪表盘 KPI 聚合与访客 IP 归属地统计、设备授权管理、全站 IP 限流与封禁、全局审计日志。
   - **数据与升级**：数据库 AES-256 加密备份与恢复、管理后台 Web UI 一键升级（含流式日志与失败回滚）。
 - **极简极轻架构**：默认嵌入式 SQLite 数据库，无需安装复杂的数据库服务，1C2G VPS 即可流畅运行。
-- **前后端分离与自定义扩展**：基于标准的 RESTful API 架构，业务逻辑与 UI 交互彻底解耦。提供全量 92 个 API 端点规范文档（详见 [docs/API接口与自定义前端开发指南.md](docs/API接口与自定义前端开发指南.md)），支持开发者零门槛自定义扩展移动端小程序、桌面客户端或个性化前端主题。
+- **前后端分离与自定义扩展**：基于标准的 RESTful API 架构，业务逻辑与 UI 交互彻底解耦。提供全量 92 个 API 端点规范文档（详见 [docs/2-guides/03-API接口与自定义前端开发指南.md](docs/2-guides/03-API接口与自定义前端开发指南.md)），支持开发者零门槛自定义扩展移动端小程序、桌面客户端或个性化前端主题。
 
 ---
 
@@ -134,29 +134,22 @@ curl -s http://127.0.0.1:28080/api/v1/health
 
 ```text
 my-blog/
+├── config/                               # 统一运维部署与运行配置文件 (Nginx/Docker/Systemd/Env)
+├── sql/                                  # 数据库 Schema 定义与增量迁移脚本 (schema/migrations/upgrade.sql)
+├── docs/                                 # 100% 纯 Markdown 技术文档库 (架构/操作手册/审计报告)
+│   ├── 1-architecture/                   # 架构设计与演进路线图
+│   ├── 2-guides/                         # 运维部署与开发指南
+│   └── 3-reports/                        # 契约审计与故障记录
+├── scripts/                              # 运维自动化 Shell/Python 脚本
 ├── backend/                              # Spring Boot 多模块后端
-│   ├── blog-common/                      # 公共工具类 (Result, ExceptionHandler, TraceId)
-│   ├── blog-auth/                        # 认证授权 (JWT, 设备白名单, IP封禁, 审计日志)
-│   ├── blog-article/                     # 文章 / 分类 / 标签 / 浏览统计
-│   ├── blog-comment/                     # 评论管理
-│   ├── blog-settings/                    # 站点设置 / 文件上传 / 数据备份与恢复
-│   └── blog-app/                         # 启动入口与 UpgradeController
-│
-├── frontend/                             # Nuxt 3 静态前端
-│   ├── assets/ & components/             # 设计 System 与 UI 组件
-│   ├── composables/                      # 组合式 API (useAuth, useAdminApi 等)
-│   ├── pages/                            # 前台页面 + Admin 后台 + Settings 路由
-│   └── nuxt.config.ts                    # 预渲染与打包配置
-│
-├── scripts/                              # 运维自动化脚本 (一键部署/加密备份/导入导出)
-└── docs/                                 # 架构设计文档、Changelog 及 SQL Schema
+└── frontend/                             # Nuxt 3 静态前端
 ```
 
 ---
 
 ## 五、生产部署与运维
 
-> 详细部署手册与更多复杂场景说明请查阅：[`docs/项目部署操作手册.md`](docs/项目部署操作手册.md)。
+> 详细部署手册与更多复杂场景说明请查阅：[`docs/2-guides/01-项目部署操作手册.md`](docs/2-guides/01-项目部署操作手册.md)。
 
 ### 5.1 核心运维命令速查
 

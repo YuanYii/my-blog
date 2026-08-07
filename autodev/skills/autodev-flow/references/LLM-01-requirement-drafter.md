@@ -38,7 +38,8 @@ io:
   v2_contract:
     protocol: "autodev-flow v2.0 Contract Protocol"
     output_contract:
-      path: "autodev/contracts/{RUN}-stage1-requirement.yaml"
+      path: "autodev/contracts/stage1-requirement.yaml"
+      mode: "单文件全量覆盖（固定文件名，不带日期前缀）"
       schema: "template/contracts/requirement.schema.yaml"
       action: "完成需求拟定并写入 auto_iteration 后，根据任务卡片内容编写该契约，供下游 Stage 2 (DEV) 消费"
       schema_path: 读取 autodev-flow/template/contracts/requirement.schema.yaml 作为格式参考。若 autodev-flow/ 不在项目根目录，则按 SKILL.md 所在目录的相对路径（即 {SKILL_DIR}/template/contracts/requirement.schema.yaml）查找
@@ -141,7 +142,7 @@ process_flow:
     after: 完成 step6_output_and_reply 及其 output3_status 后
     action:
       - "mkdir -p autodev/contracts/"
-      - "根据已生成的任务卡片内容，编写 autodev/contracts/{RUN}-stage1-requirement.yaml"
+      - "根据已生成的任务卡片内容，编写 autodev/contracts/stage1-requirement.yaml"
       - "格式参考 template/contracts/requirement.schema.yaml"
       - "requirement.title 填写本批需求的概要标题"
       - "requirement.type 根据任务类型填充 (FEATURE/BUGFIX/REFACTOR/OPTIMIZE)"

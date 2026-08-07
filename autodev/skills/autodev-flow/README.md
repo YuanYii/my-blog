@@ -204,13 +204,13 @@ autodev-flow 把 SDLC 的工程纪律搬进 AI 对话里 —— 不是限制 AI�
 
 | 节点 | Stage | 角色 | 指令文件 | 契约输出 | 驱动规则 |
 |------|-------|------|----------|----------|----------|
-| requirement | Stage 1 | PM | `references/LLM-01-requirement-drafter.md` | `{RUN}-stage1-requirement.yaml` | → develop（无条件） |
-| develop | Stage 2 | DEV | `references/LLM-02-developer.md` | `{RUN}-stage2-codechange.yaml` | → review（无条件） |
-| review | Stage 3 | REVIEWER | `references/LLM-03-code-reviewer.md` | `{RUN}-stage3-review.yaml` | overall_result → PASSED / REJECTED / BLOCK |
+| requirement | Stage 1 | PM | `references/LLM-01-requirement-drafter.md` | `stage1-requirement.yaml` | → develop（无条件） |
+| develop | Stage 2 | DEV | `references/LLM-02-developer.md` | `stage2-codechange.yaml` | → review（无条件） |
+| review | Stage 3 | REVIEWER | `references/LLM-03-code-reviewer.md` | `stage3-review.yaml` | overall_result → PASSED / REJECTED / BLOCK |
 | bug_fix | — | DEV | `references/LLM-02-developer.md` | 回写 codechange 契约 | → review（回环，最多 3 轮） |
-| test_audit | Stage 4 | TESTER | `references/LLM-04-test-engineer.md` | `{RUN}-stage4-testaudit.yaml` | → integration_test（无条件） |
-| integration_test | Stage 5 | INTEG | `references/LLM-05-integration-tester.md` | `{RUN}-stage5-integration.yaml` | → gate_check（无条件） |
-| gate_check | Stage 6 | PM_GATE | `references/LLM-06-project-manager.md` | `{RUN}-stage6-gate.yaml` | overall_result → PASSED / BLOCKED |
+| test_audit | Stage 4 | TESTER | `references/LLM-04-test-engineer.md` | `stage4-testaudit.yaml` | → integration_test（无条件） |
+| integration_test | Stage 5 | INTEG | `references/LLM-05-integration-tester.md` | `stage5-integration.yaml` | → gate_check（无条件） |
+| gate_check | Stage 6 | PM_GATE | `references/LLM-06-project-manager.md` | `stage6-gate.yaml` | overall_result → PASSED / BLOCKED |
 | doc_engineer | Stage 7 | DOC | `references/LLM-07-doc-engineer.md` | — | 终节点 |
 
 > 注：前置初始化阶段 Stage 0 对应指令文件 `references/LLM-00-project-detect.md`。
@@ -222,7 +222,7 @@ autodev-flow 把 SDLC 的工程纪律搬进 AI 对话里 —— 不是限制 AI�
 以 review 契约为例 —— **一个字段决定 4 条边的路由**：
 
 ```yaml
-# autodev/contracts/{RUN}-stage3-review.yaml
+# autodev/contracts/stage3-review.yaml
 version: "2.0"
 overall_result: "PASSED"  # ← 这个字段决定了 review 节点后走哪条边
 metrics:
