@@ -226,14 +226,7 @@ curl -X POST http://localhost:8080/api/v1/admin/upgrade/execute \
 | `scripts/sqlite-import.sh` | prod 解密导入 db（**只支持 .enc**，错密码不碰目标 db） | 🟠 重要 |
 | `scripts/blog-backup.sh` | 备份脚本（db+uploads 加密打包 → 推 GitHub Release） | 🟠 重要 |
 | `scripts/migrate-logs.sh` | 历史日志迁移（v4.0.0~v4.3.0 旧日志归档到 archive/YYYY-MM/） | 🟡 可选 |
-| `scripts/sudoers-myblog-restore.example` | sudoers 白名单（5 条精确命令，**无通配符**） | 🔴 必读 |
-| `docs/design/博客数据恢复方案设计.md` | 恢复功能设计稿（v5 设计稿，5 轮迭代） | 🟠 重要 |
-| `scripts/publish-release.sh` | 本地打包 + 发布到 GitHub Release（`EXPORT_DB=1` 钩子） | 🟠 重要 |
-| `scripts/deploy-server.sh` | 服务器端一键部署（v6.0.2：4 种 DEPLOY_MODE = `init` / `full` / `docker-create` / `docker-init`，外置开关 `IMPORT_DB=1` 灌数据；下载用 `releases/latest/download/`，执行时传版本号） | 🟠 重要 |
-| `scripts/upgrade-agent.py` | Python 升级代理（v5.3.0，监听 127.0.0.1:28081，SSE 流式日志，接收升级请求并调用 deploy-server.sh） | 🟠 重要 |
-| `scripts/upgrade-agent.service` | upgrade-agent systemd 服务文件 | 🟡 可选 |
-| `scripts/universal-script.sh` | 通用数据刷数脚本（v6.0.2+，支持 slug-migrate 等任务，`DRY_RUN=1` 预览，先备份再改） | 🟠 重要 |
-| `backend/blog-app/.../upgrade/UpgradeController.java` | 升级控制器（5 端点：升级/状态/版本/历史/回滚） | 🟠 重要 |
+| `backend/blog-app/src/main/java/com/blog/upgrade/UpgradeController.java` | 升级控制器（5 端点：升级/状态/版本/历史/回滚） | 🟠 重要 |
 | `docs/design/系统升级方案设计.md` | 系统升级方案设计文档 | 🟠 重要 |
 | `docs/生产升级问题记录.md` | 生产环境升级问题记录（9 个问题及解决方案） | 🟠 重要 |
 | `docs/changelogs/` | 版本变更记录（v2.0.0 → v6.0.2） | 🟠 重要 |
@@ -256,7 +249,7 @@ curl -X POST http://localhost:8080/api/v1/admin/upgrade/execute \
 
 ### 12.1 权威源
 - **Maven `<revision>` 是项目唯一权威版本号**（`backend/pom.xml` line 32）
-- 当前 `<revision>` = **6.0.2**
+- 当前 `<revision>` = **6.1.0**
 - Git tag / 部署脚本 / 文档里的所有版本号必须与 `<revision>` **同步**（按 §12.3 工作流）
 
 ### 12.2 版本号引用分类（决定改 vs 不改）

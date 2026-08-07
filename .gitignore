@@ -150,3 +150,7 @@ frontend/test-results/
 config/mcporter.json
 __pycache__/
 *.pyc
+
+# 压缩包及离线归档文件
+autodev.zip
+

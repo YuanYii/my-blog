@@ -196,4 +196,4 @@ bash scripts/sqlite-import.sh /opt/myblog/db/blog.db /tmp/migration.sql.gz.enc #
 
 ## 六、开源协议
 
-本项目基于 [MIT License](LICENSE) 协议开源。欢迎提交 Issue 与 Pull Request！
+本项目基于 MIT License 协议开源。欢迎提交 Issue 与 Pull Request！
