@@ -39,12 +39,16 @@ class ArticleControllerTest extends BaseIntegrationTest {
     // ===== 公开端点 =====
 
     @Test
-    @DisplayName("GET /articles 公开列表 — 默认返回 published 文章")
+    @DisplayName("GET /articles 公开列表 — 默认返回 published 文章且脱敏（无 createdAt/updatedAt/status/contentMd）")
     void list_publicArticles() throws Exception {
         mockMvc.perform(get(BASE + "/articles"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.records").isArray());
+                .andExpect(jsonPath("$.data.records").isArray())
+                .andExpect(jsonPath("$.data.records[0].createdAt").doesNotExist())
+                .andExpect(jsonPath("$.data.records[0].updatedAt").doesNotExist())
+                .andExpect(jsonPath("$.data.records[0].status").doesNotExist())
+                .andExpect(jsonPath("$.data.records[0].contentMd").doesNotExist());
     }
 
     @Test
@@ -60,11 +64,15 @@ class ArticleControllerTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("GET /articles/{slug} 已发布文章详情")
+    @DisplayName("GET /articles/{slug} 已发布文章详情 — 包含 contentMd 且无 createdAt/updatedAt/status")
     void detail_publishedArticle_ok() throws Exception {
         mockMvc.perform(get(BASE + "/articles/test-article"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.slug").value("test-article"));
+                .andExpect(jsonPath("$.data.slug").value("test-article"))
+                .andExpect(jsonPath("$.data.contentMd").exists())
+                .andExpect(jsonPath("$.data.createdAt").doesNotExist())
+                .andExpect(jsonPath("$.data.updatedAt").doesNotExist())
+                .andExpect(jsonPath("$.data.status").doesNotExist());
     }
 
     @Test
@@ -76,11 +84,35 @@ class ArticleControllerTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("GET /articles/archives 归档列表")
+    @DisplayName("GET /articles/archives 归档列表 — 无 createdAt/updatedAt/status/contentMd")
     void archives_returnsPublished() throws Exception {
         mockMvc.perform(get(BASE + "/articles/archives"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data").isArray());
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data[0].createdAt").doesNotExist())
+                .andExpect(jsonPath("$.data[0].updatedAt").doesNotExist())
+                .andExpect(jsonPath("$.data[0].status").doesNotExist())
+                .andExpect(jsonPath("$.data[0].contentMd").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("GET /articles/{id}/attachment 附件下载 — 草稿或软删文章拦截返回 404")
+    void attachment_draftOrDeleted_404() throws Exception {
+        // 创建草稿文章 (status=0) 并关联附件
+        jdbc.update("INSERT INTO article (id, title, slug, content_md, status, deleted, created_at, updated_at) " +
+                "VALUES (100, '草稿文章', 'draft-article', 'content', 0, 0, datetime('now'), datetime('now'))");
+        jdbc.update("INSERT INTO article_attachment (id, article_id, file_name, file_path, file_size, mime_type, deleted, created_at, updated_at) " +
+                "VALUES (100, 100, 'secret.zip', '2026/08/secret.zip', 1024, 'application/zip', 0, datetime('now'), datetime('now'))");
+
+        mockMvc.perform(get(BASE + "/articles/100/attachment"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(404));
+
+        // 软删文章 (status=1, deleted=1)
+        jdbc.update("UPDATE article SET status = 1, deleted = 1 WHERE id = 100");
+        mockMvc.perform(get(BASE + "/articles/100/attachment"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(404));
     }
 
     @Test
@@ -198,7 +230,7 @@ class ArticleControllerTest extends BaseIntegrationTest {
         Map<String, Object> data = (Map<String, Object>) om.readValue(resp, Map.class).get("data");
         long id = ((Number) data.get("id")).longValue();
 
-        mockMvc.perform(get(BASE + "/articles/id/" + id)
+        mockMvc.perform(get(BASE + "/articles/admin/detail/" + id)
                         .header("Authorization", "Bearer " + adminToken)
                         .header("X-Device-Id", TEST_DEVICE_ID))
                 .andExpect(status().isOk())

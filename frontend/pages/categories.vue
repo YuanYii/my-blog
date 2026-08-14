@@ -160,7 +160,7 @@ onMounted(loadAll)
           <ul style="list-style: none; padding: 0;">
             <li v-for="a in filteredArticles" :key="a.id" style="padding: 10px 0; border-bottom: 1px dashed var(--line-soft);">
               <NuxtLink :to="`/post/${a.slug}`" style="color: var(--text); font-size: 15px;">{{ a.title }}</NuxtLink>
-              <span style="margin-left: 12px; color: var(--muted); font-size: 12px;">{{ formatDate(a.publishedAt || a.createdAt) }}</span>
+              <span style="margin-left: 12px; color: var(--muted); font-size: 12px;">{{ formatDate(a.publishedAt) }}</span>
             </li>
           </ul>
 

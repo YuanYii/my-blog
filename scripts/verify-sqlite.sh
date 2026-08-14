@@ -78,7 +78,7 @@ test_endpoint "个人经历"        GET    /admin/settings/experience yes
 echo
 echo "=== 写操作端点（需鉴权）==="
 # 更新 dashboard 的 view_count 自增
-test_endpoint "文章详情（admin 模式）"  GET  "/articles/id/1" yes
+test_endpoint "文章详情（admin 模式）"  GET  "/articles/admin/detail/1" yes
 
 # v4.2.0 数据备份管理（REQ-BACKUP-2026-06-20）
 # 只测查询类端点（list / get）；run 端点会真的启脚本+上传 GitHub,不在 verify 里跑

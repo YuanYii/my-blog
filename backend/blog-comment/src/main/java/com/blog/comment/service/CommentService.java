@@ -50,7 +50,7 @@ public class CommentService {
                 "SELECT COUNT(*) FROM comment WHERE article_id = ? AND status = 1", Long.class, articleId);
         List<Map<String, Object>> records = jdbc.queryForList(
                 "SELECT c.id, c.article_id AS articleId, c.parent_id AS parentId, " +
-                        "c.nickname, c.website, c.content, c.status, " +
+                        "c.nickname, c.website, c.content, " +
                         "c.created_at AS createdAt, " +
                         "a.title AS articleTitle, a.slug AS articleSlug " +
                         "FROM comment c LEFT JOIN article a ON c.article_id = a.id " +

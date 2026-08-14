@@ -108,7 +108,7 @@ const handleRestore = async (item: any) => {
  */
 const handleViewArticle = async (item: any) => {
   try {
-    const res = await get<any>(`/articles/id/${item.articleId}`)
+    const res = await get<any>(`/articles/admin/detail/${item.articleId}`)
     const slug = res.data?.slug
     if (slug) {
       window.open(`/post/${slug}`, '_blank')

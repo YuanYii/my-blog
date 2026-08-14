@@ -289,7 +289,7 @@ onBeforeUnmount(() => {
           <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 12px;">
             <span v-if="article.categoryId" class="badge badge-primary">{{ getCategoryName(article.categoryId) }}</span>
             <span>·</span>
-            <span>{{ formatDateTime(article.publishedAt || article.createdAt) }}</span>
+            <span>{{ formatDateTime(article.publishedAt) }}</span>
             <span>·</span>
             <span>{{ article.viewCount || 0 }} 次阅读</span>
           </div>

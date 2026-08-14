@@ -76,7 +76,7 @@ const loadAttachment = async () => {
   if (!form.id) return
   try {
     // 从详情接口拿 attachment 字段（ArticleService.detail 已扩展）
-    const res = await get<any>(`/articles/id/${form.id}`)
+    const res = await get<any>(`/articles/admin/detail/${form.id}`)
     attachment.value = res.data?.attachment || null
   } catch { /* ignore */ }
 }
@@ -141,7 +141,7 @@ const loadArticle = async () => {
   if (!isEdit.value) return
   loading.value = true
   try {
-    const res = await get<any>(`/articles/id/${route.query.id}`)
+    const res = await get<any>(`/articles/admin/detail/${route.query.id}`)
     const a = res.data
     Object.assign(form, {
       id: a.id, title: a.title, slug: a.slug,

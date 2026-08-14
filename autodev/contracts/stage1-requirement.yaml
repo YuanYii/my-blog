@@ -1,30 +1,107 @@
 version: "2.0"
-run_id: "20260806"
-created_at: "2026-08-06T16:58:30+08:00"
-requirement:
-  id: "20260806-DEV-001"
-  title: "数据备份界面增加备份仓库配置弹窗及后端落盘功能"
-  type: "FEATURE"
-  priority: "P1"
-  scope:
-    impacted_modules: ["backend", "frontend"]
-    target_files:
-      - "frontend/pages/admin/backup.vue"
-      - "backend/blog-settings/src/main/java/com/blog/settings/controller/BackupController.java"
-      - "backend/blog-settings/src/main/java/com/blog/settings/service/BackupService.java"
-      - "backend/blog-settings/src/main/java/com/blog/settings/dto/BackupConfigDTO.java"
-  user_stories:
-    - id: "US-01"
-      as_a: "系统管理员"
-      i_want: "在数据备份界面通过弹窗可视化配置 GitHub 备份仓库地址、Token 和自定义加密码，且可通过眼睛按钮显隐密文"
-      so_that: "无须登录服务器编辑文件即可便捷且安全地完成数据备份配置"
-  acceptance_criteria:
-    - id: "AC-01"
-      description: "备份同步左侧增加【配置仓库】按钮，弹出 3 个必填输入项的模态框"
-    - id: "AC-02"
-      description: "Token 和加密码默认密文显示，支持点击眼睛按钮明密文切换"
-    - id: "AC-03"
-      description: "提交配置后落盘环境变量配置文件，保持权限安全且同步更新服务内存配置"
-  constraints:
-    - "仅支持 GitHub 仓库"
-    - "敏感 Token/密码不能在日志中明文打印"
+run_id: "20260814"
+created_at: "2026-08-14T11:45:00+08:00"
+tasks:
+  - id: "20260814-BUG-001"
+    title: "修复草稿与软删除文章附件越权匿名下载漏洞"
+    type: "BUG"
+    priority: "P0"
+    scope:
+      impacted_modules: ["backend/blog-article"]
+      target_files:
+        - "backend/blog-article/src/main/java/com/blog/article/service/AttachmentService.java"
+    user_stories:
+      - id: "US-01"
+        as_a: "博客系统管理员"
+        i_want: "未发布的草稿文章及已下架软删除文章的附件禁止被外部访客匿名下载"
+        so_that: "杜绝私密源码包或内部附件被遍历枚举窃取"
+    acceptance_criteria:
+      - id: "AC-01"
+        description: "匿名请求草稿(status=0)文章的附件 GET /api/v1/articles/{id}/attachment 返回 HTTP 404"
+      - id: "AC-02"
+        description: "匿名请求软删(deleted=1)文章的附件 GET /api/v1/articles/{id}/attachment 返回 HTTP 404"
+      - id: "AC-03"
+        description: "已发布公开文章(status=1, deleted=0)的附件正常提供流式下载"
+    constraints:
+      - "先查文章存在性及状态 → 再查附件软删 → 最后查文件磁盘存在"
+
+  - id: "20260814-BUG-002"
+    title: "修复公开文章接口字段泄露与列表全量正文传输膨胀问题"
+    type: "BUG"
+    priority: "P1"
+    scope:
+      impacted_modules: ["backend/blog-article", "frontend"]
+      target_files:
+        - "backend/blog-article/src/main/java/com/blog/article/service/ArticleService.java"
+        - "frontend/scripts/fetch-routes.js"
+        - "frontend/pages/index.vue"
+        - "frontend/pages/archives.vue"
+        - "frontend/pages/categories.vue"
+        - "frontend/pages/tags.vue"
+        - "frontend/pages/search.vue"
+        - "frontend/pages/post/[slug].vue"
+    user_stories:
+      - id: "US-02"
+        as_a: "博客访客"
+        i_want: "列表及归档接口只加载文章摘要及展示元数据，不加载全量正文与后端内部时间戳"
+        so_that: "降低网络传输消耗并保护内部活动时间线"
+    acceptance_criteria:
+      - id: "AC-04"
+        description: "公开列表 GET /api/v1/articles 响应项中严格移除 status, createdAt, updatedAt, contentMd"
+      - id: "AC-05"
+        description: "公开归档 GET /api/v1/articles/archives 响应项中严格移除 status, createdAt, updatedAt, contentMd"
+      - id: "AC-06"
+        description: "公开详情 GET /api/v1/articles/{slug} 响应保留 contentMd，严格移除 status, createdAt, updatedAt"
+      - id: "AC-07"
+        description: "publishedAt 为空时自动退避为 createdAt 值返回，确保 publishedAt 永远非空"
+      - id: "AC-08"
+        description: "fetch-routes.js 解绑 status 判断，SSG 静态路由抓取正常"
+    constraints:
+      - "Admin 侧文章列表及草稿预览接口字段不受影响"
+
+  - id: "20260814-BUG-003"
+    title: "规范按 ID 获取文章的后台编辑接口路由与鉴权隔离"
+    type: "BUG"
+    priority: "P2"
+    scope:
+      impacted_modules: ["backend/blog-article", "backend/blog-app", "frontend"]
+      target_files:
+        - "backend/blog-article/src/main/java/com/blog/article/controller/ArticleController.java"
+        - "backend/blog-article/src/main/java/com/blog/article/security/PageViewFilter.java"
+        - "backend/blog-app/src/main/java/com/blog/common/security/AdminAuthFilter.java"
+        - "frontend/pages/admin/edit.vue"
+        - "frontend/pages/admin/attachments.vue"
+        - "backend/blog-app/src/test/java/com/blog/AdminAuthFilterTest.java"
+        - "backend/blog-app/src/test/java/com/blog/ArticleControllerTest.java"
+        - "scripts/verify-sqlite.sh"
+    user_stories:
+      - id: "US-03"
+        as_a: "安全运维人员"
+        i_want: "所有管理后台接口统一归入 /admin/ 路径命名空间"
+        so_that: "避免接口权限边界混淆与过滤器绕过风险"
+    acceptance_criteria:
+      - id: "AC-09"
+        description: "GET /api/v1/articles/id/{id} 迁移为 GET /api/v1/articles/admin/detail/{id}"
+      - id: "AC-10"
+        description: "旧路径 GET /api/v1/articles/id/{id} 访问返回 404"
+      - id: "AC-11"
+        description: "新路径必须携带 Admin Token 访问，匿名访问返回 401"
+      - id: "AC-12"
+        description: "AdminAuthFilterTest, ArticleControllerTest 及 verify-sqlite.sh 全部通过"
+
+  - id: "20260814-BUG-004"
+    title: "精简公开评论列表接口冗余状态字段"
+    type: "BUG"
+    priority: "P3"
+    scope:
+      impacted_modules: ["backend/blog-comment"]
+      target_files:
+        - "backend/blog-comment/src/main/java/com/blog/comment/service/CommentService.java"
+    user_stories:
+      - id: "US-04"
+        as_a: "前端开发者"
+        i_want: "公开评论列表仅返回渲染必要的文本及时间信息"
+        so_that: "实现数据最小化暴露"
+    acceptance_criteria:
+      - id: "AC-13"
+        description: "GET /api/v1/comments 响应项中移除 c.status 字段"

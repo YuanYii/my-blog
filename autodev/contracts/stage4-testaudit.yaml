@@ -1,14 +1,36 @@
 version: "2.0"
-run_id: "20260806"
+run_id: "20260814"
 stage: "Stage_4"
 evaluator: "TestEngineer"
 overall_result: "PASSED"
 metrics:
-  passed_tests: 8
+  passed_tests: 70
   failed_tests: 0
   skipped_tests: 0
 audit_details:
   requirement_compliance: "PASSED"
   edge_cases_covered: true
+  ac_mapping:
+    - task_id: "20260814-BUG-001"
+      ac: ["AC-01", "AC-02", "AC-03"]
+      test_methods: ["ArticleControllerTest.attachment_draftOrDeleted_404"]
+      status: "PASSED"
+    - task_id: "20260814-BUG-002"
+      ac: ["AC-04", "AC-05", "AC-06", "AC-07", "AC-08"]
+      test_methods:
+        - "ArticleControllerTest.list_publicArticles"
+        - "ArticleControllerTest.detail_publishedArticle_ok"
+        - "ArticleControllerTest.archives_returnsPublished"
+      status: "PASSED"
+    - task_id: "20260814-BUG-003"
+      ac: ["AC-09", "AC-10", "AC-11", "AC-12"]
+      test_methods:
+        - "AdminAuthFilterTest.adminArticleById_anonymous_401"
+        - "ArticleControllerTest.createArticle_withTagIds_tagAssociated"
+      status: "PASSED"
+    - task_id: "20260814-BUG-004"
+      ac: ["AC-13"]
+      test_methods: ["CommentControllerTest.listComments_byArticleId"]
+      status: "PASSED"
 next_actions:
   auto_reseed_tasks: []

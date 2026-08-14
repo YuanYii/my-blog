@@ -87,9 +87,9 @@ class AdminAuthFilterTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("GET /articles/id/{id} admin 文章详情 — 匿名 → 401")
+    @DisplayName("GET /articles/admin/detail/{id} admin 文章详情 — 匿名 → 401")
     void adminArticleById_anonymous_401() throws Exception {
-        mockMvc.perform(get(BASE + "/articles/id/1"))
+        mockMvc.perform(get(BASE + "/articles/admin/detail/1"))
                 .andExpect(status().isUnauthorized());
     }
 

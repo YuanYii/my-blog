@@ -249,7 +249,7 @@ curl -X POST http://localhost:8080/api/v1/admin/upgrade/execute \
 
 ### 12.1 权威源
 - **Maven `<revision>` 是项目唯一权威版本号**（`backend/pom.xml` line 32）
-- 当前 `<revision>` = **6.1.0**
+- 当前 `<revision>` = **7.0.0**
 - Git tag / 部署脚本 / 文档里的所有版本号必须与 `<revision>` **同步**（按 §12.3 工作流）
 
 ### 12.2 版本号引用分类（决定改 vs 不改）

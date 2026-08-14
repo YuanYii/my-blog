@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS article (
   published_at    DATETIME,
   created_at      DATETIME      NOT NULL,
   updated_at      DATETIME      NOT NULL,
+  is_pinned       TINYINT       NOT NULL DEFAULT 0,
   deleted         TINYINT       NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_article_slug ON article(slug);
@@ -174,3 +175,73 @@ CREATE TABLE IF NOT EXISTS backup_record (
 );
 CREATE INDEX IF NOT EXISTS idx_backup_record_started_at ON backup_record(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_backup_record_status ON backup_record(status);
+
+CREATE TABLE IF NOT EXISTS article_attachment (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  article_id      BIGINT       NOT NULL,
+  file_name       VARCHAR(255) NOT NULL,
+  file_path       VARCHAR(500) NOT NULL,
+  file_size       BIGINT       NOT NULL DEFAULT 0,
+  mime_type       VARCHAR(100),
+  deleted         TINYINT      NOT NULL DEFAULT 0,
+  created_at      DATETIME     NOT NULL,
+  updated_at      DATETIME     NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_article_attachment_article ON article_attachment(article_id);
+CREATE INDEX IF NOT EXISTS idx_article_attachment_deleted ON article_attachment(deleted);
+CREATE INDEX IF NOT EXISTS idx_article_attachment_updated ON article_attachment(updated_at);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  operator        VARCHAR(50)  NOT NULL,
+  operation       VARCHAR(20)  NOT NULL,
+  target          VARCHAR(100) NOT NULL,
+  detail          VARCHAR(500),
+  ip              VARCHAR(45),
+  created_at      DATETIME     NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS upgrade_record (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_version  VARCHAR(32)  NOT NULL,
+  mode            VARCHAR(16)  NOT NULL,
+  import_db       TINYINT      NOT NULL DEFAULT 0,
+  status          VARCHAR(16)  NOT NULL,
+  started_at      DATETIME     NOT NULL,
+  finished_at     DATETIME,
+  from_version    VARCHAR(32),
+  error_message   TEXT,
+  operator_id     BIGINT,
+  operator_name   VARCHAR(64),
+  ip              VARCHAR(45)
+);
+
+CREATE TABLE IF NOT EXISTS restore_record (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  status            VARCHAR(16)  NOT NULL,
+  source_record_id  BIGINT,
+  source_tag        VARCHAR(64),
+  scope             VARCHAR(16)  NOT NULL,
+  started_at        DATETIME     NOT NULL,
+  finished_at       DATETIME,
+  error_stage       VARCHAR(32),
+  error_message     TEXT,
+  verify_diff       TEXT,
+  operator_id       BIGINT,
+  operator_name     VARCHAR(64)
+);
+
+CREATE TABLE IF NOT EXISTS import_record (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_name         VARCHAR(255) NOT NULL,
+  status            VARCHAR(16)  NOT NULL,
+  total_count       INT          NOT NULL DEFAULT 0,
+  success_count     INT          NOT NULL DEFAULT 0,
+  fail_count        INT          NOT NULL DEFAULT 0,
+  error_message     TEXT,
+  started_at        DATETIME     NOT NULL,
+  finished_at       DATETIME,
+  operator_id       BIGINT,
+  operator_name     VARCHAR(64)
+);

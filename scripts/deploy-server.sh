@@ -4,7 +4,7 @@
 # 跑法(root 或 sudo):
 #   curl -L https://raw.githubusercontent.com/OWNER/REPO/main/scripts/deploy-server.sh -o deploy-server.sh
 #   chmod +x deploy-server.sh
-#   sudo ./deploy-server.sh v6.0.2
+#   sudo ./deploy-server.sh v7.0.0
 #
 # ----- LOCAL_SIM 模式（2026-06-19 本地模拟容器用，docs/docker/local-sim）-----
 # 当 LOCAL_SIM=1 时，自动跳过 systemd/apt/防火墙等生产专属步骤，
@@ -84,7 +84,7 @@ if [ -z "$TAG" ] && [ -n "$GITHUB_REPO" ] && [ "${LOCAL_SIM:-0}" != "1" ]; then
     TAG=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
     if [ -z "$TAG" ]; then
         err "无法获取最新版本，请指定版本号"
-        err "Usage: $0 <tag>  e.g. $0 v6.0.2"
+        err "Usage: $0 <tag>  e.g. $0 v7.0.0"
         exit 1
     fi
     info "最新版本: $TAG"

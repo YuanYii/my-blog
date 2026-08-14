@@ -95,7 +95,7 @@ public class ArticleService {
         qw.orderByDesc("is_pinned").orderByDesc("published_at");
 
         Page<Article> p = articleMapper.selectPage(new Page<>(page, size), qw);
-        List<Map<String, Object>> records = p.getRecords().stream().map(a -> toMap(a, true)).collect(Collectors.toList());
+        List<Map<String, Object>> records = p.getRecords().stream().map(a -> toPublicMap(a, false)).collect(Collectors.toList());
         fillTagIds(records);
         return Result.success(PageResult.of(records, p.getTotal(), p.getCurrent(), p.getSize()));
     }
@@ -108,7 +108,7 @@ public class ArticleService {
         jdbc.update("UPDATE article SET view_count = view_count + 1, updated_at = updated_at WHERE id = ?",
                 article.getId());
         article.setViewCount(article.getViewCount() == null ? 1 : article.getViewCount() + 1);
-        Map<String, Object> data = toMap(article, true);
+        Map<String, Object> data = toPublicMap(article, true);
         // 2026-07-01 BUG-001 fix：抽 populateAttachment 私有方法取代原 attachmentMapper.selectOne
         //   原写法被 MyBatis-Plus 全局 logic-delete 自动加 `AND deleted=0`，软删附件查不到 → 公开页软删提示失效
         //   改用 jdbc 直查不过滤 deleted，软删附件也能查到（前端展示"已删除"提示用）
@@ -128,7 +128,7 @@ public class ArticleService {
                 .orderByDesc("published_at")
                 .last("LIMIT 1000"));
         List<Map<String, Object>> records = list.stream()
-            .map(a -> toMap(a, true))
+            .map(a -> toPublicMap(a, false))
             .collect(Collectors.toList());
         fillTagIds(records);
         return Result.success(records);
@@ -917,6 +917,31 @@ public class ArticleService {
         m.put("publishedAt", a.getPublishedAt());
         m.put("createdAt", a.getCreatedAt());
         m.put("updatedAt", a.getUpdatedAt());
+        if (withContent) m.put("contentMd", a.getContentMd());
+        return m;
+    }
+
+    /**
+     * 2026-08-14 BUG-002 fix：公开接口专用字段白名单。
+     * 不含 status/createdAt/updatedAt/contentMd（列表/归档不含）。
+     * publishedAt 为空时以 createdAt 兜底（防历史脏数据）。
+     *
+     * @param withContent true = 详情页（含 contentMd），false = 列表/归档（不含 contentMd）
+     */
+    private Map<String, Object> toPublicMap(Article a, boolean withContent) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("id", a.getId());
+        m.put("title", a.getTitle());
+        m.put("slug", a.getSlug());
+        m.put("summary", a.getSummary());
+        m.put("coverUrl", a.getCoverUrl());
+        m.put("isPinned", a.getIsPinned() == null ? 0 : a.getIsPinned());
+        m.put("viewCount", a.getViewCount() == null ? 0 : a.getViewCount());
+        m.put("categoryId", a.getCategoryId());
+        // publishedAt 兜底：公开接口 status=1 时业务上必定非空，
+        // 但防历史脏数据或异常导入时以 createdAt 退避
+        m.put("publishedAt", a.getPublishedAt() != null
+                ? a.getPublishedAt() : a.getCreatedAt());
         if (withContent) m.put("contentMd", a.getContentMd());
         return m;
     }

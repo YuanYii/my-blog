@@ -129,7 +129,8 @@ class CommentControllerTest extends BaseIntegrationTest {
 
         mockMvc.perform(get(BASE + "/comments").param("articleId", "1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.total").value(greaterThanOrEqualTo(1)));
+                .andExpect(jsonPath("$.data.total").value(greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.data.records[0].status").doesNotExist());
     }
 
     // ===== Admin 端点 =====

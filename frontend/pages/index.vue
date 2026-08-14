@@ -189,7 +189,7 @@ const pageList = computed(() => {
           <article class="post-card" :class="{ featured: a.isPinned === 1 }">
             <div class="post-card-head">
               <span class="post-card-cat">{{ categoryName(a.categoryId) }}</span>
-              <span class="post-card-date">{{ formatDate(a.publishedAt || a.createdAt) }}</span>
+              <span class="post-card-date">{{ formatDate(a.publishedAt) }}</span>
             </div>
             <h3 class="post-card-title">
               {{ a.title }}

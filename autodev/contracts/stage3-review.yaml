@@ -1,5 +1,5 @@
 version: "2.0"
-run_id: "20260806"
+run_id: "20260814"
 stage: "Stage_3"
 evaluator: "CodeReviewer"
 overall_result: "PASSED"
@@ -8,6 +8,15 @@ metrics:
   critical: 0
   major: 0
   minor: 0
+security_audit:
+  secrets_check: "PASSED (无硬编码密钥或密码泄露)"
+  sql_injection_check: "PASSED (全量参数化查询，无动态拼接)"
+  safe_log_check: "PASSED (无敏感字段打印)"
+  path_traversal_check: "PASSED (AttachmentService 保持 normalize 及 escape 校验)"
+compatibility_audit:
+  jdk_version: "Java 1.8 (无 Java 9+ API)"
+  sqlite_compatibility: "PASSED"
+  ssg_prerender: "PASSED (fetch-routes.js 解耦 status，npm run generate 正常)"
 issues: []
 next_actions:
   auto_reseed_tasks: []

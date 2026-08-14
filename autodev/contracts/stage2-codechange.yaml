@@ -1,31 +1,61 @@
 version: "2.0"
-run_id: "20260806"
+run_id: "20260814"
 stage: "Stage_2"
-task_id: "20260806-DEV-001"
-change_summary: "数据备份界面增加备份仓库配置弹窗及后端落盘功能"
+task_ids:
+  - "20260814-BUG-001"
+  - "20260814-BUG-002"
+  - "20260814-BUG-003"
+  - "20260814-BUG-004"
+change_summary: "完成公开接口信息泄露、附件越权下载拦截、后台路由规范化及评论字段精简全量修复"
 design_decisions:
   api_changes:
     - method: "GET"
-      path: "/api/v1/admin/backup/config"
-      response_schema: "BackupConfigDTO (脱敏)"
-    - method: "POST"
-      path: "/api/v1/admin/backup/config"
-      request_body_schema: "BackupConfigDTO (repo, token, encryptionPassword)"
+      path: "/api/v1/articles"
+      response_schema: "toPublicMap: 移除 status, createdAt, updatedAt, contentMd"
+    - method: "GET"
+      path: "/api/v1/articles/archives"
+      response_schema: "toPublicMap: 移除 status, createdAt, updatedAt, contentMd"
+    - method: "GET"
+      path: "/api/v1/articles/{slug}"
+      response_schema: "toPublicMap: 包含 contentMd，移除 status, createdAt, updatedAt"
+    - method: "GET"
+      path: "/api/v1/articles/{id}/attachment"
+      security: "强制校验 parent article status=1 AND deleted=0，否则 404"
+    - method: "GET"
+      path: "/api/v1/articles/admin/detail/{id}"
+      security: "由 /articles/id/{id} 迁移至 /articles/admin/detail/{id}，AdminAuthFilter 统一鉴权"
+    - method: "GET"
+      path: "/api/v1/comments"
+      response_schema: "移除 SQL 投影中的 c.status 字段"
   database_changes:
     sql_files_added: []
     schema_migrations: false
 modified_artifacts:
-  created_files:
-    - "backend/blog-settings/src/main/java/com/blog/settings/dto/BackupConfigDTO.java"
+  created_files: []
   updated_files:
-    - "backend/blog-settings/src/main/java/com/blog/settings/controller/BackupController.java"
-    - "backend/blog-settings/src/main/java/com/blog/settings/service/BackupService.java"
     - "backend/blog-article/src/main/java/com/blog/article/service/AttachmentService.java"
-    - "backend/blog-app/src/test/java/com/blog/BackupControllerTest.java"
-    - "frontend/pages/admin/backup.vue"
+    - "backend/blog-article/src/main/java/com/blog/article/service/ArticleService.java"
+    - "backend/blog-article/src/main/java/com/blog/article/controller/ArticleController.java"
+    - "backend/blog-article/src/main/java/com/blog/article/security/PageViewFilter.java"
+    - "backend/blog-comment/src/main/java/com/blog/comment/service/CommentService.java"
+    - "backend/blog-app/src/main/java/com/blog/common/security/AdminAuthFilter.java"
+    - "backend/blog-app/src/test/java/com/blog/AdminAuthFilterTest.java"
+    - "backend/blog-app/src/test/java/com/blog/ArticleControllerTest.java"
+    - "backend/blog-app/src/test/java/com/blog/CommentControllerTest.java"
+    - "backend/blog-app/src/test/resources/schema-test.sql"
+    - "frontend/scripts/fetch-routes.js"
+    - "frontend/pages/index.vue"
+    - "frontend/pages/archives.vue"
+    - "frontend/pages/categories.vue"
+    - "frontend/pages/tags.vue"
+    - "frontend/pages/search.vue"
+    - "frontend/pages/post/[slug].vue"
+    - "frontend/pages/admin/edit.vue"
+    - "frontend/pages/admin/attachments.vue"
+    - "scripts/verify-sqlite.sh"
   deleted_files: []
 verification:
   local_build_status: "SUCCESS"
-  unit_tests_run: 8
-  unit_tests_passed: 8
-  compilation_command: "mvn clean package -DskipTests && npm run generate"
+  unit_tests_run: 70
+  unit_tests_passed: 70
+  compilation_command: "mvn test && npm run generate"

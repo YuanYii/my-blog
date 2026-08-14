@@ -59,7 +59,7 @@ async function fetchAllArticleSlugs() {
     const records = data.data?.records || []
     total = data.data?.total || 0
     for (const r of records) {
-      if (r.slug && r.status === 1) {
+      if (r.slug) {
         slugs.push(`/post/${r.slug}`)
       }
     }

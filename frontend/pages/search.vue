@@ -87,7 +87,7 @@ useHead({ title: headTitle })
           style="color: var(--text-2); font-size: 14px; line-height: 1.6; margin: 0 0 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;"
         >{{ a.summary }}</p>
         <div style="display: flex; gap: 12px; font-size: 12px; color: var(--muted); font-family: 'JetBrains Mono', monospace;">
-          <time v-if="a.publishedAt || a.createdAt">{{ (a.publishedAt || a.createdAt).substring(0, 10) }}</time>
+          <time v-if="a.publishedAt">{{ a.publishedAt.substring(0, 10) }}</time>
           <span v-if="a.categoryName">· {{ a.categoryName }}</span>
           <span>· {{ a.viewCount || 0 }} 👁</span>
         </div>

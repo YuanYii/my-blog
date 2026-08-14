@@ -1,5 +1,5 @@
 version: "2.0"
-run_id: "20260806"
+run_id: "20260814"
 stage: "Stage_6"
 evaluator: "ProjectManager"
 overall_result: "PASSED"
@@ -9,11 +9,11 @@ anomaly_counts:
   dev: 0
   opt: 0
 source_reports:
-  audit_report: "autodev/contracts/20260806-stage4-testaudit.yaml"
-  code_quality_report: "autodev/contracts/20260806-stage3-review.yaml"
-  integration_test_report: "autodev/contracts/20260806-stage5-integration.yaml"
+  code_quality_report: "autodev/contracts/stage3-review.yaml"
+  audit_report: "autodev/contracts/stage4-testaudit.yaml"
+  integration_test_report: "autodev/contracts/stage5-integration.yaml"
 reseed_tasks:
   total: 0
   task_ids: []
-merged_to: "autodev/auto_iteration/20260806.md"
-gate_file: "autodev/contracts/20260806-stage6-gate.yaml"
+merged_to: "autodev/auto_iteration/20260814.md"
+gate_file: "autodev/contracts/stage6-gate.yaml"

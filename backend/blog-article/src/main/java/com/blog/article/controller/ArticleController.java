@@ -61,7 +61,7 @@ public class ArticleController {
         return articleService.archives();
     }
 
-    @GetMapping("/id/{id}")
+    @GetMapping("/admin/detail/{id}")
     public Result<Map<String, Object>> detailById(@PathVariable Long id) {
         return articleService.detailById(id);
     }

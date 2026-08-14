@@ -10,7 +10,7 @@ const loading = ref(true)
 const grouped = computed(() => {
   const map: Record<string, any[]> = {}
   for (const a of articles.value) {
-    const year = (a.publishedAt || a.createdAt || '').substring(0, 4) || '未知'
+    const year = (a.publishedAt || '').substring(0, 4) || '未知'
     if (!map[year]) map[year] = []
     map[year].push(a)
   }
@@ -45,7 +45,7 @@ onMounted(async () => {
         </h2>
         <ul style="list-style: none; padding: 0;">
           <li v-for="a in items" :key="a.id" style="display: flex; align-items: baseline; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--line-soft);">
-            <span class="font-mono" style="color: var(--muted); font-size: 13px; min-width: 50px;">{{ formatDate(a.publishedAt || a.createdAt) }}</span>
+            <span class="font-mono" style="color: var(--muted); font-size: 13px; min-width: 50px;">{{ formatDate(a.publishedAt) }}</span>
             <NuxtLink :to="`/post/${a.slug}`" style="flex: 1; color: var(--text); text-decoration: none; font-size: 15px;">{{ a.title }}</NuxtLink>
             <span class="font-mono" style="color: var(--muted); font-size: 12px;">{{ a.viewCount || 0 }} 👁</span>
           </li>

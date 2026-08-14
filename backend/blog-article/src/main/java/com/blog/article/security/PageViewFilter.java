@@ -134,7 +134,7 @@ public class PageViewFilter extends OncePerRequestFilter {
             Long articleId = null;
             // 解析文章详情 → articleId
             Matcher m = ARTICLE_DETAIL.matcher(sub);
-            if (m.find() && !sub.contains("/articles/admin") && !sub.contains("/articles/id/")) {
+            if (m.find() && !sub.contains("/articles/admin")) {
                 String slug = m.group(1);
                 articleId = resolveArticleId(slug);
             }
