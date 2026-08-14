@@ -905,7 +905,7 @@ public class ArticleService {
         m.put("title", a.getTitle());
         m.put("slug", a.getSlug());
         m.put("summary", a.getSummary());
-        m.put("coverUrl", a.getCoverUrl());
+        m.put("coverUrl", normalizeCoverUrl(a.getCoverUrl()));
         m.put("status", a.getStatus());
         m.put("isPinned", a.getIsPinned() == null ? 0 : a.getIsPinned());
         // 2026-06-22 v4.x polish：viewCount null 兜底为 0——
@@ -934,7 +934,7 @@ public class ArticleService {
         m.put("title", a.getTitle());
         m.put("slug", a.getSlug());
         m.put("summary", a.getSummary());
-        m.put("coverUrl", a.getCoverUrl());
+        m.put("coverUrl", normalizeCoverUrl(a.getCoverUrl()));
         m.put("isPinned", a.getIsPinned() == null ? 0 : a.getIsPinned());
         m.put("viewCount", a.getViewCount() == null ? 0 : a.getViewCount());
         m.put("categoryId", a.getCategoryId());
@@ -944,5 +944,18 @@ public class ArticleService {
                 ? a.getPublishedAt() : a.getCreatedAt());
         if (withContent) m.put("contentMd", a.getContentMd());
         return m;
+    }
+
+    /**
+     * 封面图 URL 归一化：若包含 /uploads/ 绝对前缀（如 http://localhost/uploads/...），自动归一化为 /uploads/...
+     */
+    private static String normalizeCoverUrl(String coverUrl) {
+        if (coverUrl == null || coverUrl.trim().isEmpty()) return "";
+        String s = coverUrl.trim();
+        if (s.contains("/uploads/")) {
+            int idx = s.indexOf("/uploads/");
+            return s.substring(idx);
+        }
+        return s;
     }
 }

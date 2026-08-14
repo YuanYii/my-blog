@@ -97,61 +97,14 @@ public class UploadController {
         // FR-3.5：上传成功 INFO（路径、大小、操作人）
         log.info("文件上传成功：path={} size={} operator={}", target.getAbsolutePath(), file.getSize(), AuthContext.uid(request));
 
-        // 绝对 URL：scheme + host + (非默认端口时)+ /uploads/xxx
-        //
-        // 2026-06-22 v4.x polish：原实现用 request.getScheme() + getServerName() + getServerPort()
-        //   在 nginx 反代场景下——getServerPort() 返 backend 监听端口 8080，getScheme() 返 http
-        //   （即使外网是 https）→ URL 变成 http://host:8080/... → 外网客户端无法访问。
-        //   即使 nginx proxy_set_header Host $host 透传了 Host，getServerPort() 仍是 8080。
-        //
-        // 修复：读 X-Forwarded-Proto / X-Forwarded-Host 头（nginx 已透传，nginx-https.conf:53,81,95），
-        //   端口在 scheme 为标准端口时省略（http=80 / https=443）。
-        //
-        // 路径不带 contextPath（/api/v1）：prod 环境 nginx `location ^~ /uploads/` 直 serve，
-        //   不走 /api/v1 反代；dev 环境 StaticResourceConfig 也注册在 /uploads/**（无 /api/v1 前缀）。
-        //   用 /uploads/ 一条路径覆盖两套部署，比 "/api/v1/uploads/" 更稳。
-        String scheme = headerFirst(request, "X-Forwarded-Proto", request.getScheme());
-        String host = headerFirst(request, "X-Forwarded-Host", request.getServerName());
-        String url = buildOriginUrl(scheme, host) + "/uploads/" + yearMonth + "/" + name;
+        // 2026-08-14 优化：返回根相对路径 /uploads/yyyy/MM/name.ext（与 ArticleImportService 对齐）
+        // 彻底消除宿主机端口（如 dev 3000、staging 28000、prod 443）与反代域名硬编码依赖。
+        String url = "/uploads/" + yearMonth + "/" + name;
         Map<String, Object> data = new HashMap<>();
         data.put("url", url);
         data.put("name", name);
         data.put("size", file.getSize());
         return Result.success(data);
-    }
-
-    /**
-     * 取请求头（剥空白），为空回退到 defaultValue。
-     * 与 TrustedProxyUtil.resolveClientIp 的"反代头优先"逻辑对齐：反代场景一律读反代头。
-     */
-    private static String headerFirst(HttpServletRequest request, String header, String defaultValue) {
-        String v = request.getHeader(header);
-        if (v == null || v.trim().isEmpty()) return defaultValue;
-        return v.trim();
-    }
-
-    /**
-     * 拼 origin（scheme://host[:port]）
-     * - 标准端口（http/80 / https/443）→ 省略端口号
-     * - 其他端口（如 dev 8080、staging 非标）→ 保留
-     */
-    private static String buildOriginUrl(String scheme, String host) {
-        if (host == null || host.isEmpty()) host = "localhost";
-        boolean isHttps = "https".equalsIgnoreCase(scheme);
-        // 标准端口判断：只有显式带上且等于 80/443 才省；其他一律保留（包括空 scheme）
-        if (isHttps) {
-            return "https://" + host;
-        }
-        // http / 其他 scheme（nginx 默认透传 scheme）
-        if ("http".equalsIgnoreCase(scheme) || scheme == null || scheme.isEmpty()) {
-            // dev 直连 backend 8080：保留端口
-            // prod 反代 https：scheme 会是 https，走上面分支
-            // 这里仅在 scheme 明确为 http 且 dev 端口场景下拼端口——但 dev 时没反代，
-            // X-Forwarded-Proto 不会被 nginx 设置，request.getScheme() 直接返 http + 端口 8080。
-            // 反代场景下 scheme 应为 https（被 X-Forwarded-Proto 覆盖），不会进这分支。
-            return "http://" + host;
-        }
-        return scheme + "://" + host;
     }
 
     /**

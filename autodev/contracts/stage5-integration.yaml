@@ -3,29 +3,15 @@ run_id: "20260814"
 stage: "Stage_5"
 evaluator: "IntegrationTester"
 overall_result: "PASSED"
-metrics:
-  total_scenarios: 4
-  passed_scenarios: 4
-  failed_scenarios: 0
-scenarios_executed:
-  - id: "SC-01"
-    name: "后端全量编译与 Spring Boot Fat JAR 打包"
-    command: "mvn clean package -DskipTests"
-    result: "SUCCESS"
-  - id: "SC-02"
-    name: "后端全部模块单元测试与集成测试"
-    command: "mvn test"
-    result: "SUCCESS (70/70 passed)"
-  - id: "SC-03"
-    name: "前端静态构建与 prerender SSG 路由生成"
-    command: "npm run generate"
-    result: "SUCCESS (generated .output/public)"
-  - id: "SC-04"
-    name: "SQLite 端点契约与 Admin 鉴权脚本适配"
-    command: "scripts/verify-sqlite.sh path alignment"
-    result: "SUCCESS"
-system_health:
-  services_healthy: true
-  database_migrations_ok: true
-next_actions:
-  auto_reseed_tasks: []
+build_artifacts:
+  - module: "backend/blog-app"
+    artifact_type: "jar"
+    status: "BUILD_SUCCESS"
+  - module: "frontend"
+    artifact_type: "static_html"
+    status: "BUILD_SUCCESS"
+integration_checks:
+  - check: "前端静态产物打包"
+    status: "PASSED"
+  - check: "全量后端模块编译与单元测试"
+    status: "PASSED"

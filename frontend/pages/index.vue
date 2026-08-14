@@ -186,25 +186,32 @@ const pageList = computed(() => {
       </div>
       <div v-else class="post-list">
         <NuxtLink v-for="(a, i) in articles" :key="a.id" :to="`/post/${a.slug}`" style="display: block;">
-          <article class="post-card" :class="{ featured: a.isPinned === 1 }">
-            <div class="post-card-head">
-              <span class="post-card-cat">{{ categoryName(a.categoryId) }}</span>
-              <span class="post-card-date">{{ formatDate(a.publishedAt) }}</span>
-            </div>
-            <h3 class="post-card-title">
-              {{ a.title }}
-              <span v-if="a.isPinned === 1" class="featured-badge">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4-6.2-4.5-6.2 4.5 2.4-7.4L2 9.4h7.6L12 2z"/></svg>
-                置顶
-              </span>
-            </h3>
-            <p class="post-card-excerpt">{{ a.summary }}</p>
-            <div class="post-card-foot">
-              <div class="post-stats">
-                <span class="post-stat">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                  {{ formatViews(a.viewCount || 0) }}
-                </span>
+          <article class="post-card" :class="{ featured: a.isPinned === 1, 'has-cover': !!a.coverUrl }">
+            <div class="post-card-inner">
+              <div class="post-card-main">
+                <div class="post-card-head">
+                  <span class="post-card-cat">{{ categoryName(a.categoryId) }}</span>
+                  <span class="post-card-date">{{ formatDate(a.publishedAt) }}</span>
+                </div>
+                <h3 class="post-card-title">
+                  {{ a.title }}
+                  <span v-if="a.isPinned === 1" class="featured-badge">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4-6.2-4.5-6.2 4.5 2.4-7.4L2 9.4h7.6L12 2z"/></svg>
+                    置顶
+                  </span>
+                </h3>
+                <p class="post-card-excerpt">{{ a.summary }}</p>
+                <div class="post-card-foot">
+                  <div class="post-stats">
+                    <span class="post-stat">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                      {{ formatViews(a.viewCount || 0) }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div v-if="a.coverUrl" class="post-card-thumb">
+                <img :src="a.coverUrl" :alt="a.title" loading="lazy" decoding="async" />
               </div>
             </div>
           </article>

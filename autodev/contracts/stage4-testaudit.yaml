@@ -1,36 +1,33 @@
 version: "2.0"
 run_id: "20260814"
 stage: "Stage_4"
-evaluator: "TestEngineer"
+evaluator: "TestAuditor"
 overall_result: "PASSED"
-metrics:
-  passed_tests: 70
-  failed_tests: 0
-  skipped_tests: 0
-audit_details:
-  requirement_compliance: "PASSED"
-  edge_cases_covered: true
-  ac_mapping:
-    - task_id: "20260814-BUG-001"
-      ac: ["AC-01", "AC-02", "AC-03"]
-      test_methods: ["ArticleControllerTest.attachment_draftOrDeleted_404"]
-      status: "PASSED"
-    - task_id: "20260814-BUG-002"
-      ac: ["AC-04", "AC-05", "AC-06", "AC-07", "AC-08"]
-      test_methods:
-        - "ArticleControllerTest.list_publicArticles"
-        - "ArticleControllerTest.detail_publishedArticle_ok"
-        - "ArticleControllerTest.archives_returnsPublished"
-      status: "PASSED"
-    - task_id: "20260814-BUG-003"
-      ac: ["AC-09", "AC-10", "AC-11", "AC-12"]
-      test_methods:
-        - "AdminAuthFilterTest.adminArticleById_anonymous_401"
-        - "ArticleControllerTest.createArticle_withTagIds_tagAssociated"
-      status: "PASSED"
-    - task_id: "20260814-BUG-004"
-      ac: ["AC-13"]
-      test_methods: ["CommentControllerTest.listComments_byArticleId"]
-      status: "PASSED"
-next_actions:
-  auto_reseed_tasks: []
+test_suites:
+  - name: "Frontend Static Prerender Suite"
+    command: "npm run generate"
+    result: "SUCCESS"
+    routes_generated: 9
+  - name: "Backend Unit & Integration Suite"
+    command: "mvn test"
+    result: "SUCCESS"
+    tests_run: 70
+    tests_passed: 70
+    failures: 0
+    errors: 0
+acceptance_criteria_verification:
+  - id: "AC-14"
+    status: "VERIFIED"
+    evidence: "index.vue 正确定义 post-card-inner 与 post-card-thumb 条件渲染"
+  - id: "AC-15"
+    status: "VERIFIED"
+    evidence: "无 coverUrl 时 flex 布局自适应纯文字排版，无占位残留"
+  - id: "AC-16"
+    status: "VERIFIED"
+    evidence: "post/[slug].vue 头部正文上方渲染 post-hero-cover 大图 Banner"
+  - id: "AC-17"
+    status: "VERIFIED"
+    evidence: "配置 loading=lazy、decoding=async 与 object-fit: cover"
+  - id: "AC-18"
+    status: "VERIFIED"
+    evidence: "npm run generate 生成 9 条预渲染路由，构建退出码 0"

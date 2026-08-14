@@ -297,6 +297,11 @@ onBeforeUnmount(() => {
           <p v-if="article.summary" style="color: var(--text-2); font-size: 16px; line-height: 1.6;">{{ article.summary }}</p>
         </header>
 
+        <!-- 文章封面大图 -->
+        <div v-if="article.coverUrl" class="post-hero-cover">
+          <img :src="article.coverUrl" :alt="article.title" loading="lazy" decoding="async" />
+        </div>
+
         <!-- HTML 文件：使用 iframe 加载原始文件（保留所有交互功能） -->
         <div v-if="isHtmlFile" class="html-iframe-container">
           <iframe ref="htmlIframeRef" :src="htmlFileUrl" class="html-iframe" frameborder="0" allowfullscreen @load="adjustIframeHeight"></iframe>

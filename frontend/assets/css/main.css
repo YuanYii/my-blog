@@ -386,11 +386,41 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
   background: var(--card); border: 1px solid var(--line);
   border-radius: 16px; padding: 20px 22px;
   transition: all 0.2s; cursor: pointer; position: relative;
+  overflow: hidden;
 }
 .post-card:hover {
   border-color: var(--primary);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
+}
+.post-card-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.post-card-main {
+  flex: 1;
+  min-width: 0;
+}
+.post-card-thumb {
+  width: 170px;
+  height: 105px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-soft);
+  border: 1px solid var(--line-soft);
+}
+.post-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+  display: block;
+}
+.post-card:hover .post-card-thumb img {
+  transform: scale(1.05);
 }
 .post-card-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -429,11 +459,34 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
   background: linear-gradient(135deg, var(--card) 0%, color-mix(in srgb, var(--primary) 4%, var(--card)) 100%);
 }
 .post-card.featured .post-card-title { font-size: 22px; }
+.post-card.featured .post-card-thumb {
+  width: 200px;
+  height: 125px;
+}
 .featured-badge {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 8px; border-radius: 4px;
   background: var(--accent); color: white;
   font-size: 11px; font-weight: 500; margin-left: 8px;
+}
+
+/* Post Hero Banner (in post detail page) */
+.post-hero-cover {
+  width: 100%;
+  max-height: 420px;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 32px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  box-shadow: var(--shadow-sm);
+}
+.post-hero-cover img {
+  width: 100%;
+  height: 100%;
+  max-height: 420px;
+  object-fit: cover;
+  display: block;
 }
 
 /* ========== Tag Cloud ========== */
@@ -980,11 +1033,15 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
 
   /* Post Card */
   .post-card { padding: 16px 18px; }
+  .post-card-inner { flex-direction: column-reverse; align-items: stretch; gap: 14px; }
+  .post-card-thumb { width: 100%; height: 160px; }
   .post-card.featured { padding: 20px; }
+  .post-card.featured .post-card-thumb { width: 100%; height: 180px; }
   .post-card.featured .post-card-title { font-size: 18px; }
   .post-card-title { font-size: 16px; }
   .post-card-excerpt { font-size: 13px; }
-  .post-card-foot { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .post-card-foot { flex-direction: row; align-items: center; justify-content: space-between; }
+  .post-hero-cover { max-height: 240px; margin-bottom: 20px; border-radius: 8px; }
 
   /* Article */
   .article { padding: 32px 0 16px; }
