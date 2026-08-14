@@ -34,14 +34,13 @@ useHead({
   meta: [
     { name: 'description', content: siteDesc }
   ],
-  // 防止首屏闪白：在客户端 JS 接管之前同步设置 dark class。
-  // 默认深色，仅当用户曾显式选过 light 时才走浅色。
-  // 这里必须用 useHead 注入到 <head>，且不能走异步/动态逻辑，
-  // 否则会先渲染浅色再切到深色（FOUC）。
+  // 防止首屏闪白/闪黑（FOUC）：在客户端 JS 接管之前同步设置 dark class。
+  // 支持 'auto'（跟随系统 matchMedia）、'light'、'dark'。
+  // 注入到 <head> 同步执行，保证初次渲染即为准确模式。
   script: [
     {
       tagPosition: 'head',
-      innerHTML: `(function(){try{var t=localStorage.getItem('theme');if(t==='light'){document.documentElement.classList.remove('dark')}else{document.documentElement.classList.add('dark')}}catch(e){document.documentElement.classList.add('dark')}})();`
+      innerHTML: `(function(){try{var t=localStorage.getItem('theme')||'auto';var isDark=t==='dark'||(t==='auto'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(isDark){document.documentElement.classList.add('dark')}else{document.documentElement.classList.remove('dark')}}catch(e){document.documentElement.classList.add('dark')}})();`
     }
   ]
 })

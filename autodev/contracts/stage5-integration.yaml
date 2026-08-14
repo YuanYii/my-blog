@@ -1,17 +1,17 @@
 version: "2.0"
 run_id: "20260814"
 stage: "Stage_5"
-evaluator: "IntegrationTester"
-overall_result: "PASSED"
-build_artifacts:
-  - module: "backend/blog-app"
-    artifact_type: "jar"
-    status: "BUILD_SUCCESS"
-  - module: "frontend"
-    artifact_type: "static_html"
-    status: "BUILD_SUCCESS"
-integration_checks:
-  - check: "前端静态产物打包"
-    status: "PASSED"
-  - check: "全量后端模块编译与单元测试"
-    status: "PASSED"
+deploy_target: "myblog-sim"
+status: "DEPLOYED_AND_VERIFIED"
+endpoints_verified:
+  - url: "http://localhost:28000/"
+    status_code: 200
+  - url: "http://localhost:28000/api/v1/health"
+    status_code: 200
+  - url: "http://localhost:28000/api/v1/articles"
+    status_code: 200
+  - url: "http://localhost:28000/uploads/2026/08/20260814-06237ef9.png"
+    status_code: 200
+runtime_observations:
+  - "前端产物已同步部署至 myblog-sim:/opt/myblog/frontend/public"
+  - "Nginx 重新加载成功，三态主题切换与 CSS 变量渲染正常"

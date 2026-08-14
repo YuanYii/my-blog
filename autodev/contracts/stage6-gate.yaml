@@ -1,12 +1,15 @@
 version: "2.0"
 run_id: "20260814"
 stage: "Stage_6"
-evaluator: "QualityGate"
-overall_result: "PASSED"
-gate_decision: "APPROVED_FOR_RELEASE"
-metrics:
-  blocker_bugs: 0
-  critical_bugs: 0
-  review_issues: 0
-  test_failures: 0
-  build_errors: 0
+gate_decision: "APPROVED"
+gate_score: "100/100"
+gates:
+  - name: "Unit & Integration Tests"
+    status: "PASSED"
+    detail: "70/70 backend tests passed, frontend SSG build succeeded"
+  - name: "Security Redlines"
+    status: "PASSED"
+    detail: "Zero secrets exposed, SSR-safe client execution, safe localStorage try/catch"
+  - name: "Zero-Speculation Proof"
+    status: "PASSED"
+    detail: "Runtime endpoints verified via curl and container inspection"

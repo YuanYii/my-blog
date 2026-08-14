@@ -65,9 +65,25 @@
           </Transition>
         </div>
 
-        <button class="w-9 h-9 rounded-md flex items-center justify-center transition-colors" style="color: var(--color-text-2);" @click="toggleTheme" aria-label="切换主题">
-          <svg v-if="!isDark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-          <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <button
+          class="w-9 h-9 rounded-md flex items-center justify-center transition-colors"
+          style="color: var(--color-text-2);"
+          @click="cycleColorMode"
+          :aria-label="themeTooltip"
+          :title="themeTooltip"
+        >
+          <!-- 自动模式（跟随系统昼夜）：半月半日/系统图标 -->
+          <svg v-if="colorMode === 'auto'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+            <rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>
+          </svg>
+          <!-- 强制浅色模式：太阳图标 -->
+          <svg v-else-if="colorMode === 'light'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+            <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+          </svg>
+          <!-- 强制深色模式：月亮图标 -->
+          <svg v-else width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
         </button>
         <!-- 后台管理入口：桌面端显示 inline-flex，手机端在下拉菜单里显示 -->
         <NuxtLink v-if="isApprovedDevice" to="/admin/login" class="hidden md:inline-flex w-9 h-9 rounded-md items-center justify-center transition-colors" style="color: var(--color-text-2);" title="后台管理">
@@ -188,21 +204,17 @@ if (import.meta.client) {
   })
 }
 
-// 默认深色
-const isDark = ref(true)
-const toggleTheme = () => {
-  isDark.value = !isDark.value
-  if (import.meta.client) {
-    document.documentElement.classList.toggle('dark', isDark.value)
-    localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
+// 2026-08-14 DEV-002：三态主题与系统昼夜调度
+const { colorMode, isDark, cycleColorMode } = useSiteTheme()
+
+const themeTooltip = computed(() => {
+  if (colorMode.value === 'auto') {
+    return `当前：自动跟随系统昼夜（${isDark.value ? '夜间深色' : '日间浅色'}）· 点击切换浅色`
   }
-}
-onMounted(() => {
-  if (import.meta.client) {
-    const saved = localStorage.getItem('theme')
-    isDark.value = saved !== 'light'
-    document.documentElement.classList.toggle('dark', isDark.value)
+  if (colorMode.value === 'light') {
+    return '当前：浅色模式 · 点击切换深色'
   }
+  return '当前：深色模式 · 点击切换自动跟随'
 })
 </script>
 

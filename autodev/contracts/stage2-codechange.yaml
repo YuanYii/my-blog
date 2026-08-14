@@ -7,7 +7,8 @@ task_ids:
   - "20260814-BUG-003"
   - "20260814-BUG-004"
   - "20260814-DEV-001"
-change_summary: "完成公开接口信息泄露防护、后台路由规范化、首页与文章详情页封面图自适应渲染支持"
+  - "20260814-DEV-002"
+change_summary: "完成公开接口信息泄露防护、后台路由规范化、封面图自适应渲染与三态昼夜主题自适应控制"
 design_decisions:
   api_changes:
     - method: "GET"
@@ -35,6 +36,12 @@ design_decisions:
       description: "增加 post-card-inner、post-card-thumb、post-hero-cover 样式及响应式折叠"
     - target: "frontend/pages/post/[slug].vue"
       description: "正文头部增加 post-hero-cover 大图 Banner 渲染"
+    - target: "frontend/composables/useSiteTheme.ts"
+      description: "重构支持 auto/light/dark 三态与 prefers-color-scheme 实时监听"
+    - target: "frontend/components/NavBar.vue"
+      description: "导航栏按钮升级为三态循环切换，动态 SVG 图标与 Tooltip"
+    - target: "frontend/app.vue"
+      description: "升级 Anti-FOUC 脚本，支持 auto 模式精准判断"
   database_changes:
     sql_files_added: []
     schema_migrations: false
@@ -46,6 +53,7 @@ modified_artifacts:
     - "backend/blog-article/src/main/java/com/blog/article/controller/ArticleController.java"
     - "backend/blog-article/src/main/java/com/blog/article/security/PageViewFilter.java"
     - "backend/blog-comment/src/main/java/com/blog/comment/service/CommentService.java"
+    - "backend/blog-settings/src/main/java/com/blog/settings/controller/UploadController.java"
     - "backend/blog-app/src/main/java/com/blog/common/security/AdminAuthFilter.java"
     - "backend/blog-app/src/test/java/com/blog/AdminAuthFilterTest.java"
     - "backend/blog-app/src/test/java/com/blog/ArticleControllerTest.java"
@@ -61,6 +69,9 @@ modified_artifacts:
     - "frontend/pages/post/[slug].vue"
     - "frontend/pages/admin/edit.vue"
     - "frontend/pages/admin/attachments.vue"
+    - "frontend/app.vue"
+    - "frontend/composables/useSiteTheme.ts"
+    - "frontend/components/NavBar.vue"
     - "scripts/verify-sqlite.sh"
   deleted_files: []
 verification:

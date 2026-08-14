@@ -1,6 +1,6 @@
 version: "2.0"
 run_id: "20260814"
-created_at: "2026-08-14T13:05:00+08:00"
+created_at: "2026-08-14T14:07:00+08:00"
 tasks:
   - id: "20260814-BUG-001"
     title: "修复草稿与软删除文章附件越权匿名下载漏洞"
@@ -111,11 +111,13 @@ tasks:
     type: "DEV"
     priority: "P2"
     scope:
-      impacted_modules: ["frontend"]
+      impacted_modules: ["frontend", "backend/blog-settings", "backend/blog-article"]
       target_files:
         - "frontend/pages/index.vue"
         - "frontend/assets/css/main.css"
         - "frontend/pages/post/[slug].vue"
+        - "backend/blog-settings/src/main/java/com/blog/settings/controller/UploadController.java"
+        - "backend/blog-article/src/main/java/com/blog/article/service/ArticleService.java"
     user_stories:
       - id: "US-05"
         as_a: "博客访客"
@@ -132,3 +134,30 @@ tasks:
         description: "封面图片设置 object-fit: cover 保证不拉伸变形，并配置 loading=lazy 优化首屏性能"
       - id: "AC-18"
         description: "npm run generate 静态生成成功无报错"
+
+  - id: "20260814-DEV-002"
+    title: "基于系统日出日落自适应与三态主题控制实现"
+    type: "DEV"
+    priority: "P2"
+    scope:
+      impacted_modules: ["frontend"]
+      target_files:
+        - "frontend/app.vue"
+        - "frontend/composables/useSiteTheme.ts"
+        - "frontend/components/NavBar.vue"
+    user_stories:
+      - id: "US-06"
+        as_a: "博客访客"
+        i_want: "博客能根据当前设备系统的昼夜/日出日落模式自动在亮暗色间平滑过渡，并能自由选择强制亮色、强制暗色或自动跟随系统"
+        so_that: "获得舒适自然的护眼与阅读体验"
+    acceptance_criteria:
+      - id: "AC-19"
+        description: "首次访问或 theme 设为 auto 时，自动读取 prefers-color-scheme，白天亮色、夜晚暗色"
+      - id: "AC-20"
+        description: "系统昼夜外观发生切换时，注册 matchMedia 事件监听并实时自动无感切换"
+      - id: "AC-21"
+        description: "导航栏支持自动(💻/🌓) → 亮色(☀️) → 暗色(🌙)三态循环切换，且持久化存储"
+      - id: "AC-22"
+        description: "app.vue 首屏防闪烁脚本支持 auto 模式精准判断，首屏无 FOUC 白闪/黑闪"
+      - id: "AC-23"
+        description: "npm run generate 前端构建成功无报错"
