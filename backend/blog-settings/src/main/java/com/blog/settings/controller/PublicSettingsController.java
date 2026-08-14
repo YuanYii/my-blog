@@ -59,4 +59,14 @@ public class PublicSettingsController {
         flags.put("enableSearch", advancedSettings.searchEnabled());
         return Result.success(flags);
     }
+
+    /**
+     * 公开的服务器环境信息：用于本地局域网二维码识别与跨端流转。
+     */
+    @GetMapping("/server-info")
+    public Result<Map<String, Object>> serverInfo() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("lanIp", com.blog.common.NetworkUtil.getLocalLanIp());
+        return Result.success(info);
+    }
 }

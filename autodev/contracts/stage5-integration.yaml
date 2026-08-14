@@ -8,10 +8,8 @@ endpoints_verified:
     status_code: 200
   - url: "http://localhost:28000/api/v1/health"
     status_code: 200
-  - url: "http://localhost:28000/api/v1/articles"
-    status_code: 200
-  - url: "http://localhost:28000/uploads/2026/08/20260814-06237ef9.png"
+  - url: "http://localhost:28000/post/html17842542461341"
     status_code: 200
 runtime_observations:
   - "前端产物已同步部署至 myblog-sim:/opt/myblog/frontend/public"
-  - "Nginx 重新加载成功，三态主题切换与 CSS 变量渲染正常"
+  - "Nginx 重新加载成功，文章详情页分享按钮、文末互动卡片与 ShareModal 二维码功能就绪"

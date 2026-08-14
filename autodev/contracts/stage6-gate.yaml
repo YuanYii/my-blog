@@ -9,7 +9,7 @@ gates:
     detail: "70/70 backend tests passed, frontend SSG build succeeded"
   - name: "Security Redlines"
     status: "PASSED"
-    detail: "Zero secrets exposed, SSR-safe client execution, safe localStorage try/catch"
+    detail: "Zero secrets exposed, SSR-safe client execution, safe clipboard/canvas usage"
   - name: "Zero-Speculation Proof"
     status: "PASSED"
     detail: "Runtime endpoints verified via curl and container inspection"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import DOMPurify from 'dompurify'
 import { formatDate as formatDateShared, formatDateTime as formatDateTimeShared, renderMarkdown, extractHeadings } from '~/composables/useMarkdownUtils'
+import { resolveShareUrl } from '~/utils/shareUrl'
 
 definePageMeta({ layout: 'post' })
 
@@ -120,6 +121,33 @@ const handleDownload = async () => {
       downloading.value = false
       downloadLock.value = null
     }, 30000)
+  }
+}
+
+// ============ 2026-08-14 DEV-003：文章分享与二维码 ============
+const isShareModalOpen = ref(false)
+
+const openShareModal = () => {
+  isShareModalOpen.value = true
+}
+
+const handleCopyLink = async () => {
+  const share = resolveShareUrl(slug)
+  if (!share.url) return
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(share.url)
+    } else {
+      const input = document.createElement('input')
+      input.value = share.url
+      document.body.appendChild(input)
+      input.select()
+      document.execCommand('copy')
+      document.body.removeChild(input)
+    }
+    $toast.success('文章链接已复制到剪贴板')
+  } catch {
+    $toast.error('复制失败，请手动复制')
   }
 }
 
@@ -286,12 +314,21 @@ onBeforeUnmount(() => {
       <!-- 主内容区 -->
       <article class="post-main">
         <header style="margin-bottom: 32px; padding-bottom: 24px; border-bottom: 1px solid var(--line);">
-          <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 12px;">
-            <span v-if="article.categoryId" class="badge badge-primary">{{ getCategoryName(article.categoryId) }}</span>
-            <span>·</span>
-            <span>{{ formatDateTime(article.publishedAt) }}</span>
-            <span>·</span>
-            <span>{{ article.viewCount || 0 }} 次阅读</span>
+          <div class="post-header-meta-row">
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap;">
+              <span v-if="article.categoryId" class="badge badge-primary">{{ getCategoryName(article.categoryId) }}</span>
+              <span>·</span>
+              <span>{{ formatDateTime(article.publishedAt) }}</span>
+              <span>·</span>
+              <span>{{ article.viewCount || 0 }} 次阅读</span>
+            </div>
+            <button class="post-header-share-btn" @click="openShareModal" title="分享 / 扫码阅读" aria-label="分享文章">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+              <span>分享</span>
+            </button>
           </div>
           <h1 class="font-serif" style="font-size: 32px; line-height: 1.3; margin-bottom: 12px;">{{ article.title }}</h1>
           <p v-if="article.summary" style="color: var(--text-2); font-size: 16px; line-height: 1.6;">{{ article.summary }}</p>
@@ -310,6 +347,29 @@ onBeforeUnmount(() => {
         <div v-else-if="isHtmlContent" class="html-content" v-html="proseHtml"></div>
         <!-- Markdown 内容：使用 prose 容器 -->
         <div v-else class="prose" v-html="proseHtml"></div>
+
+        <!-- 2026-08-14 DEV-003：文末分享互动卡片 -->
+        <section class="post-share-card">
+          <div class="post-share-info">
+            <h4 class="post-share-title">喜欢这篇文章？分享给朋友</h4>
+            <p class="post-share-desc">扫码在手机微信/浏览器中随时随地继续阅读</p>
+          </div>
+          <div class="post-share-btns">
+            <button class="btn btn-primary btn-sm post-share-action" @click="openShareModal">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 7h.01M17 7h.01M7 17h.01M17 17h.01M12 12h.01"/>
+              </svg>
+              <span>手机扫码</span>
+            </button>
+            <button class="btn btn-secondary btn-sm post-share-action" @click="handleCopyLink">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+              </svg>
+              <span>复制链接</span>
+            </button>
+          </div>
+        </section>
 
         <section v-if="article.attachment" style="margin: 32px 0; padding: 16px 20px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: 8px;">
           <div style="display: flex; align-items: center; gap: 12px;">
@@ -403,6 +463,14 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-else style="padding: 40px; text-align: center; color: var(--muted);">文章不存在或已被删除</div>
+
+    <!-- 2026-08-14 DEV-003：文章分享与二维码弹窗 -->
+    <ShareModal
+      :show="isShareModalOpen"
+      :title="article?.title || ''"
+      :slug="slug"
+      @close="isShareModalOpen = false"
+    />
   </div>
 </template>
 
@@ -416,6 +484,96 @@ onBeforeUnmount(() => {
 .post-main {
   flex: 1;
   min-width: 0;
+}
+
+/* 头部元信息栏 */
+.post-header-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+
+.post-header-share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.post-header-share-btn:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+/* 文末分享卡片 */
+.post-share-card {
+  margin: 36px 0 24px 0;
+  padding: 20px 24px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.post-share-info {
+  flex: 1;
+  min-width: 200px;
+}
+
+.post-share-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin: 0 0 4px 0;
+}
+
+.post-share-desc {
+  font-size: 13px;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.post-share-btns {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.post-share-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 640px) {
+  .post-share-card {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 16px;
+  }
+  .post-share-btns {
+    width: 100%;
+    margin-top: 12px;
+  }
+  .post-share-action {
+    flex: 1;
+    justify-content: center;
+  }
 }
 
 /* HTML 内容全屏展示 */

@@ -8,7 +8,8 @@ task_ids:
   - "20260814-BUG-004"
   - "20260814-DEV-001"
   - "20260814-DEV-002"
-change_summary: "完成公开接口信息泄露防护、后台路由规范化、封面图自适应渲染与三态昼夜主题自适应控制"
+  - "20260814-DEV-003"
+change_summary: "完成公开接口信息泄露防护、后台路由规范化、封面图自适应渲染、三态昼夜主题自适应控制与文章详情页二维码分享功能"
 design_decisions:
   api_changes:
     - method: "GET"
@@ -35,7 +36,11 @@ design_decisions:
     - target: "frontend/assets/css/main.css"
       description: "增加 post-card-inner、post-card-thumb、post-hero-cover 样式及响应式折叠"
     - target: "frontend/pages/post/[slug].vue"
-      description: "正文头部增加 post-hero-cover 大图 Banner 渲染"
+      description: "正文头部增加 post-hero-cover 大图 Banner，顶部元数据与文末增加分享入口，挂载 ShareModal"
+    - target: "frontend/utils/qrcode.ts"
+      description: "纯 TS 轻量级 QR Code 编码器与 Canvas 渲染器"
+    - target: "frontend/components/ShareModal.vue"
+      description: "微信/手机扫码分享模态弹窗，提供复制链接与下载二维码"
     - target: "frontend/composables/useSiteTheme.ts"
       description: "重构支持 auto/light/dark 三态与 prefers-color-scheme 实时监听"
     - target: "frontend/components/NavBar.vue"
@@ -46,7 +51,9 @@ design_decisions:
     sql_files_added: []
     schema_migrations: false
 modified_artifacts:
-  created_files: []
+  created_files:
+    - "frontend/utils/qrcode.ts"
+    - "frontend/components/ShareModal.vue"
   updated_files:
     - "backend/blog-article/src/main/java/com/blog/article/service/AttachmentService.java"
     - "backend/blog-article/src/main/java/com/blog/article/service/ArticleService.java"
