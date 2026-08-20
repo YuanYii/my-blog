@@ -177,15 +177,16 @@ const autoSlug = async () => {
   }
 }
 
-const save = async (publishNow = false) => {
+const save = async (explicitPublish = false) => {
   if (!form.title) { $toast.warning('请填写标题'); return }
   if (!form.slug)  { $toast.warning('请填写 slug'); return }
-  const finalStatus = publishNow ? 1 : form.status
-  if (finalStatus === 1 && !form.categoryId) { $toast.warning('发布文章时请选择分类'); return }
+  // 如果当前是草稿(0)且用户点了主发布按钮，则设为已发布(1)；否则保持选中的状态(1/2/3/0)
+  const finalStatus = (explicitPublish && form.status === 0) ? 1 : form.status
+  if ((finalStatus === 1 || finalStatus === 3) && !form.categoryId) { $toast.warning('发布或设为仅链接可见时请选择分类'); return }
   saving.value = true
   saveStatus.value = 'saving'
   try {
-    const finalStatus = publishNow ? 1 : form.status
+    form.status = finalStatus
     const payload = { ...form, status: finalStatus, tagIds: selectedTags.value, publishedAt: form.publishedAt }
     if (isEdit.value) {
       await put(`/articles/${form.id}`, payload)
@@ -202,6 +203,11 @@ const save = async (publishNow = false) => {
   } finally {
     saving.value = false
   }
+}
+
+const saveAsDraft = () => {
+  form.status = 0
+  save(false)
 }
 
 // 2026-07-15 BUG-003：草稿从未保存时，预览端点按 slug 查不到（1001）
@@ -230,6 +236,13 @@ watch([() => form.title, () => form.contentMd, () => form.summary], () => {
 const removeTag = (id: number) => {
   selectedTags.value = selectedTags.value.filter(t => t !== id)
 }
+
+const primaryBtnText = computed(() => {
+  if (form.status === 1) return isEdit.value ? '更新' : '发布'
+  if (form.status === 3) return isEdit.value ? '更新 (仅链接)' : '发布 (仅链接)'
+  if (form.status === 2) return isEdit.value ? '更新 (已归档)' : '保存 (归档)'
+  return '发布'
+})
 
 const publishedAt = computed(() => {
   const d = form.publishedAt ? new Date(form.publishedAt) : new Date()
@@ -262,10 +275,11 @@ onMounted(async () => {
           <span v-else>未保存</span>
         </span>
         <button v-if="form.id" @click="handlePreview" class="btn btn-ghost btn-sm">预览</button>
-        <button @click="save(false)" :disabled="saving" class="btn btn-ghost btn-sm">保存草稿</button>
+        <button v-if="form.status !== 0" @click="saveAsDraft" :disabled="saving" class="btn btn-ghost btn-sm">转为草稿</button>
+        <button v-else @click="save(false)" :disabled="saving" class="btn btn-ghost btn-sm">保存草稿</button>
         <button @click="save(true)" :disabled="saving" class="btn btn-primary btn-sm">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>
-          {{ form.status === 1 ? '更新' : '发布' }}
+          {{ primaryBtnText }}
         </button>
       </div>
     </div>
@@ -296,6 +310,10 @@ onMounted(async () => {
             <button class="status-btn" :class="{ active: form.status === 1 }" @click="form.status = 1">
               <svg v-if="form.status === 1" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
               已发布
+            </button>
+            <button class="status-btn" :class="{ active: form.status === 3 }" @click="form.status = 3">
+              <svg v-if="form.status === 3" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              仅链接
             </button>
             <button class="status-btn" :class="{ active: form.status === 0 }" @click="form.status = 0">草稿</button>
             <button class="status-btn" :class="{ active: form.status === 2 }" @click="form.status = 2">归档</button>

@@ -39,7 +39,7 @@ class ArticleControllerTest extends BaseIntegrationTest {
     // ===== 公开端点 =====
 
     @Test
-    @DisplayName("GET /articles 公开列表 — 默认返回 published 文章且脱敏（无 createdAt/updatedAt/status/contentMd）")
+    @DisplayName("GET /articles 公开列表 — 默认返回 published 文章且脱敏（无 createdAt/updatedAt/contentMd，含 status）")
     void list_publicArticles() throws Exception {
         mockMvc.perform(get(BASE + "/articles"))
                 .andExpect(status().isOk())
@@ -47,7 +47,7 @@ class ArticleControllerTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.data.records").isArray())
                 .andExpect(jsonPath("$.data.records[0].createdAt").doesNotExist())
                 .andExpect(jsonPath("$.data.records[0].updatedAt").doesNotExist())
-                .andExpect(jsonPath("$.data.records[0].status").doesNotExist())
+                .andExpect(jsonPath("$.data.records[0].status").value(1))
                 .andExpect(jsonPath("$.data.records[0].contentMd").doesNotExist());
     }
 
@@ -64,15 +64,15 @@ class ArticleControllerTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("GET /articles/{slug} 已发布文章详情 — 包含 contentMd 且无 createdAt/updatedAt/status")
+    @DisplayName("GET /articles/{slug} 已发布文章详情 — 包含 contentMd/status 且无 createdAt/updatedAt")
     void detail_publishedArticle_ok() throws Exception {
         mockMvc.perform(get(BASE + "/articles/test-article"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.slug").value("test-article"))
                 .andExpect(jsonPath("$.data.contentMd").exists())
+                .andExpect(jsonPath("$.data.status").value(1))
                 .andExpect(jsonPath("$.data.createdAt").doesNotExist())
-                .andExpect(jsonPath("$.data.updatedAt").doesNotExist())
-                .andExpect(jsonPath("$.data.status").doesNotExist());
+                .andExpect(jsonPath("$.data.updatedAt").doesNotExist());
     }
 
     @Test
@@ -84,15 +84,54 @@ class ArticleControllerTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("GET /articles/archives 归档列表 — 无 createdAt/updatedAt/status/contentMd")
+    @DisplayName("GET /articles/archives 归档列表 — 无 createdAt/updatedAt/contentMd，含 status")
     void archives_returnsPublished() throws Exception {
         mockMvc.perform(get(BASE + "/articles/archives"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isArray())
                 .andExpect(jsonPath("$.data[0].createdAt").doesNotExist())
                 .andExpect(jsonPath("$.data[0].updatedAt").doesNotExist())
-                .andExpect(jsonPath("$.data[0].status").doesNotExist())
+                .andExpect(jsonPath("$.data[0].status").value(1))
                 .andExpect(jsonPath("$.data[0].contentMd").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("仅链接可见文章 (status=3) — 访客首页隐藏，管理员首页可见，直接链接可访问")
+    void unlistedArticle_visibilityTest() throws Exception {
+        // 创建仅链接可见文章 status=3
+        jdbc.update("INSERT INTO article (id, title, slug, content_md, status, deleted, category_id, created_at, updated_at) " +
+                "VALUES (200, '仅链接测试文章', 'unlisted-test', '私密内容', 3, 0, 1, datetime('now'), datetime('now'))");
+
+        // 1. 访客匿名访问文章列表 -> 不包含 status=3
+        mockMvc.perform(get(BASE + "/articles"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records", hasSize(1)))
+                .andExpect(jsonPath("$.data.records[0].slug").value("test-article"));
+
+        // 2. 管理员带 Token 访问文章列表 -> 包含 status=3
+        mockMvc.perform(get(BASE + "/articles")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records", hasSize(2)));
+
+        // 3. 访客匿名直接通过 URL 访问详情 -> 可正常读取并返回 status=3
+        mockMvc.perform(get(BASE + "/articles/unlisted-test"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.slug").value("unlisted-test"))
+                .andExpect(jsonPath("$.data.status").value(3))
+                .andExpect(jsonPath("$.data.contentMd").value("私密内容"));
+
+        // 4. 公开归档接口不包含 status=3
+        mockMvc.perform(get(BASE + "/articles/archives"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(1)))
+                .andExpect(jsonPath("$.data[0].slug").value("test-article"));
+
+        // 5. SEO 直出渲染支持 status=3 并包含 noindex, nofollow
+        mockMvc.perform(get(BASE + "/seo/post/unlisted-test"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("name=\"robots\" content=\"noindex, nofollow\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("私密内容")));
     }
 
     @Test
@@ -186,6 +225,26 @@ class ArticleControllerTest extends BaseIntegrationTest {
                         .content(om.writeValueAsString(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(1001));
+    }
+
+    @Test
+    @DisplayName("POST /articles status=3 仅链接文章 — 创建成功")
+    void createArticle_unlistedStatus_ok() throws Exception {
+        Map<String, Object> body = new HashMap<>();
+        body.put("title", "新建仅链接文章");
+        body.put("slug", "slug-unlisted-create");
+        body.put("contentMd", "# 仅链接");
+        body.put("categoryId", 1);
+        body.put("status", 3);
+
+        mockMvc.perform(post(BASE + "/articles")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("X-Device-Id", TEST_DEVICE_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.id").isNumber());
     }
 
     @Test

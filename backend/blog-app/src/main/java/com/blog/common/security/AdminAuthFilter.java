@@ -125,8 +125,11 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         // 2. 命中 DB public 白名单
         ApiWhitelist hit = whitelistService.matchPath(path);
         if (hit != null && ApiWhitelistService.TYPE_PUBLIC.equals(hit.getType())) {
-            // GET / HEAD 匿名可读
-            if (isReadMethod(method)) return true;
+            // GET / HEAD 匿名可读（尝试可选解析管理员 Token）
+            if (isReadMethod(method)) {
+                tryOptionalAuth(request);
+                return true;
+            }
             // 显式 public 写端点
             if (matchesRoutes(method, path, PUBLIC_WRITE_ROUTES)) return true;
             // 其余写操作——default-deny（风险①）
@@ -137,11 +140,35 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         if (isReadMethod(method)) {
             // GET 未登记：防遗漏 WARN，但放行（防误伤新增公开接口）
             warnUnregistered(method, path, request);
+            tryOptionalAuth(request);
             return true;
         }
         // 写操作未登记：default-deny，并打 WARN
         warnUnregistered(method, path, request);
         return false;
+    }
+
+    /**
+     * 可选鉴权尝试：公开 GET 请求若携带有效的 Bearer Token，解析并写入 AuthContext，
+     * 供下游业务层（如 ArticleService.list）感知管理员登录态以展示仅链接可见文章；
+     * 若未带 Token 或 Token 无效则静默忽略，不影响公开请求正常放行。
+     */
+    private void tryOptionalAuth(HttpServletRequest request) {
+        String auth = request.getHeader("Authorization");
+        if (auth != null && auth.startsWith("Bearer ")) {
+            String token = auth.substring(7);
+            try {
+                io.jsonwebtoken.Claims claims = jwtUtil.parse(token);
+                Object uid = claims.get("uid");
+                Object tokenDeviceId = claims.get("deviceId");
+                String username = claims.getSubject();
+                if (uid != null) {
+                    com.blog.common.web.AuthContext.set(request, uid, tokenDeviceId != null ? tokenDeviceId.toString() : null, username);
+                }
+            } catch (Exception ignored) {
+                // Token 过期或格式异常时静默忽略
+            }
+        }
     }
 
     // ======================== doFilterInternal（鉴权核心） ========================

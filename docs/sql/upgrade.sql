@@ -16,3 +16,8 @@
 -- 1. article.is_pinned 置顶字段（v6.0.2+）
 ALTER TABLE article ADD COLUMN is_pinned TINYINT NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_article_pinned ON article(is_pinned);
+
+-- 2. api_whitelist 补充 /seo/ 与 /sitemap.xml（v7.0.0+）
+INSERT OR IGNORE INTO api_whitelist (path_prefix, type, enabled, description, created_at, updated_at) VALUES
+  ('/seo/', 'public', 1, 'SEO 渲染直出端点', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/sitemap.xml', 'public', 1, 'Sitemap 站点地图', datetime('now', 'localtime'), datetime('now', 'localtime'));

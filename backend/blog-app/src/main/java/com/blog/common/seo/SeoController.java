@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -123,7 +124,7 @@ public class SeoController {
     @GetMapping(value = "/post/{slug}", produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<String> articlePage(@PathVariable String slug) {
         QueryWrapper<Article> qw = new QueryWrapper<>();
-        qw.eq("slug", slug).eq("status", 1).eq("deleted", 0);
+        qw.eq("slug", slug).in("status", Arrays.asList(1, 3)).eq("deleted", 0);
         Article article = articleMapper.selectOne(qw);
 
         if (article == null) {
@@ -146,6 +147,9 @@ public class SeoController {
         String ogImage = article.getCoverUrl() != null
                 ? "<meta property=\"og:image\" content=\"" + escapeHtml(article.getCoverUrl()) + "\">"
                 : "";
+        String robotsTag = article.getStatus() != null && article.getStatus() == 3
+                ? "    <meta name=\"robots\" content=\"noindex, nofollow\">\n"
+                : "";
 
         // 动态注入 Nuxt 前端构建产物的 CSS/JS
         String cssTags = cssLinks.stream()
@@ -160,6 +164,7 @@ public class SeoController {
                 + "<head>\n"
                 + "    <meta charset=\"UTF-8\">\n"
                 + "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+                + robotsTag
                 + "    <title>" + title + " | blog.coreyai.cn</title>\n"
                 + "    <meta name=\"description\" content=\"" + summary + "\">\n"
                 + "    <meta property=\"og:title\" content=\"" + title + "\">\n"

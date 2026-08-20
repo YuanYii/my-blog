@@ -28,7 +28,7 @@ public class Article {
     @JsonAlias("content")
     private String contentMd;
     private String coverUrl;
-    /** 0-草稿 1-已发布 2-已归档 */
+    /** 0-草稿 1-已发布 2-已归档 3-仅链接可见 */
     private Integer status;
     /** 0-普通 1-置顶 */
     private Integer isPinned;

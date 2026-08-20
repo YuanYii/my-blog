@@ -429,6 +429,8 @@ INSERT OR IGNORE INTO api_whitelist (path_prefix, type, enabled, description, cr
   ('/articles', 'public', 1, '文章公开端点', datetime('now', 'localtime'), datetime('now', 'localtime')),
   ('/comments', 'public', 1, '评论公开端点', datetime('now', 'localtime'), datetime('now', 'localtime')),
   ('/health', 'public', 1, '健康检查', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/seo/', 'public', 1, 'SEO 渲染直出端点', datetime('now', 'localtime'), datetime('now', 'localtime')),
+  ('/sitemap.xml', 'public', 1, 'Sitemap 站点地图', datetime('now', 'localtime'), datetime('now', 'localtime')),
   ('/v3/api-docs', 'public', 1, 'Swagger API 文档（生产可关）', datetime('now', 'localtime'), datetime('now', 'localtime')),
   ('/swagger-ui', 'public', 1, 'Swagger UI（生产可关）', datetime('now', 'localtime'), datetime('now', 'localtime')),
   ('/admin/', 'admin', 1, '所有 admin/* 路径必须鉴权', datetime('now', 'localtime'), datetime('now', 'localtime')),

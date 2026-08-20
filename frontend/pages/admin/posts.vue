@@ -256,8 +256,24 @@ const handleBulkPublish = async () => {
   refreshMeta()  // 2026-06-24 BUG-003：批量发布改了 draftCount,刷新侧栏
 }
 
-const statusLabel = (s: number) => ({ 0: '草稿', 1: '已发布', 2: '已归档' }[s] || '未知')
-const statusBadge = (s: number) => ({ 1: 'badge-success', 0: 'badge-warning', 2: 'badge-muted' }[s] || 'badge-muted')
+const handleBulkUnlisted = async () => {
+  let failed = 0
+  for (const id of selected.value) {
+    try { await put(`/articles/${id}`, { status: 3 }) } catch { failed++ }
+  }
+  if (failed > 0) {
+    $toast.warning(`批量设为仅链接完成：${selected.value.length - failed} 成功，${failed} 失败`)
+  } else {
+    $toast.success(`已设为仅链接 ${selected.value.length} 篇`)
+  }
+  selected.value = []
+  load()
+  loadStats()
+  refreshMeta()
+}
+
+const statusLabel = (s: number) => ({ 0: '草稿', 1: '已发布', 2: '已归档', 3: '仅链接' }[s] || '未知')
+const statusBadge = (s: number) => ({ 1: 'badge-success', 0: 'badge-warning', 2: 'badge-muted', 3: 'badge-purple' }[s] || 'badge-muted')
 const pinLabel = (p: number) => p === 1 ? '置顶' : ''
 
 // 缩略图：取标题前 2 字符
@@ -364,6 +380,7 @@ onMounted(async () => {
       <div class="bulk-actions">
         <!-- 2026-07-01 BUG-002：批量操作按 tab 切换 -->
         <button v-if="filterDeleted !== '1'" @click="handleBulkPublish" class="btn btn-ghost btn-sm">批量发布</button>
+        <button v-if="filterDeleted !== '1'" @click="handleBulkUnlisted" class="btn btn-ghost btn-sm">批量设为仅链接</button>
         <button v-if="filterDeleted !== '1'" @click="handleBulkDelete" class="btn btn-ghost btn-sm" style="color: var(--danger);">批量删除</button>
         <button v-if="filterDeleted === '1'" @click="handleBulkRestore" class="btn btn-ghost btn-sm">批量恢复</button>
         <button v-if="filterDeleted === '1'" @click="handleBulkDelete" class="btn btn-ghost btn-sm" style="color: var(--danger);">批量硬删除</button>
@@ -376,6 +393,9 @@ onMounted(async () => {
       <div class="toolbar-search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input v-model="keyword" @keyup.enter="handleSearch" type="text" placeholder="搜索标题…" />
+      </div>
+      <div class="toolbar-dropdown">
+        <UiDropdownSelector :model-value="filterStatus" :options="[{ label: '全部状态', value: '' }, { label: '已发布', value: 1 }, { label: '仅链接', value: 3 }, { label: '草稿', value: 0 }, { label: '已归档', value: 2 }]" placeholder="全部状态" @update:model-value="(v: any) => { filterStatus = v; handleStatusFilter() }" />
       </div>
       <div class="toolbar-dropdown">
         <UiDropdownSelector :model-value="filterCategory" :options="[{ label: '全部分类', value: '' }, ...categories.map((c: any) => ({ label: c.name, value: c.id }))]" placeholder="全部分类" @update:model-value="(v: any) => { filterCategory = v; handleStatusFilter() }" />

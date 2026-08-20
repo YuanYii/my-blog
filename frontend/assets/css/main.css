@@ -280,6 +280,7 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
 .badge-success { background: rgba(22, 163, 74, 0.1); color: var(--success); }
 .badge-warning { background: rgba(202, 138, 4, 0.1); color: #b45309; }
 .badge-danger { background: rgba(194, 65, 12, 0.1); color: var(--danger); }
+.badge-purple { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
 .badge-muted { background: var(--bg-soft); color: var(--muted); }
 
 /* ========== Avatar ========== */
@@ -467,6 +468,13 @@ textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.6; }
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 8px; border-radius: 4px;
   background: var(--accent); color: white;
+  font-size: 11px; font-weight: 500; margin-left: 8px;
+}
+.unlisted-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 4px;
+  background: rgba(139, 92, 246, 0.12); color: #8b5cf6;
+  border: 1px solid rgba(139, 92, 246, 0.25);
   font-size: 11px; font-weight: 500; margin-left: 8px;
 }
 

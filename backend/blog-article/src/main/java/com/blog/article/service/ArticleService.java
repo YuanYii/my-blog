@@ -67,6 +67,12 @@ public class ArticleService {
 
     public Result<PageResult<Map<String, Object>>> list(long page, long size,
                                                         Long categoryId, Long tagId, String keyword) {
+        return list(page, size, categoryId, tagId, keyword, null);
+    }
+
+    public Result<PageResult<Map<String, Object>>> list(long page, long size,
+                                                        Long categoryId, Long tagId, String keyword,
+                                                        HttpServletRequest request) {
         if (page < 1) throw new BusinessException(400, "page 必须 >= 1");
         if (size < 1 || size > 100) throw new BusinessException(400, "size 必须在 1-100 之间");
         // 2026-06-30 BUG-001：关键词长度下限校验。
@@ -77,7 +83,13 @@ public class ArticleService {
         }
 
         QueryWrapper<Article> qw = new QueryWrapper<>();
-        qw.eq("status", 1).eq("deleted", 0);
+        boolean isAdmin = request != null && AuthContext.uid(request) != null;
+        if (isAdmin) {
+            qw.in("status", Arrays.asList(1, 3));
+        } else {
+            qw.eq("status", 1);
+        }
+        qw.eq("deleted", 0);
         if (categoryId != null) qw.eq("category_id", categoryId);
         // 2026-06-30 BUG-001：搜索范围限定 title + summary（**不**搜 content_md）。
         //   关键决策：content_md 全表 LIKE 命中率 100%（所有文章正文都讨论"AI/Redis/博客"等通用词），
@@ -102,7 +114,7 @@ public class ArticleService {
 
     public Result<Map<String, Object>> detail(String slug) {
         QueryWrapper<Article> qw = new QueryWrapper<>();
-        qw.eq("slug", slug).eq("status", 1).eq("deleted", 0);
+        qw.eq("slug", slug).in("status", Arrays.asList(1, 3)).eq("deleted", 0);
         Article article = articleMapper.selectOne(qw);
         if (article == null) throw new BusinessException(1001, "文章不存在");
         jdbc.update("UPDATE article SET view_count = view_count + 1, updated_at = updated_at WHERE id = ?",
@@ -399,11 +411,11 @@ public class ArticleService {
         article.setViewCount(0);
         article.setDeleted(0);
         if (article.getStatus() == null) article.setStatus(0);
-        if (!Arrays.asList(0, 1, 2).contains(article.getStatus())) {
+        if (!Arrays.asList(0, 1, 2, 3).contains(article.getStatus())) {
             log.warn("文章创建校验失败：status 非法 status={} slug={} operator={}", article.getStatus(), article.getSlug(), AuthContext.uid(request));
             throw new BusinessException(1010, "status 取值非法: " + article.getStatus());
         }
-        if (Integer.valueOf(1).equals(article.getStatus()) && article.getPublishedAt() == null) {
+        if ((Integer.valueOf(1).equals(article.getStatus()) || Integer.valueOf(3).equals(article.getStatus())) && article.getPublishedAt() == null) {
             article.setPublishedAt(LocalDateTime.now());
         }
         if (article.getIsPinned() == null) article.setIsPinned(0);
@@ -467,7 +479,7 @@ public class ArticleService {
             }
         }
         article.setId(id);
-        if (article.getStatus() != null && !Arrays.asList(0, 1, 2).contains(article.getStatus())) {
+        if (article.getStatus() != null && !Arrays.asList(0, 1, 2, 3).contains(article.getStatus())) {
             log.warn("文章更新校验失败：status 非法 id={} status={} operator={}", id, article.getStatus(), AuthContext.uid(request));
             throw new BusinessException(1010, "status 取值非法: " + article.getStatus());
         }
@@ -480,7 +492,7 @@ public class ArticleService {
             jdbc.update("UPDATE article SET is_pinned = 0, updated_at = ? WHERE is_pinned = 1 AND id != ?", LocalDateTime.now(), id);
         }
         Integer effectiveStatus = article.getStatus() != null ? article.getStatus() : existing.getStatus();
-        if (Integer.valueOf(1).equals(effectiveStatus)
+        if ((Integer.valueOf(1).equals(effectiveStatus) || Integer.valueOf(3).equals(effectiveStatus))
                 && article.getPublishedAt() == null
                 && existing.getPublishedAt() == null) {
             article.setPublishedAt(LocalDateTime.now());
@@ -935,10 +947,11 @@ public class ArticleService {
         m.put("slug", a.getSlug());
         m.put("summary", a.getSummary());
         m.put("coverUrl", normalizeCoverUrl(a.getCoverUrl()));
+        m.put("status", a.getStatus());
         m.put("isPinned", a.getIsPinned() == null ? 0 : a.getIsPinned());
         m.put("viewCount", a.getViewCount() == null ? 0 : a.getViewCount());
         m.put("categoryId", a.getCategoryId());
-        // publishedAt 兜底：公开接口 status=1 时业务上必定非空，
+        // publishedAt 兜底：公开接口 status=1/3 时业务上必定非空，
         // 但防历史脏数据或异常导入时以 createdAt 退避
         m.put("publishedAt", a.getPublishedAt() != null
                 ? a.getPublishedAt() : a.getCreatedAt());

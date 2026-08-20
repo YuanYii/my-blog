@@ -4,7 +4,7 @@
 
 set -e
 
-BASE="http://localhost:8080/api/v1"
+BASE="${BASE:-http://localhost:8080/api/v1}"
 PASS=0
 FAIL=0
 FAILED_TESTS=()
@@ -115,6 +115,70 @@ test_endpoint "page_view 写入"  GET   /articles ""
 test_endpoint "page_view 去重"  GET   /articles ""
 
 echo
+echo "=== 仅链接可见文章 (status=3) 验证 ==="
+CAT_ID=$(curl -s "$BASE/articles/categories" | python3 -c "import sys,json;cats=json.load(sys.stdin).get('data',[]);print(cats[0]['id'] if cats else '')" 2>/dev/null)
+if [ -z "$CAT_ID" ]; then
+    CAT_RESP=$(curl -s -X POST "$BASE/articles/categories" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "X-Device-Id: $DEVICE" \
+        -H "Content-Type: application/json" \
+        -d '{"name":"默认分类","slug":"default"}')
+    CAT_ID=$(echo "$CAT_RESP" | python3 -c "import sys,json;print(json.load(sys.stdin).get('data',{}).get('id', 1))" 2>/dev/null)
+fi
+
+UNLISTED_SLUG="verify-unlisted-$(date +%s)"
+CREATE_RESP=$(curl -s -X POST $BASE/articles \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-Device-Id: $DEVICE" \
+    -H "Content-Type: application/json" \
+    -d "{\"title\":\"验证仅链接文章\",\"slug\":\"$UNLISTED_SLUG\",\"summary\":\"验证仅链接\",\"contentMd\":\"# 私密内容\",\"categoryId\":$CAT_ID,\"status\":3}")
+UNLISTED_ID=$(echo "$CREATE_RESP" | python3 -c "import sys,json;print(json.load(sys.stdin).get('data',{}).get('id',''))" 2>/dev/null)
+
+if [ -n "$UNLISTED_ID" ]; then
+    echo "  ✅ 创建仅链接文章 (POST /articles status=3 → id=$UNLISTED_ID)"
+    PASS=$((PASS+1))
+
+    ANON_LIST=$(curl -s "$BASE/articles?size=100")
+    if echo "$ANON_LIST" | grep -q "$UNLISTED_SLUG"; then
+        echo "  ❌ 访客列表泄露仅链接文章 (GET /articles 包含 $UNLISTED_SLUG)"
+        FAILED_TESTS+=("访客列表隔离")
+        FAIL=$((FAIL+1))
+    else
+        echo "  ✅ 访客列表隔离生效 (GET /articles 隐藏 $UNLISTED_SLUG)"
+        PASS=$((PASS+1))
+    fi
+
+    ADMIN_LIST=$(curl -s -H "Authorization: Bearer $TOKEN" -H "X-Device-Id: $DEVICE" "$BASE/articles?size=100")
+    if echo "$ADMIN_LIST" | grep -q "$UNLISTED_SLUG"; then
+        echo "  ✅ 管理员列表可见 (GET /articles 包含 $UNLISTED_SLUG)"
+        PASS=$((PASS+1))
+    else
+        echo "  ❌ 管理员列表未见仅链接文章 (GET /articles 未包含 $UNLISTED_SLUG)"
+        FAILED_TESTS+=("管理员列表可见")
+        FAIL=$((FAIL+1))
+    fi
+
+    DETAIL_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/articles/$UNLISTED_SLUG")
+    if [ "$DETAIL_CODE" = "200" ]; then
+        echo "  ✅ 访客直接链接访问详情 (GET /articles/$UNLISTED_SLUG → 200)"
+        PASS=$((PASS+1))
+    else
+        echo "  ❌ 访客直接链接访问详情失败 (GET /articles/$UNLISTED_SLUG → $DETAIL_CODE)"
+        FAILED_TESTS+=("仅链接详情访问 ($DETAIL_CODE)")
+        FAIL=$((FAIL+1))
+    fi
+
+    # 清理测试文章
+    curl -s -X DELETE "$BASE/articles/$UNLISTED_ID" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "X-Device-Id: $DEVICE" > /dev/null
+else
+    echo "  ❌ 创建仅链接文章失败: $CREATE_RESP"
+    FAILED_TESTS+=("创建仅链接文章")
+    FAIL=$((FAIL+1))
+fi
+
+echo
 echo "=== 业务层去重验证（直接 curl 带 X-Visitor-Id 刷 5 次）==="
 # curl 需显式带 X-Visitor-Id（浏览器由 usePublicApi 自动加）
 VID="verify-$(date +%s)"
@@ -122,7 +186,8 @@ for i in 1 2 3 4 5; do
     curl -s -H "X-Visitor-Id: $VID" $BASE/articles > /dev/null
 done
 sleep 1
-AFTER=$(sqlite3 /Users/yuanyi/MyProject/vibeP/my-blog/backend/blog.db "SELECT COUNT(*) FROM page_view WHERE visitor='$VID';")
+DB_EXEC="${DB_EXEC:-sqlite3 /Users/yuanyi/MyProject/vibeP/my-blog/backend/blog.db}"
+AFTER=$($DB_EXEC "SELECT COUNT(*) FROM page_view WHERE visitor='$VID';")
 if [ "$AFTER" = "1" ]; then
     echo "  ✅ 同 visitor 连刷 5 次 → DB +1 行（业务层去重生效）"
     PASS=$((PASS+1))

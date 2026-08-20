@@ -34,6 +34,15 @@ const refreshArticle = async () => {
   }
 }
 await refreshArticle()
+
+useHead(() => {
+  const meta: any[] = []
+  if (article.value?.status === 3) {
+    meta.push({ name: 'robots', content: 'noindex, nofollow' })
+  }
+  return { meta }
+})
+
 const { data: metaRes } = await useAsyncData(
   `post-meta-${slug}`,
   async (): Promise<{ categories: any[]; tags: any[] }> => {
@@ -309,6 +318,9 @@ onBeforeUnmount(() => {
       <!-- 2026-07-15 BUG-001：草稿预览标记（仅管理员可进入此页） -->
       <div v-if="preview" class="preview-banner">
         🔍 草稿预览模式（仅管理员可见，访客看不到此文章）
+      </div>
+      <div v-else-if="article.status === 3" class="unlisted-banner">
+        🔗 仅链接可见（本文未在博客主页公开展示）
       </div>
       <div class="post-layout">
       <!-- 主内容区 -->
@@ -605,6 +617,17 @@ onBeforeUnmount(() => {
   background: var(--primary-soft);
   color: var(--primary);
   border: 1px solid var(--primary);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.unlisted-banner {
+  margin-bottom: 16px;
+  padding: 10px 16px;
+  background: rgba(139, 92, 246, 0.1);
+  color: #8b5cf6;
+  border: 1px solid rgba(139, 92, 246, 0.25);
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;

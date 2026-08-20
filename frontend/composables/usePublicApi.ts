@@ -109,8 +109,8 @@ export const usePublicApi = () => {
     })
   }
 
-  const get = <T = any>(path: string, params?: any) =>
-    request<T>(path, { method: 'GET', params })
+  const get = <T = any>(path: string, params?: any, options: any = {}) =>
+    request<T>(path, { method: 'GET', params, ...options })
 
   const post = <T = any>(path: string, body?: any) =>
     request<T>(path, { method: 'POST', body })

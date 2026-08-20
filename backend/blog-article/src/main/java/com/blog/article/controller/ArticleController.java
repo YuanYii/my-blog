@@ -43,12 +43,13 @@ public class ArticleController {
             @RequestParam(defaultValue = "10") long size,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Long tagId,
-            @RequestParam(required = false) String keyword) {
+            @RequestParam(required = false) String keyword,
+            HttpServletRequest request) {
         // 2026-06-27 DEV-003：搜索开关——关闭时拒绝带 keyword 的请求（普通列表/分类/标签仍正常）
         if (keyword != null && !keyword.isEmpty() && !advancedSettings.searchEnabled()) {
             throw new BusinessException(403, "站点搜索已禁用");
         }
-        return articleService.list(page, size, categoryId, tagId, keyword);
+        return articleService.list(page, size, categoryId, tagId, keyword, request);
     }
 
     @GetMapping("/{slug}")

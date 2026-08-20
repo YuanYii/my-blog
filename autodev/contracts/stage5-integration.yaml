@@ -1,15 +1,14 @@
 version: "2.0"
-run_id: "20260814"
+run_id: "20260820"
 stage: "Stage_5"
-deploy_target: "myblog-sim"
-status: "DEPLOYED_AND_VERIFIED"
-endpoints_verified:
-  - url: "http://localhost:28000/"
-    status_code: 200
-  - url: "http://localhost:28000/api/v1/health"
-    status_code: 200
-  - url: "http://localhost:28000/post/html17842542461341"
-    status_code: 200
-runtime_observations:
-  - "前端产物已同步部署至 myblog-sim:/opt/myblog/frontend/public"
-  - "Nginx 重新加载成功，文章详情页分享按钮、文末互动卡片与 ShareModal 二维码功能就绪"
+evaluator: "Integration-Tester-Agent"
+overall_result: "PASSED"
+metrics:
+  total_scenarios: 35
+  passed_scenarios: 35
+  failed_scenarios: 0
+system_health:
+  services_healthy: true
+  database_migrations_ok: true
+next_actions:
+  auto_reseed_tasks: []

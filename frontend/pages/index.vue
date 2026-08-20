@@ -18,17 +18,31 @@ const [health, categoriesRes, tagsRes, profileRes, socialRes, blogRes] = await P
   useAsyncData('home-blog', () => get<any>('/public/settings/blog'))
 ])
 
+const { token, isLoggedIn, init: initAuth } = useAuth()
+
+onMounted(() => {
+  initAuth()
+})
+
 // 列表分页状态
 const currentPage = ref(1)
 const pageSize = ref(5)
 const jumpInput = ref('')
 const sizeOptions = [5, 10, 20, 50]
 
-// 文章列表：随 currentPage/pageSize 变化自动重新拉取
+// 文章列表：随 currentPage/pageSize/isLoggedIn 变化自动重新拉取
+const fetchArticles = () => {
+  const options: any = {}
+  if (token.value) {
+    options.headers = { Authorization: `Bearer ${token.value}` }
+  }
+  return get<any>('/articles', { page: currentPage.value, size: pageSize.value }, options)
+}
+
 const { data: articlesRes } = await useAsyncData(
   'home-articles',
-  () => get<any>('/articles', { page: currentPage.value, size: pageSize.value }),
-  { watch: [currentPage, pageSize] }
+  fetchArticles,
+  { watch: [currentPage, pageSize, isLoggedIn] }
 )
 
 const articles = computed(() => articlesRes.value?.data?.records || [])
@@ -198,6 +212,10 @@ const pageList = computed(() => {
                   <span v-if="a.isPinned === 1" class="featured-badge">
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4-6.2-4.5-6.2 4.5 2.4-7.4L2 9.4h7.6L12 2z"/></svg>
                     置顶
+                  </span>
+                  <span v-if="a.status === 3" class="unlisted-badge" title="仅链接可见文章">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    仅链接
                   </span>
                 </h3>
                 <p class="post-card-excerpt">{{ a.summary }}</p>

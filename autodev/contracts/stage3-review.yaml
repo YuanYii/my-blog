@@ -1,17 +1,13 @@
 version: "2.0"
-run_id: "20260814"
+run_id: "20260820"
 stage: "Stage_3"
-evaluator: "CodeReviewer"
+evaluator: "Code-Reviewer-Agent"
 overall_result: "PASSED"
-issues_found: []
-checklist:
-  - rule: "安全红线检查（无密码/密钥泄漏，无 SQL 拼接）"
-    status: "PASSED"
-  - rule: "客户端安全防护（SSR-safe, import.meta.client 保护, clipboard try/catch）"
-    status: "PASSED"
-  - rule: "离线二维码生成无外部依赖（纯 TS Reed-Solomon 算法，零外网隐私外泄）"
-    status: "PASSED"
-  - rule: "事件监听与内存清理（onUnmounted 及时卸载 window keydown 监听）"
-    status: "PASSED"
-  - rule: "主题适配与响应式排版（Canvas 白色衬底高对比度，暗色/亮色自适应）"
-    status: "PASSED"
+metrics:
+  total_issues: 0
+  critical: 0
+  major: 0
+  minor: 0
+issues: []
+next_actions:
+  auto_reseed_tasks: []

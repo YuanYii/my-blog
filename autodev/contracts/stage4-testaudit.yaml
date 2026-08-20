@@ -1,35 +1,14 @@
 version: "2.0"
-run_id: "20260814"
+run_id: "20260820"
 stage: "Stage_4"
-auditor: "TestAuditor"
-status: "PASSED"
-test_summary:
-  backend_unit_tests:
-    total: 70
-    passed: 70
-    failed: 0
-    skipped: 0
-    duration: "15.507s"
-  frontend_ssg_generation:
-    prerendered_routes: 9
-    status: "SUCCESS"
-    duration: "3.54s"
-verification_results:
-  - id: "AC-24"
-    name: "文章头部与文末分享入口展示"
-    status: "PASSED"
-  - id: "AC-25"
-    name: "离线生成当前文章 URL 清晰二维码"
-    status: "PASSED"
-  - id: "AC-26"
-    name: "移动端扫码精准访问"
-    status: "PASSED"
-  - id: "AC-27"
-    name: "复制链接 Toast 交互"
-    status: "PASSED"
-  - id: "AC-28"
-    name: "保存二维码 PNG 图片导出"
-    status: "PASSED"
-  - id: "AC-29"
-    name: "ESC 退出与深浅色适配及 SSG 生成"
-    status: "PASSED"
+evaluator: "Test-Engineer-Agent"
+overall_result: "PASSED"
+metrics:
+  passed_tests: 72
+  failed_tests: 0
+  skipped_tests: 0
+audit_details:
+  requirement_compliance: "PASSED"
+  edge_cases_covered: true
+next_actions:
+  auto_reseed_tasks: []
