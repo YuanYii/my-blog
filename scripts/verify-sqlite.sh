@@ -168,6 +168,25 @@ if [ -n "$UNLISTED_ID" ]; then
         FAIL=$((FAIL+1))
     fi
 
+    # 测试仅链接文章附件上传与公开下载
+    TMP_ZIP="/tmp/verify-attach-$UNLISTED_ID.zip"
+    echo "test-zip-payload" > "$TMP_ZIP"
+    UPLOAD_RESP=$(curl -s -X POST "$BASE/admin/articles/$UNLISTED_ID/attachment" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "X-Device-Id: $DEVICE" \
+        -F "file=@$TMP_ZIP")
+    rm -f "$TMP_ZIP"
+
+    ATTACH_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/articles/$UNLISTED_ID/attachment")
+    if [ "$ATTACH_CODE" = "200" ]; then
+        echo "  ✅ 访客下载仅链接文章附件 (GET /articles/$UNLISTED_ID/attachment → 200)"
+        PASS=$((PASS+1))
+    else
+        echo "  ❌ 访客下载仅链接文章附件失败 (GET /articles/$UNLISTED_ID/attachment → $ATTACH_CODE)"
+        FAILED_TESTS+=("仅链接文章附件下载 ($ATTACH_CODE)")
+        FAIL=$((FAIL+1))
+    fi
+
     # 清理测试文章
     curl -s -X DELETE "$BASE/articles/$UNLISTED_ID" \
         -H "Authorization: Bearer $TOKEN" \

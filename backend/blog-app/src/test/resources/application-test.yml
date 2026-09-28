@@ -27,6 +27,9 @@ blog:
   upload:
     local:
       dir: /tmp/test-uploads
+  attachment:
+    local:
+      dir: /tmp/test-attachments
   security:
     ip-rate-limit:
       enabled: false   # 测试不走 IP 限流，避免 Redis 依赖干扰

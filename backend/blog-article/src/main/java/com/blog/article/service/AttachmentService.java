@@ -418,10 +418,10 @@ public class AttachmentService {
         if (a == null) {
             throw new BusinessException(1001, "附件不存在");
         }
-        // 2026-08-14 BUG-001 fix：公开下载必须校验所属文章已发布且未删除，
-        //   防止草稿/软删文章的附件被匿名遍历下载
+        // 2026-08-14 BUG-001 fix：公开下载必须校验所属文章已发布/仅链接可见且未删除，
+        //   防止草稿/软删文章的附件被匿名遍历下载（status IN (1, 3) 允许已发布和仅链接可见文章下载）
         Integer articleValid = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM article WHERE id = ? AND status = 1 AND deleted = 0",
+                "SELECT COUNT(*) FROM article WHERE id = ? AND status IN (1, 3) AND deleted = 0",
                 Integer.class, a.getArticleId());
         if (articleValid == null || articleValid == 0) {
             log.warn("附件下载拦截：所属文章未发布或已删除 attachmentId={} articleId={}",

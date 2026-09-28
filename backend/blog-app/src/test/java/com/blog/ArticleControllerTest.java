@@ -155,6 +155,27 @@ class ArticleControllerTest extends BaseIntegrationTest {
     }
 
     @Test
+    @DisplayName("GET /articles/{id}/attachment 附件下载 — 仅链接文章(status=3)允许正常下载")
+    void attachment_unlistedArticle_downloadSuccess() throws Exception {
+        // 创建仅链接文章 (status=3) 并关联附件（创建物理临时测试文件）
+        java.io.File attachDir = new java.io.File("/tmp/test-attachments/2026/08");
+        attachDir.mkdirs();
+        java.io.File testFile = new java.io.File(attachDir, "test-unlisted.zip");
+        if (!testFile.exists()) {
+            java.nio.file.Files.write(testFile.toPath(), "test-attachment-content".getBytes());
+        }
+
+        jdbc.update("INSERT INTO article (id, title, slug, content_md, status, deleted, created_at, updated_at) " +
+                "VALUES (101, '仅链接文章附件', 'unlisted-attach', 'content', 3, 0, datetime('now'), datetime('now'))");
+        jdbc.update("INSERT INTO article_attachment (id, article_id, file_name, file_path, file_size, mime_type, deleted, created_at, updated_at) " +
+                "VALUES (101, 101, 'test-unlisted.zip', '2026/08/test-unlisted.zip', 23, 'application/zip', 0, datetime('now'), datetime('now'))");
+
+        mockMvc.perform(get(BASE + "/articles/101/attachment"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("test-unlisted.zip")));
+    }
+
+    @Test
     @DisplayName("GET /articles/tags 标签列表含计数")
     void tags_withArticleCount() throws Exception {
         mockMvc.perform(get(BASE + "/articles/tags"))
