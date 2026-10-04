@@ -7,11 +7,16 @@ import com.blog.auth.entity.User;
 import com.blog.auth.mapper.UserMapper;
 import com.blog.common.Result;
 import com.blog.common.web.AuthContext;
+import com.blog.settings.service.SettingsMdExporter;
 import com.blog.settings.service.SettingsMdImporter;
 import com.blog.settings.service.SiteSettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -42,6 +47,7 @@ public class SettingsController {
     private final UserMapper userMapper;
     private final SiteSettingsService siteSettingsService;
     private final SettingsMdImporter settingsMdImporter;
+    private final SettingsMdExporter settingsMdExporter;
 
     /**
      * FR-3.7：配置修改 INFO（含 key 名 + 操作人）。
@@ -473,6 +479,31 @@ public class SettingsController {
         data.put("count", applied.size());
         logSettingChange("upload-md");
         return Result.success(data);
+    }
+
+    /**
+     * 导出站点设置 Markdown 文档（8 段：profile / blog / social / preferences / theme /
+     * advanced / techstack / experience）。
+     *
+     * 空值约定（2026-10-03 DEV-007）：数据库中为空的标量字段导出为哨兵
+     * {@link SettingsMdTemplate#NULL_SENTINEL}，导入时会被显式清空——保证备份文件
+     * 能完整还原现场。手工编辑时若只想「跳过某字段」请留空字符串 ''。
+     *
+     * 文件名格式：site-settings-yyyyMMdd-HHmmss.md
+     * 响应头：Content-Disposition: attachment; filename="..."
+     */
+    @GetMapping("/export-md")
+    public ResponseEntity<byte[]> exportMd() {
+        String filename = settingsMdExporter.generateExportFilename();
+        byte[] bytes = settingsMdExporter.exportToMdBytes();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("text/markdown; charset=UTF-8"));
+        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"");
+        headers.setContentLength(bytes.length);
+
+        logSettingChange("export-md");
+        return new ResponseEntity<>(bytes, headers, HttpStatus.OK);
     }
 
     /**

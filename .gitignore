@@ -154,3 +154,6 @@ __pycache__/
 # 压缩包及离线归档文件
 autodev.zip
 
+
+# Multi-Agent Flow runtime data
+.yy-flow/

@@ -25,6 +25,7 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -129,9 +130,9 @@ public class SettingsMdImporter {
             if (!unknownSections.isEmpty()) {
                 throw new BusinessException(400, "未知段: "
                         + String.join(", ", new java.util.TreeSet<>(unknownSections))
-                        + "（仅支持 profile/blog/techstack/experience）");
+                        + "（仅支持 " + String.join("/", SettingsMdTemplate.ALL_SECTIONS) + "）");
             }
-            // 缺段检查（4 段必须齐全，不允许只传部分）
+            // 缺段检查（8 段必须齐全，不允许只传部分）
             for (String section : SettingsMdTemplate.ALL_SECTIONS) {
                 if (!parsed.containsKey(section)) {
                     throw new BusinessException(400, "缺少必需段: " + section);
@@ -140,18 +141,26 @@ public class SettingsMdImporter {
 
             // 5. 按段校验 + 收集 errors（任意一段失败 → 全部回滚）
             validateProfile(parsed);
-            validateBlog(parsed);
+            validateFlatSection(parsed, SettingsMdTemplate.SECTION_BLOG);
+            validateFlatSection(parsed, SettingsMdTemplate.SECTION_SOCIAL);
+            validateFlatSection(parsed, SettingsMdTemplate.SECTION_PREFERENCES);
+            validateFlatSection(parsed, SettingsMdTemplate.SECTION_THEME);
+            validateFlatSection(parsed, SettingsMdTemplate.SECTION_ADVANCED);
             validateTechstack(parsed);
             validateExperience(parsed);
 
-            // 6. 4 段整体写入（同一事务内，任何一段抛异常 → 全部回滚）
+            // 6. 8 段整体写入（同一事务内，任何一段抛异常 → 全部回滚）
             List<String> applied = new ArrayList<>();
             applied.add(applyProfile(parsed));
             applied.add(applyBlog(parsed));
+            applied.add(applySocial(parsed));
+            applied.add(applyPreferences(parsed));
+            applied.add(applyTheme(parsed));
+            applied.add(applyAdvanced(parsed));
             applied.add(applyTechstack(parsed));
             applied.add(applyExperience(parsed));
 
-            log.info("[settings-md-import] 成功导入 4 段：file={} applied={}", original, applied);
+            log.info("[settings-md-import] 成功导入 8 段：file={} applied={}", original, applied);
             return applied;
         } finally {
             // 7. 删除临时文件（无论成功失败都删，不入 article_attachment 表）
@@ -203,30 +212,21 @@ public class SettingsMdImporter {
         }
     }
 
-    // ============ 4 段校验（用户决策：严格校验，模版不一致直接报错）============
+    // ============ 8 段校验（严格校验，模版不一致直接报错）============
 
     @SuppressWarnings("unchecked")
-    private void validateProfile(Map<String, Object> parsed) {
-        Object raw = parsed.get(SettingsMdTemplate.SECTION_PROFILE);
+    private void validateFlatSection(Map<String, Object> parsed, String section) {
+        Object raw = parsed.get(section);
         if (!(raw instanceof Map)) {
-            throw new BusinessException(400, "section.profile 必须是 Map，实际是 "
+            throw new BusinessException(400, "section." + section + " 必须是 Map，实际是 "
                     + (raw == null ? "null" : raw.getClass().getSimpleName()));
         }
-        String err = SettingsMdTemplate.validateFlatSection(SettingsMdTemplate.SECTION_PROFILE,
-                (Map<String, Object>) raw);
+        String err = SettingsMdTemplate.validateFlatSection(section, (Map<String, Object>) raw);
         if (err != null) throw new BusinessException(400, err);
     }
 
-    @SuppressWarnings("unchecked")
-    private void validateBlog(Map<String, Object> parsed) {
-        Object raw = parsed.get(SettingsMdTemplate.SECTION_BLOG);
-        if (!(raw instanceof Map)) {
-            throw new BusinessException(400, "section.blog 必须是 Map，实际是 "
-                    + (raw == null ? "null" : raw.getClass().getSimpleName()));
-        }
-        String err = SettingsMdTemplate.validateFlatSection(SettingsMdTemplate.SECTION_BLOG,
-                (Map<String, Object>) raw);
-        if (err != null) throw new BusinessException(400, err);
+    private void validateProfile(Map<String, Object> parsed) {
+        validateFlatSection(parsed, SettingsMdTemplate.SECTION_PROFILE);
     }
 
     @SuppressWarnings("unchecked")
@@ -238,8 +238,13 @@ public class SettingsMdImporter {
         }
         Map<String, Object> data = (Map<String, Object>) raw;
         Object groupsObj = data.get(SettingsMdTemplate.TECHSTACK_KEY_GROUPS);
+        // 2026-10-03 DEV-007：groups: __NULL__ 表示显式清空技术栈，跳过数组结构校验
+        if (SettingsMdTemplate.isNullSentinel(groupsObj)) {
+            return;
+        }
         if (!(groupsObj instanceof List)) {
-            throw new BusinessException(400, "section.techstack.groups 应是数组，实际是 "
+            throw new BusinessException(400, "section.techstack.groups 应是数组或 " 
+                    + SettingsMdTemplate.NULL_SENTINEL + "，实际是 "
                     + (groupsObj == null ? "null" : groupsObj.getClass().getSimpleName()));
         }
         List<Object> groups = (List<Object>) groupsObj;
@@ -302,8 +307,13 @@ public class SettingsMdImporter {
         }
         Map<String, Object> data = (Map<String, Object>) raw;
         Object itemsObj = data.get(SettingsMdTemplate.EXPERIENCE_KEY_ITEMS);
+        // 2026-10-03 DEV-007：items: __NULL__ 表示显式清空履历，跳过数组结构校验
+        if (SettingsMdTemplate.isNullSentinel(itemsObj)) {
+            return;
+        }
         if (!(itemsObj instanceof List)) {
-            throw new BusinessException(400, "section.experience.items 应是数组，实际是 "
+            throw new BusinessException(400, "section.experience.items 应是数组或 "
+                    + SettingsMdTemplate.NULL_SENTINEL + "，实际是 "
                     + (itemsObj == null ? "null" : itemsObj.getClass().getSimpleName()));
         }
         List<Object> items = (List<Object>) itemsObj;
@@ -330,8 +340,12 @@ public class SettingsMdImporter {
         }
     }
 
-    // ============ 4 段应用（事务边界内）============
+    // ============ 8 段应用（事务边界内）============
 
+    /**
+     * 应用 profile 段（直写 user 表）
+     * 非破坏性保护：跳过 null 或空字符串 ""，保留库中原有值
+     */
     private String applyProfile(Map<String, Object> parsed) {
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) parsed.get(SettingsMdTemplate.SECTION_PROFILE);
@@ -343,11 +357,30 @@ public class SettingsMdImporter {
         boolean changed = false;
         for (String field : SettingsMdTemplate.PROFILE_FIELDS) {
             if (data.containsKey(field)) {
-                uw.set(fieldToColumn(field), data.get(field));
+                Object val = data.get(field);
+                // 三态语义（2026-10-03 DEV-007）：
+                //   __NULL__ → 显式清空该字段（写 null）
+                //   null / 空串 "" → 跳过，保留库中原有值（防洗白）
+                if (SettingsMdTemplate.isNullSentinel(val)) {
+                    uw.set(fieldToColumn(field), null);
+                    changed = true;
+                    continue;
+                }
+                if (val == null) {
+                    continue;
+                }
+                if (val instanceof String && ((String) val).trim().isEmpty()) {
+                    continue;
+                }
+                // 逃逸形式的哨兵还原为字面量，避免真实数据被吞掉
+                if (val instanceof String) {
+                    val = SettingsMdTemplate.unescapeSentinel((String) val);
+                }
+                uw.set(fieldToColumn(field), val);
                 changed = true;
             }
         }
-        if (!changed) return SettingsMdTemplate.SECTION_PROFILE;  // 空 body
+        if (!changed) return SettingsMdTemplate.SECTION_PROFILE;  // 全部为空值跳过，不更新 DB
         uw.set("updated_at", LocalDateTime.now());
         userMapper.update(null, uw);
         return SettingsMdTemplate.SECTION_PROFILE;
@@ -355,28 +388,137 @@ public class SettingsMdImporter {
 
     /** user 实体字段 → DB 列名映射（camelCase → snake_case）*/
     private static String fieldToColumn(String field) {
-        // footerText → footer_text（MP UpdateWrapper 需要 DB 列名）
         if ("footerText".equals(field)) return "footer_text";
         return field;
     }
 
-    private String applyBlog(Map<String, Object> parsed) {
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) parsed.get(SettingsMdTemplate.SECTION_BLOG);
-        siteSettingsService.merge(SiteSettingsService.SECTION_BLOG, data);
-        return SettingsMdTemplate.SECTION_BLOG;
+    /**
+     * 过滤空值字段（非破坏性保护：跳过 null 或空字符串 ""，保留库中原有值）
+     *
+     * 2026-10-03 DEV-007：哨兵 __NULL__ 例外——不跳过，转成 null 保留在 payload 里，
+     * 让后续 merge 显式把该字段置空（区别于空串的「未填写」语义）。
+     */
+    private Map<String, Object> filterEmptyValues(Map<String, Object> input) {
+        if (input == null) return Collections.emptyMap();
+        Map<String, Object> filtered = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : input.entrySet()) {
+            Object val = entry.getValue();
+            if (SettingsMdTemplate.isNullSentinel(val)) {
+                filtered.put(entry.getKey(), null);
+                continue;
+            }
+            if (val == null) {
+                continue;
+            }
+            if (val instanceof String && ((String) val).trim().isEmpty()) {
+                continue;
+            }
+            // 逃逸形式的哨兵还原为字面量，避免真实数据被吞掉
+            if (val instanceof String) {
+                val = SettingsMdTemplate.unescapeSentinel((String) val);
+            }
+            filtered.put(entry.getKey(), val);
+        }
+        return filtered;
     }
 
+    /**
+     * 应用扁平 section（经过空值过滤保护，避免空串覆盖已有数据）
+     */
+    private String applyFlatSection(String section, Map<String, Object> parsed) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) parsed.get(section);
+        Map<String, Object> filtered = filterEmptyValues(data);
+        if (!filtered.isEmpty()) {
+            siteSettingsService.merge(section, filtered);
+        }
+        return section;
+    }
+
+    private String applyBlog(Map<String, Object> parsed) {
+        return applyFlatSection(SiteSettingsService.SECTION_BLOG, parsed);
+    }
+
+    private String applySocial(Map<String, Object> parsed) {
+        return applyFlatSection(SiteSettingsService.SECTION_SOCIAL, parsed);
+    }
+
+    private String applyPreferences(Map<String, Object> parsed) {
+        return applyFlatSection(SiteSettingsService.SECTION_PREFERENCES, parsed);
+    }
+
+    private String applyTheme(Map<String, Object> parsed) {
+        return applyFlatSection(SiteSettingsService.SECTION_THEME, parsed);
+    }
+
+    private String applyAdvanced(Map<String, Object> parsed) {
+        return applyFlatSection(SiteSettingsService.SECTION_ADVANCED, parsed);
+    }
+
+    /**
+     * 应用 techstack 段
+     * 防洗白策略：若导入的 groups 为空列表且库中有数据时，跳过覆盖以保留原有技能分组
+     */
     private String applyTechstack(Map<String, Object> parsed) {
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) parsed.get(SettingsMdTemplate.SECTION_TECHSTACK);
+        Object groupsObj = data != null ? data.get(SettingsMdTemplate.TECHSTACK_KEY_GROUPS) : null;
+        // 2026-10-03 DEV-007：显式清空哨兵优先于防洗白——用户明确要求清空技术栈
+        if (SettingsMdTemplate.isNullSentinel(groupsObj)) {
+            Map<String, Object> cleared = new LinkedHashMap<>();
+            cleared.put(SettingsMdTemplate.TECHSTACK_KEY_GROUPS, new ArrayList<>());
+            siteSettingsService.merge(SiteSettingsService.SECTION_TECHSTACK, cleared);
+            return SettingsMdTemplate.SECTION_TECHSTACK;
+        }
+        boolean isEmptyImport = groupsObj == null || (groupsObj instanceof List && ((List<?>) groupsObj).isEmpty());
+        if (isEmptyImport) {
+            try {
+                Map<String, Object> existing = siteSettingsService.get(SiteSettingsService.SECTION_TECHSTACK);
+                if (existing != null) {
+                    Object existGroups = existing.get(SettingsMdTemplate.TECHSTACK_KEY_GROUPS);
+                    if (existGroups instanceof List && !((List<?>) existGroups).isEmpty()) {
+                        log.info("[settings-md-import] techstack.groups 导入为空且库中有数据，跳过覆盖以防数据洗白");
+                        return SettingsMdTemplate.SECTION_TECHSTACK;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("[settings-md-import] 读取已有 techstack 失败，跳过防洗白检查", e);
+            }
+        }
         siteSettingsService.merge(SiteSettingsService.SECTION_TECHSTACK, data);
         return SettingsMdTemplate.SECTION_TECHSTACK;
     }
 
+    /**
+     * 应用 experience 段
+     * 防洗白策略：若导入的 items 为空列表且库中有数据时，跳过覆盖以保留原有履历条目
+     */
     private String applyExperience(Map<String, Object> parsed) {
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) parsed.get(SettingsMdTemplate.SECTION_EXPERIENCE);
+        Object itemsObj = data != null ? data.get(SettingsMdTemplate.EXPERIENCE_KEY_ITEMS) : null;
+        // 2026-10-03 DEV-007：显式清空哨兵优先于防洗白——用户明确要求清空履历
+        if (SettingsMdTemplate.isNullSentinel(itemsObj)) {
+            Map<String, Object> cleared = new LinkedHashMap<>();
+            cleared.put(SettingsMdTemplate.EXPERIENCE_KEY_ITEMS, new ArrayList<>());
+            siteSettingsService.merge(SiteSettingsService.SECTION_EXPERIENCE, cleared);
+            return SettingsMdTemplate.SECTION_EXPERIENCE;
+        }
+        boolean isEmptyImport = itemsObj == null || (itemsObj instanceof List && ((List<?>) itemsObj).isEmpty());
+        if (isEmptyImport) {
+            try {
+                Map<String, Object> existing = siteSettingsService.get(SiteSettingsService.SECTION_EXPERIENCE);
+                if (existing != null) {
+                    Object existItems = existing.get(SettingsMdTemplate.EXPERIENCE_KEY_ITEMS);
+                    if (existItems instanceof List && !((List<?>) existItems).isEmpty()) {
+                        log.info("[settings-md-import] experience.items 导入为空且库中有数据，跳过覆盖以防数据洗白");
+                        return SettingsMdTemplate.SECTION_EXPERIENCE;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("[settings-md-import] 读取已有 experience 失败，跳过防洗白检查", e);
+            }
+        }
         siteSettingsService.merge(SiteSettingsService.SECTION_EXPERIENCE, data);
         return SettingsMdTemplate.SECTION_EXPERIENCE;
     }

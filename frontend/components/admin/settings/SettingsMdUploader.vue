@@ -1,20 +1,32 @@
 <script setup lang="ts">
 /**
- * 上传 md 文档组件（2026-07-01 DEV-006）
+ * 上传 md 文档组件（2026-07-01 DEV-006 / 2026-10-02 DEV-007 8段对齐）
  *
  * 用法：
  *   <AdminSettingsMdUploader /> 放在高级 tab 页底（advanced.vue 集成）
+ *   <AdminSettingsMdUploader :in-modal="true" @success="..." /> 嵌入弹窗（blog.vue 集成）
  *
  * 行为：
  *   - 「下载模版」走 nginx 直接 serve /templates/site-settings-template.md（不走后端）
  *   - 「选择文件」仅接受 .md
  *   - 「上传并应用」→ POST /admin/settings/upload-md（multipart）
- *   - 成功：toast「已应用 N 个段: ...」+ 发 settings-updated 事件 + 跳到 /admin/settings/blog
+ *   - 成功：toast「已应用 N 个段: ...」+ 发 settings-updated 事件 + 触发 success 事件 + 跳到 /admin/settings/blog（若已在 blog 页则不重复跳转）
  *   - 失败：toast「解析失败: {message}」原文展示
  *
  * 隐藏功能：连续点击「博客信息导入」标题 5 次弹出 SQL 执行窗口
  */
+const props = withDefaults(defineProps<{
+  inModal?: boolean
+}>(), {
+  inModal: false
+})
+
+const emit = defineEmits<{
+  (e: 'success', sections: string[]): void
+}>()
+
 const { upload, post } = useAdminApi()
+const { exporting, exportSettingsMd } = useAdminSettings()
 const $toast = useToast()
 const router = useRouter()
 const bus = useSettingsEventBus()
@@ -97,7 +109,10 @@ const handleUpload = async () => {
     const applied = (res.data?.appliedSections || []) as string[]
     $toast.success(`已应用 ${applied.length} 个段: ${applied.join(', ')}`)
     bus.publish('settings-updated', { sections: applied })
-    router.push('/admin/settings/blog')
+    emit('success', applied)
+    if (router.currentRoute.value.path !== '/admin/settings/blog') {
+      router.push('/admin/settings/blog')
+    }
   } catch (e: any) {
     progress.value = 0
     $toast.error('解析失败: ' + (e?.data?.message || e?.message || '未知错误'))
@@ -113,6 +128,14 @@ const handleDownloadTemplate = () => {
   a.click()
 }
 
+const handleExport = async () => {
+  try {
+    await exportSettingsMd()
+  } catch {
+    // 错误已由 composable 统一拦截并 toast
+  }
+}
+
 const formatSize = (bytes: number) => {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
@@ -121,16 +144,20 @@ const formatSize = (bytes: number) => {
 </script>
 
 <template>
-  <div class="card" style="padding: 24px; margin-top: 16px;">
+  <div :class="inModal ? 'settings-uploader-in-modal' : 'card'" :style="inModal ? 'padding: 0; margin-top: 0;' : 'padding: 24px; margin-top: 16px;'">
     <div style="margin-bottom: 16px;">
       <div class="form-label" style="margin: 0 0 4px; cursor: default; user-select: none; padding: 4px 0; display: inline-block;" @click="handleLabelClick">博客信息导入</div>
       <div style="font-size: 12px; color: var(--muted);">
         下载模版 → 修改以下数据段 → 上传回应用，整体原子提交。
       </div>
       <div style="font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.8;">
-        <strong>支持维护的数据：</strong><br/>
+        <strong>支持维护的数据（完整 8 段）：</strong><br/>
         • <strong>个人资料</strong>：昵称、邮箱、头像、个人标语、我的介绍、引用语、底部欢迎语、所在地<br/>
         • <strong>站点信息</strong>：站点标题、副标题、描述、版权、Logo<br/>
+        • <strong>社交媒体</strong>：GitHub、Twitter、公开邮箱、微信、微博、RSS<br/>
+        • <strong>偏好设置</strong>：语言、时区、内容密度、代码高亮主题<br/>
+        • <strong>主题外观</strong>：色彩模式、主色、强调色、字体风格<br/>
+        • <strong>高级功能</strong>：缓存开关、RSS 开关、站内搜索、评论审核<br/>
         • <strong>技术栈</strong>：技能分组 + 技能列表<br/>
         • <strong>个人经历</strong>：时间 + 职位 + 描述
       </div>
@@ -139,6 +166,15 @@ const formatSize = (bytes: number) => {
     <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
       <button type="button" class="btn" @click="handleDownloadTemplate">
         下载模版
+      </button>
+
+      <button
+        type="button"
+        class="btn"
+        :disabled="exporting"
+        @click="handleExport"
+      >
+        {{ exporting ? '导出中…' : '导出当前配置' }}
       </button>
 
       <label class="btn" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">

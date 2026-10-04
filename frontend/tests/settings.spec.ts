@@ -56,9 +56,17 @@ test.describe('设置页面 (settings sub-components)', () => {
     await expect(errMsg).toBeVisible({ timeout: 5000 })
   })
 
-  test('切换到"站点信息" tab，BlogForm 渲染', async ({ page }) => {
+  test('切换到"站点信息" tab，BlogForm 渲染且导入与导出配置双入口对齐', async ({ page }) => {
     await page.click('button:has-text("站点信息"), .settings-tab:has-text("站点信息")')
     await expect(page.locator('label:has-text("站点标题")')).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('button:has-text("导入配置")')).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('button:has-text("导出配置")')).toBeVisible({ timeout: 8000 })
+    // 点击导入配置，操作模态框弹出
+    await page.click('button:has-text("导入配置")')
+    await expect(page.locator('h3:has-text("导入站点配置")')).toBeVisible({ timeout: 5000 })
+    // 关闭模态框
+    await page.click('.import-modal-close')
+    await expect(page.locator('h3:has-text("导入站点配置")')).not.toBeVisible()
   })
 
   test('切换到"技术栈" tab，TechstackForm 渲染并可添加分组', async ({ page }) => {
@@ -82,8 +90,10 @@ test.describe('设置页面 (settings sub-components)', () => {
     await expect(page.locator('label:has-text("主题模式")')).toBeVisible({ timeout: 8000 })
   })
 
-  test('切换到"高级" tab，AdvancedForm 渲染（toggle 开关存在）', async ({ page }) => {
+  test('切换到"高级" tab，AdvancedForm 渲染且导出当前配置按钮存在', async ({ page }) => {
     await page.click('button:has-text("高级"), .settings-tab:has-text("高级")')
     await expect(page.locator('text=启用缓存, text=启用 Redis 缓存').first()).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('button:has-text("下载模版")')).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('button:has-text("导出当前配置")')).toBeVisible({ timeout: 8000 })
   })
 })

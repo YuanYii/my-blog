@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.blog.BackupControllerTest
+-------------------------------------------------------------------------------
+Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 12.849 s - in com.blog.BackupControllerTest
