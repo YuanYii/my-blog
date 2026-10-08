@@ -52,6 +52,18 @@ class ArticleControllerTest extends BaseIntegrationTest {
     }
 
     @Test
+    @DisplayName("GET /articles/stats 公开统计 — 包含 totalArticles/totalWordCount 且无需鉴权")
+    void stats_publicArticles() throws Exception {
+        mockMvc.perform(get(BASE + "/articles/stats"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.totalArticles").value(1))
+                .andExpect(jsonPath("$.data.totalWordCount").value(2))
+                .andExpect(jsonPath("$.data.totalCategories").value(1))
+                .andExpect(jsonPath("$.data.totalTags").value(1));
+    }
+
+    @Test
     @DisplayName("GET /articles page/size 边界校验")
     void list_invalidPageSize_400() throws Exception {
         mockMvc.perform(get(BASE + "/articles").param("page", "0"))

@@ -52,6 +52,11 @@ public class ArticleController {
         return articleService.list(page, size, categoryId, tagId, keyword, request);
     }
 
+    @GetMapping("/stats")
+    public Result<Map<String, Object>> stats() {
+        return articleService.stats();
+    }
+
     @GetMapping("/{slug}")
     public Result<Map<String, Object>> detail(@PathVariable String slug) {
         return articleService.detail(slug);

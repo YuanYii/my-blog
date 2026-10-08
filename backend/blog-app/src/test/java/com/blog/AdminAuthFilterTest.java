@@ -60,6 +60,13 @@ class AdminAuthFilterTest extends BaseIntegrationTest {
     }
 
     @Test
+    @DisplayName("GET /articles/stats 公开统计 — 匿名可访问")
+    void publicArticleStats_anonymous_notUnauthorized() throws Exception {
+        mockMvc.perform(get(BASE + "/articles/stats"))
+                .andExpect(status().is(not401()));
+    }
+
+    @Test
     @DisplayName("POST /auth/login 登录 — 匿名可访问")
     void login_anonymous_notUnauthorized() throws Exception {
         mockMvc.perform(post(BASE + "/auth/login")

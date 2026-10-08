@@ -2,6 +2,7 @@ package com.blog.controller;
 
 import com.blog.article.service.PageViewService;
 import com.blog.common.Result;
+import com.blog.common.util.MarkdownWordCountUtil;
 import com.blog.settings.entity.BackupRecord;
 import com.blog.settings.mapper.BackupRecordMapper;
 import lombok.RequiredArgsConstructor;
@@ -189,48 +190,10 @@ public class DashboardController {
      * 8) 粗体 **xxx** / 斜体 *xxx* / 删除线 ~~xxx~~ → 去掉标记符
      */
     static String stripMarkdown(String md) {
-        if (md == null || md.isEmpty()) return "";
-        String s = md;
-        // 1) 代码块：保留内部内容
-        s = s.replaceAll("```[\\s\\S]*?```", " ");
-        // 2) 行内代码：保留内部内容
-        s = s.replaceAll("`([^`]+)`", "$1");
-        // 3) 图片：保留 alt
-        s = s.replaceAll("!\\[([^\\]]*)\\]\\([^)]*\\)", "$1");
-        // 4) 链接：保留 text
-        s = s.replaceAll("\\[([^\\]]+)\\]\\([^)]*\\)", "$1");
-        // 5) 标题前缀（行首的 #）
-        s = s.replaceAll("(?m)^#+\\s*", "");
-        // 6) 引用前缀
-        s = s.replaceAll("(?m)^>\\s*", "");
-        // 7) 列表标记（无序 - * +，有序 1. 2.）
-        s = s.replaceAll("(?m)^\\s*[-*+]\\s+", "");
-        s = s.replaceAll("(?m)^\\s*\\d+\\.\\s+", "");
-        // 8) 粗体 / 斜体 / 删除线
-        s = s.replaceAll("\\*\\*([^*]+)\\*\\*", "$1");
-        s = s.replaceAll("\\*([^*]+)\\*", "$1");
-        s = s.replaceAll("~~([^~]+)~~", "$1");
-        return s;
+        return MarkdownWordCountUtil.stripMarkdown(md);
     }
 
-    /**
-     * 字符数统计
-     * - CJK 字符每个 1 字
-     * - ASCII 字符每个 1 字符
-     * - 空白/换行不算
-     * - MVP 不做"英文按词数"——保持简单可解释
-     */
     static int countChars(String s) {
-        if (s == null || s.isEmpty()) return 0;
-        int n = 0;
-        for (int i = 0; i < s.length(); ) {
-            int cp = s.codePointAt(i);
-            // 跳过空白字符（含空格 \n \r \t 全角空格）
-            if (!Character.isWhitespace(cp) && !Character.isSpaceChar(cp)) {
-                n++;
-            }
-            i += Character.charCount(cp);
-        }
-        return n;
+        return MarkdownWordCountUtil.countChars(s);
     }
 }

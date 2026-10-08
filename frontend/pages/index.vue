@@ -5,7 +5,7 @@ import { formatDate } from '~/composables/useMarkdownUtils'
 const { get } = usePublicApi()
 
 // 拉取首页所需数据
-const [health, categoriesRes, tagsRes, profileRes, socialRes, blogRes] = await Promise.all([
+const [health, categoriesRes, tagsRes, profileRes, socialRes, blogRes, statsRes] = await Promise.all([
   useAsyncData('health', () => get<any>('/health')),
   useAsyncData('home-categories', () => get<any>('/articles/categories')),
   useAsyncData('home-tags', () => get<any>('/articles/tags')),
@@ -15,7 +15,8 @@ const [health, categoriesRes, tagsRes, profileRes, socialRes, blogRes] = await P
   useAsyncData('home-profile', () => get<any>('/public/profile')),
   // 社交账号 / 站点信息：调公开端点（不需要 token）——所有用户都能拿到
   useAsyncData('home-social', () => get<any>('/public/settings/social')),
-  useAsyncData('home-blog', () => get<any>('/public/settings/blog'))
+  useAsyncData('home-blog', () => get<any>('/public/settings/blog')),
+  useAsyncData('home-stats', () => get<any>('/articles/stats'))
 ])
 
 const { token, isLoggedIn, init: initAuth } = useAuth()
@@ -63,9 +64,7 @@ const stats = computed(() => ({
   articles: total.value,
   categories: categories.value.length,
   tags: tags.value.length,
-  // 总字数：按当前页字数 / 当前页数量 * 总数 估算
-  words: Math.round((articles.value.reduce((s: number, a: any) =>
-    s + (a.contentMd?.length || 0), 0) / Math.max(articles.value.length, 1)) * total.value)
+  words: statsRes.data.value?.data?.totalWordCount ?? 0
 }))
 
 // 标签按字母顺序，取前 12 个
@@ -80,6 +79,15 @@ const githubHandle = computed(() => social.value?.github ? '@' + (social.value.g
 const twitterHandle = computed(() => social.value?.twitter ? '@' + (social.value.twitter.split('/').filter(Boolean).pop() || '') : '')
 
 const formatViews = (n: number) => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
+
+const formatWords = (n: number) => {
+  if (!n || n <= 0) return '0'
+  if (n >= 1000) {
+    const val = (n / 1000).toFixed(1)
+    return (val.endsWith('.0') ? val.slice(0, -2) : val) + 'k'
+  }
+  return String(n)
+}
 
 // 切页：边界判断 + 平滑滚到列表
 // 2026-06-12 修复：模板里 `@click="goPage(p)"` 的 p 来自 pageList，类型是 number | '…'。
@@ -176,7 +184,7 @@ const pageList = computed(() => {
         </div>
         <div class="bento-item">
           <div class="bento-label">总字数</div>
-          <div class="bento-value">{{ Math.round(stats.words / 1000) }}k</div>
+          <div class="bento-value">{{ formatWords(stats.words) }}</div>
           <div class="bento-delta">持续更新</div>
         </div>
       </div>

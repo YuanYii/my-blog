@@ -14,6 +14,7 @@ import com.blog.article.mapper.TagMapper;
 import com.blog.common.PageResult;
 import com.blog.common.Result;
 import com.blog.common.BusinessException;
+import com.blog.common.util.MarkdownWordCountUtil;
 import com.blog.common.web.AuthContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -144,6 +145,37 @@ public class ArticleService {
             .collect(Collectors.toList());
         fillTagIds(records);
         return Result.success(records);
+    }
+
+    /**
+     * 公开站点统计：提供已发布文章数、总字数、分类数、标签数等轻量聚合指标
+     */
+    public Result<Map<String, Object>> stats() {
+        Map<String, Object> data = new HashMap<>();
+        Long totalArticles = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM article WHERE status = 1 AND deleted = 0",
+                Long.class);
+        List<String> mds = jdbc.queryForList(
+                "SELECT content_md FROM article WHERE status = 1 AND deleted = 0",
+                String.class);
+        long totalWordCount = 0;
+        for (String md : mds) {
+            if (md != null && !md.isEmpty()) {
+                totalWordCount += MarkdownWordCountUtil.countMarkdown(md);
+            }
+        }
+        Long totalCategories = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM category WHERE visible = 1",
+                Long.class);
+        Long totalTags = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM tag",
+                Long.class);
+
+        data.put("totalArticles", totalArticles != null ? totalArticles : 0L);
+        data.put("totalWordCount", totalWordCount);
+        data.put("totalCategories", totalCategories != null ? totalCategories : 0L);
+        data.put("totalTags", totalTags != null ? totalTags : 0L);
+        return Result.success(data);
     }
 
     public Result<Map<String, Object>> detailById(Long id) {
